@@ -1,5 +1,5 @@
 {!! $shebang !!}
-{{-- Story 4.10 (correctif review #2) propagation auth iPXE iso `admin.blade.php`. --}}
+{{-- Propagation auth iPXE iso `admin.blade.php`. --}}
 params
 {{-- Variables iPXE SMBIOS (${net0/mac}/${uuid}) et NON les valeurs Laravel :
      fournies par le firmware a chaque requete, donc toujours presentes meme si

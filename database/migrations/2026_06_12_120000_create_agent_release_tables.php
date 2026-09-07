@@ -7,33 +7,31 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 25.1 — AC1, AC2, AC3.
  *
- * Distribution des releases de l'agent desired-state (D6, FR24) — deux
- * tables :
+ * Distribution des releases de l'agent desired-state — deux tables :
  *
  *  - `agent_releases` — une ligne par version publiée du binaire agent
  *    (`agent:release:create`, {@see \App\Services\Agent\Releases\ReleaseCreationService}).
  *    On stocke le `filename` (la donnée stable) — l'`url` du manifest est
- *    une URL absolue calculée à la réponse (décision n° 2 : une URL figée
- *    en DB casserait au premier changement de host/scheme). `is_stable` =
- *    version par défaut des postes sans ring (au plus une ligne à true —
+ *    une URL absolue calculée à la réponse : une URL figée en DB casserait
+ *    au premier changement de host/scheme. `is_stable` =
+ *  version par défaut des postes sans ring (au plus une ligne à true
  *    invariant transactionnel dans le service, pas de contrainte partielle
  *    PG : parité SQLite des tests).
  *  - `agent_release_rings` — ciblage par ring : UN ring = UN WorkstationGroup
- *    existant (salle physique OU parc logique, le pivot 4.11 ne distingue
+ *  existant (salle physique OU parc logique, le pivot ne distingue
  *    pas), version cible par ring. `workstation_group_id` UNIQUE : un groupe
  *    ne pointe qu'une version à la fois ; l'`updated_at` EST la donnée de
- *    récence (décision n° 4 : conflit multi-rings = la ligne la plus
- *    récemment modifiée gagne). FK cascade des deux côtés : supprimer la
+ *    récence : en cas de conflit multi-rings, la ligne la plus récemment
+ *    modifiée gagne. FK cascade des deux côtés : supprimer la
  *    release ou le groupe fait disparaître le ring (le poste retombe sur la
- *    stable — AC3).
+ * stable —).
  *
  * **Idempotence stricte** : `Schema::hasTable()` avant chaque création
  * (iso `2026_06_11_140000_create_agent_report_tables`). Types simples
  * compatibles SQLite tests ; les longueurs varchar ne sont PAS appliquées
  * par SQLite — les domaines fermés (version, hash, filename) sont validés
- * en code par `ReleaseCreationService` (piège n° 9).
+ * en code par `ReleaseCreationService`.
  */
 return new class extends Migration
 {
@@ -62,8 +60,8 @@ return new class extends Migration
                     ->constrained()->cascadeOnDelete();
                 $table->foreignId('agent_release_id')
                     ->constrained('agent_releases')->cascadeOnDelete();
-                // updated_at = donnée de récence (décision n° 4) : la ligne la
-                // plus récemment modifiée gagne en cas de multi-rings.
+                // updated_at = donnée de récence : la ligne la plus récemment
+                // modifiée gagne en cas de multi-rings.
                 $table->timestamps();
             });
         }

@@ -27,7 +27,7 @@ use Tests\TestCase;
 use Tests\Unit\Services\Filesystem\Support\RecordingBackend;
 
 /**
- * Epic 34 → story 60.4 — l'AUDIT D'ÉCART, vu depuis l'orchestrateur.
+ * → — l'AUDIT D'ÉCART, vu depuis l'orchestrateur.
  *
  * Les quatre statuts agrégés survivent (un contrôleur d'environnement les
  * consomme), mais le chemin a changé de nature : on ne compare plus des lignes de
@@ -159,7 +159,7 @@ class NetworkShareDriftTest extends TestCase
 
     /**
      * L'ASSAINISSEMENT : plus une seule ligne de permission dans ce que l'audit
-     * rend. C'est ce que la page de détail affichait depuis l'Epic 34.
+     * rend — là où la page de détail en affichait auparavant.
      */
     #[Test]
     public function the_drift_carries_no_system_vocabulary_at_all(): void

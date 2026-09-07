@@ -27,7 +27,7 @@
         {{ $conformityStats['compliant'] ?? 0 }}
     </x-molecules.stat-tile>
 
-    {{-- Story 16.13bis — compteur X/Y postes migrés SE4 → SE5 (scopé OS/groupe). --}}
+    {{-- Compteur X/Y postes migrés SE4 → SE5 (scopé OS/groupe). --}}
     <x-molecules.stat-tile icon="fa-arrows-rotate" bg="bg-info/10" text="text-info" label="Postes migrés"
         tip="Postes ayant basculé de SE4 vers SE5. Cliquer pour ne montrer qu'eux." :loading="! $statsLoaded"
         clickable :active="$cardFilter === 'migrated'" wire:click="filterByCard('migrated')">
@@ -41,7 +41,7 @@
         {{ $machineStats['without_group'] ?? 0 }}
     </x-molecules.stat-tile>
 
-    {{-- Story 24.7 — « En écart » = drift+error (le statut le plus défavorable
+    {{-- « En écart » = drift+error (le statut le plus défavorable
          est retenu ; Story 27.8 : convergence stricte, plus de dérive tolérée). --}}
     <x-molecules.stat-tile icon="fa-triangle-exclamation" bg="bg-error/10" text="text-error" label="En écart"
         tip="Postes enrôlés en dérive de configuration ou en erreur. Cliquer pour filtrer." :loading="! $statsLoaded"

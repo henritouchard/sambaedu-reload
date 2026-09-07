@@ -21,7 +21,7 @@ use Tests\Traits\CreatesPermissionSchema;
  * Teste la méthode privée `persistPasswordChangedAt(string $login, int $pwdLastSet)`
  * en isolation via réflexion, pour éviter la complexité du mock ldap_bind.
  *
- * Story 14.4 — AC13 / Tâche 3.4
+ * Tâche
  */
 class AuthenticationServicePasswordChangedAtTest extends TestCase
 {
@@ -64,10 +64,6 @@ class AuthenticationServicePasswordChangedAtTest extends TestCase
         return $method->invoke($this->service, $rawValue);
     }
 
-    // =========================================================================
-    // AC13 — cas 1 : pwdLastSet == 0 → password_changed_at reste NULL
-    // =========================================================================
-
     #[Test]
     public function it_sets_null_when_pwdLastSet_is_zero(): void
     {
@@ -83,10 +79,6 @@ class AuthenticationServicePasswordChangedAtTest extends TestCase
         $user->refresh();
         $this->assertNull($user->password_changed_at, 'pwdLastSet=0 doit mettre password_changed_at à NULL');
     }
-
-    // =========================================================================
-    // AC13 — cas 2 : pwdLastSet > 0 (valeur FILETIME valide) → Carbon UTC
-    // =========================================================================
 
     #[Test]
     public function it_converts_filetime_to_carbon_when_pwdLastSet_is_positive(): void
@@ -106,10 +98,6 @@ class AuthenticationServicePasswordChangedAtTest extends TestCase
         $this->assertNotNull($user->password_changed_at);
         $this->assertSame('2022-06-18', $user->password_changed_at->format('Y-m-d'));
     }
-
-    // =========================================================================
-    // AC13 — cas 3 : pwdLastSet == -1 → now() best-effort
-    // =========================================================================
 
     #[Test]
     public function it_sets_approx_now_when_pwdLastSet_is_minus_one(): void
@@ -138,13 +126,6 @@ class AuthenticationServicePasswordChangedAtTest extends TestCase
             'password_changed_at doit être <= now()+1s'
         );
     }
-
-    // =========================================================================
-    // AC13 — cas 4 : Carbon (LdapRecord auto-cast) → e2e Carbon → ~now()
-    // Post-review #1 / #5 : couvre le pipeline complet
-    // Carbon → resolvePwdLastSetRaw → -1 → pwdLastSetToCarbon(-1) → now() → SQL.
-    // Tolérance 5s (le test peut être lent en CI).
-    // =========================================================================
 
     #[Test]
     public function it_sets_approx_now_when_pwdLastSet_is_a_carbon_instance(): void
@@ -181,12 +162,6 @@ class AuthenticationServicePasswordChangedAtTest extends TestCase
         );
     }
 
-    // =========================================================================
-    // AC13 — cas 5 : login inexistant → update retourne 0, pas d'exception
-    // Post-review #7 : assertion plus stricte sur le wording du log « aucune row »
-    // pour discriminer du log « value synced » émis dans les cas nominaux.
-    // =========================================================================
-
     #[Test]
     public function it_silently_handles_nonexistent_login_without_exception(): void
     {
@@ -195,7 +170,7 @@ class AuthenticationServicePasswordChangedAtTest extends TestCase
 
         $this->callPersistPasswordChangedAt('login-inexistant-xyz', 133000000000000000);
 
-        // Post-review #7 : on cible le log debug spécifique « aucune row » émis
+        // On cible le log debug spécifique « aucune row » émis
         // quand l'update retourne 0. Le wording vient de persistPasswordChangedAt
         // dans AuthenticationService (cf. 'AuthService: aucune row SQL affectée…').
         Log::shouldHaveReceived('debug')
@@ -209,14 +184,6 @@ class AuthenticationServicePasswordChangedAtTest extends TestCase
         // Aucun user créé (on vérifie que l'update ne crée pas de user fantôme)
         $this->assertNull(User::query()->where('login', 'login-inexistant-xyz')->first());
     }
-
-    // =========================================================================
-    // AC13 — sécurité : une exception dans l'update ne fait PAS planter le login
-    // Post-review #4 : on FORCE une vraie exception en droppant la colonne
-    // password_changed_at, puis on vérifie que :
-    //   1. persistPasswordChangedAt() n'a PAS levé d'exception
-    //   2. Log::warning a bien été appelé avec un contexte cohérent (login + erreur)
-    // =========================================================================
 
     #[Test]
     public function it_does_not_throw_when_update_raises_exception(): void

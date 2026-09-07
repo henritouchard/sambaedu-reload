@@ -13,11 +13,11 @@ use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * Story 55.1 — `GET /oidc/authorize` : le point d'entrée NAVIGATEUR du SSO.
+ * `GET /oidc/authorize` : le point d'entrée NAVIGATEUR du SSO.
  *
  * L'utilisateur arrive ici depuis l'extension. Si sa session SE5 est active, il
  * repart immédiatement vers la `redirect_uri` du client avec un code — **sans
- * jamais revoir de formulaire de login** (FR17). C'est tout l'objet du SSO.
+ * jamais revoir de formulaire de login**. C'est tout l'objet du SSO.
  *
  * **Pourquoi la route est derrière `sambaedu.auth`** (et pas derrière une
  * vérification maison dans ce contrôleur) : le guard est la définition
@@ -30,7 +30,6 @@ use Symfony\Component\HttpFoundation\Response;
  * standard ; `redirect()->intended()` d'`AuthController` ramène ensuite ici
  * avec TOUS les paramètres (correctif `fullUrl()` du guard — Task 5).
  *
- * ══════════════════════════════════════════════════════════════════════════
  *  DEUX FAMILLES DE REFUS — la distinction EST la sécurité
  *
  *  • NON REDIRIGEABLE (client inconnu/révoqué, `redirect_uri` non déclarée) :
@@ -39,7 +38,6 @@ use Symfony\Component\HttpFoundation\Response;
  *  • REDIRIGEABLE (PKCE, `response_type`, `scope`) : 302 vers la `redirect_uri`
  *    DÉCLARÉE, avec `error` OAuth + `state` — c'est le client légitime qui est
  *    mal configuré, il a droit à une réponse exploitable.
- * ══════════════════════════════════════════════════════════════════════════
  *
  * Chaque branche de refus est journalisée (channel `oidc`) avec son code
  * INTERNE normalisé ; la réponse, elle, ne porte que le code OAuth standard.
@@ -127,7 +125,7 @@ class AuthorizeController extends Controller
 
         // Blade AUTONOME (sans layout `app`) : un chemin d'erreur
         // d'authentification ne doit dépendre d'aucun composant de layout —
-        // leçon de la review 54.3, où un composant de navbar faisait tomber
+        // leçon de la review, où un composant de navbar faisait tomber
         // toutes les pages authentifiées.
         return response()->view('oidc.authorize-error', ['errorCode' => $code], 400);
     }

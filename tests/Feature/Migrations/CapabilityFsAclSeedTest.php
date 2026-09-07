@@ -19,11 +19,11 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 36.1 (AC5) — seed de PREUVE `program_files_browse_denied` + intégration
+ * Seed de PREUVE `program_files_browse_denied` + intégration
  * provider sur données RÉELLES + invariant `FsAclAuthoringGuard`.
  *
- * FICHIER DÉDIÉ (piège #12) : ne touche NI `CapabilitiesSchemaAndSeedTest.php`
- * (36.3 en parallèle y écrit), NI `CapabilitySpecCollisionGuard` (guard
+ * FICHIER DÉDIÉ : ne touche NI `CapabilitiesSchemaAndSeedTest.php`
+ * (un autre chantier y écrit en parallèle), NI `CapabilitySpecCollisionGuard` (guard
  * REGISTRE). La migration de seed est jouée par `RefreshDatabase`.
  */
 class CapabilityFsAclSeedTest extends TestCase
@@ -90,7 +90,7 @@ class CapabilityFsAclSeedTest extends TestCase
         UserGroup::factory()->create(['name' => 'Eleves', 'type' => 'role']);
     }
 
-    // ── Seed : options / défaut / warning ─────────────────────────────────
+    // Seed : options / défaut / warning
 
     #[Test]
     public function seed_creates_the_capability_with_enum_options_default_and_warning(): void
@@ -126,7 +126,7 @@ class CapabilityFsAclSeedTest extends TestCase
         self::assertContains('Domain Users', $trustees);
     }
 
-    // ── Idempotence / réversibilité ───────────────────────────────────────
+    // Idempotence / réversibilité
 
     #[Test]
     public function migration_is_idempotent_and_reversible(): void
@@ -150,7 +150,7 @@ class CapabilityFsAclSeedTest extends TestCase
         self::assertNotNull($this->capabilityRow());
     }
 
-    // ── Intégration provider sur données RÉELLES ──────────────────────────
+    // Intégration provider sur données RÉELLES
 
     #[Test]
     public function value_eleves_emits_two_present_deny_items_for_eleves(): void
@@ -212,7 +212,7 @@ class CapabilityFsAclSeedTest extends TestCase
         Log::shouldHaveReceived('warning')->atLeast()->once();
     }
 
-    // ── Invariant guard sur le catalogue seedé + combo interdit ───────────
+    // Invariant guard sur le catalogue seedé + combo interdit
 
     #[Test]
     public function authoring_guard_passes_on_the_seeded_catalog(): void
@@ -237,7 +237,7 @@ class CapabilityFsAclSeedTest extends TestCase
     #[Test]
     public function authoring_guard_refuses_a_fabricated_forbidden_combo(): void
     {
-        // Combo Q2 fabriqué : deny à héritage descendant sur C:\Windows.
+        // Combo interdit fabriqué : deny à héritage descendant sur C:\Windows.
         $violations = (new FsAclAuthoringGuard())->violations([[
             'capability' => 'rogue',
             'warning' => 'w',

@@ -14,7 +14,6 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 
 /**
- * Story 16.12 — AC1.4.
  *
  * Factory pour `ScriptExecutionLog`. Génère des fixtures riches avec états
  * conditionnels (`failed`, `timeout`, `skipped`, `archived`, etc.).

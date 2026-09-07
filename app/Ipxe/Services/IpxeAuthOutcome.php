@@ -7,7 +7,7 @@ namespace App\Ipxe\Services;
 use App\Models\User;
 
 /**
- * Story 4.10 — DTO retourné par {@see IpxeAuthService::authorize()}.
+ * DTO retourné par {@see IpxeAuthService::authorize}.
  *
  * Immuable. Le caller peut :
  *  - lire `$status` pour décider du flow (HALT / autoriser),

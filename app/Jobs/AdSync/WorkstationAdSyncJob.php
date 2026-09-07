@@ -16,7 +16,7 @@ use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 4.9 — Job unifié pour la synchronisation des Workstation vers l'AD.
+ * Job unifié pour la synchronisation des Workstation vers l'AD.
  *
  * Pattern miroir strict de {@see WorkstationGroupAdSyncJob} :
  *  - Constantes ACTION_*
@@ -26,15 +26,15 @@ use Illuminate\Support\Facades\Log;
  *
  * Actions supportées :
  *  - create : assure l'existence du compte machine AD (via AdMachineManager
- *             samba-tool — D2) puis stocke `ad_guid` PG via `withoutSync`.
- *  - rename : modrdn LDAP préservant objectGUID + netbootGUID (D1, validé VM
- *             2026-05-28). Repose sAMAccountName / dNSHostName / SPN.
+ *             samba-tool) puis stocke `ad_guid` PG via `withoutSync`.
+ *  - rename : modrdn LDAP préservant objectGUID + netbootGUID. Repose
+ *             sAMAccountName / dNSHostName / SPN.
  *  - delete : suppression du compte AD via LdapRecord (idempotent).
- *  - status : pose `userAccountControl` selon mapping D5
+ *  - status : pose `userAccountControl` selon un mapping figé
  *             (active|protected → 4096 ; inactive → 4098 ; autre → throw).
- *  - update : (D#3 review 4.9) action fusionnée rename+status — dispatchée
- *             par l'observer UNIQUEMENT quand `name` et `status` changent
- *             dans le même `save()`. Une seule transaction LDAP, évite la
+ *  - update : action fusionnée rename+status — dispatchée par l'observer
+ *             UNIQUEMENT quand `name` et `status` changent dans le même
+ *             `save()`. Une seule transaction LDAP, évite la
  *             race « status job exécuté avant rename ».
  *
  * Idempotence systématique : chaque handler relit l'état AD et no-op + log
@@ -53,8 +53,7 @@ class WorkstationAdSyncJob implements ShouldQueue
     public const ACTION_STATUS = 'status';
 
     /**
-     * Décision design #3 (Henri 2026-05-28) : action fusionnée rename+status,
-     * dispatchée par l'observer UNIQUEMENT quand `name` ET `status` changent
+     * Action fusionnée rename+status, dispatchée par l'observer UNIQUEMENT quand `name` ET `status` changent
      * dans le même `save()`. Garantit une seule transaction LDAP et évite la
      * race condition « status job exécuté avant rename → findBy(newName) null ».
      */
@@ -72,10 +71,6 @@ class WorkstationAdSyncJob implements ShouldQueue
         public array $params = []
     ) {
     }
-
-    // ========================================================================
-    // FACTORY METHODS
-    // ========================================================================
 
     public static function create(int $workstationId): self
     {
@@ -107,7 +102,7 @@ class WorkstationAdSyncJob implements ShouldQueue
 
     /**
      * Factory action `update` fusionnée (rename + status en une seule
-     * transaction LDAP). Cf. {@see ACTION_UPDATE} et décision design #3.
+     * transaction LDAP). Cf. {@see ACTION_UPDATE}.
      */
     public static function update(int $workstationId, string $oldName, string $newName, string $newStatus): self
     {
@@ -117,10 +112,6 @@ class WorkstationAdSyncJob implements ShouldQueue
             'status' => $newStatus,
         ]);
     }
-
-    // ========================================================================
-    // HANDLER
-    // ========================================================================
 
     public function handle(AdMachineManager $adMachineManager): void
     {
@@ -164,10 +155,6 @@ class WorkstationAdSyncJob implements ShouldQueue
         ]);
     }
 
-    // ========================================================================
-    // ACTION HANDLERS
-    // ========================================================================
-
     private function handleCreate(AdMachineManager $adMachineManager): array
     {
         $ws = $this->findWorkstation();
@@ -193,7 +180,7 @@ class WorkstationAdSyncJob implements ShouldQueue
                 'workstation_id' => $ws->id,
             ]);
         } else {
-            // D2 : create reste via AdMachineManager (samba-tool — gère password
+            // Le create reste via AdMachineManager (samba-tool — gère password
             // random + UAC initiaux + idempotence "already exists").
             $created = $adMachineManager->check($name);
             if (!$created) {
@@ -236,7 +223,7 @@ class WorkstationAdSyncJob implements ShouldQueue
     /**
      * Renomme le compte AD via modrdn LDAP (préserve objectGUID + netbootGUID).
      *
-     * Auto-fix #7 (review 4.9) : si `resolveDomain()` retourne `''`
+     * Si `resolveDomain()` retourne `''`
      * (config `sambaedu.domain` vide — typiquement dev/CI fraîche), on émet
      * un warning explicite et on NE pose PAS `dnsHostName` ni
      * `servicePrincipalName` (qui auraient été tronqués/cassés silencieusement
@@ -294,7 +281,7 @@ class WorkstationAdSyncJob implements ShouldQueue
 
         $domain = $this->resolveDomain();
 
-        // D1 — modrdn LDAP (préserve objectGUID + netbootGUID, validé VM 2026-05-28).
+        // modrdn LDAP : préserve objectGUID + netbootGUID.
         $machine->rename('CN=' . $newName);
 
         // Repose les attributs dérivés du CN (samba-tool computer rename les
@@ -307,7 +294,7 @@ class WorkstationAdSyncJob implements ShouldQueue
                 'HOST/' . $newName . '.' . $domain,
             ];
         } else {
-            // Auto-fix #7 : pas de fallback "cassé" — skip + warning.
+            // Pas de fallback "cassé" — skip + warning.
             Log::warning('[WorkstationAdSyncJob] handleRename: SAMBAEDU_DOMAIN vide, dnsHostName/SPN non posés', [
                 'old' => $oldName,
                 'new' => $newName,
@@ -327,7 +314,7 @@ class WorkstationAdSyncJob implements ShouldQueue
     }
 
     /**
-     * Auto-fix #9 (review 4.9) : priorité `ad_guid` (identifiant stable
+     * Priorité à `ad_guid` (identifiant stable
      * survivant à un rename hors-Sambaedu) sur `cn` (mutable). L'observer
      * passe `ad_guid` dans `deleting()`. Fallback `findBy('cn', $name)` si
      * guid absent (workstations PG legacy non encore back-fillées).
@@ -399,7 +386,7 @@ class WorkstationAdSyncJob implements ShouldQueue
             return ['success' => true];
         }
 
-        // Auto-fix #4 (review 4.9) : priorité à la valeur fraîche relue en
+        // Priorité à la valeur fraîche relue en
         // DB sur la valeur figée au dispatch. Si un status a changé pendant
         // un backoff, on applique la valeur courante (convergence).
         $status = (string) ($ws->status ?: ($this->params['status'] ?? ''));
@@ -408,7 +395,7 @@ class WorkstationAdSyncJob implements ShouldQueue
             return ['success' => false, 'error' => 'Workstation sans nom'];
         }
 
-        // D5 — mapping figé status PG → UAC AD.
+        // Mapping figé status PG → UAC AD.
         $uac = match ($status) {
             'active', 'protected' => self::UAC_WORKSTATION_ACTIVE,
             'inactive' => self::UAC_WORKSTATION_INACTIVE,
@@ -449,8 +436,7 @@ class WorkstationAdSyncJob implements ShouldQueue
     }
 
     /**
-     * Décision design #3 (Henri 2026-05-28) : opération fusionnée
-     * rename + status en une seule transaction LDAP.
+     * Opération fusionnée rename + status en une seule transaction LDAP.
      *
      * Idempotence : si `findBy('cn', $oldName)` retourne null on log info et
      * on return success (le rename a déjà été appliqué hors-Sambaedu, ou
@@ -469,7 +455,7 @@ class WorkstationAdSyncJob implements ShouldQueue
             return ['success' => false, 'error' => 'Paramètres old_name, new_name et status requis'];
         }
 
-        // D5 — mapping figé (parité handleStatus).
+        // Mapping figé (parité handleStatus).
         $uac = match ($status) {
             'active', 'protected' => self::UAC_WORKSTATION_ACTIVE,
             'inactive' => self::UAC_WORKSTATION_INACTIVE,
@@ -507,7 +493,7 @@ class WorkstationAdSyncJob implements ShouldQueue
         if (strcasecmp((string) $machine->getFirstAttribute('cn'), $newName) !== 0) {
             $domain = $this->resolveDomain();
 
-            // D1 — modrdn LDAP.
+            // modrdn LDAP.
             $machine->rename('CN=' . $newName);
 
             $machine->samaccountname = strtoupper($newName) . '$';
@@ -541,10 +527,6 @@ class WorkstationAdSyncJob implements ShouldQueue
 
         return ['success' => true];
     }
-
-    // ========================================================================
-    // HELPERS
-    // ========================================================================
 
     private function findWorkstation(): ?Workstation
     {

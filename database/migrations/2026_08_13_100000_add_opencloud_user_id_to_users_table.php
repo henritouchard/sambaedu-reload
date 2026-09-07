@@ -9,12 +9,10 @@ use Illuminate\Support\Facades\Schema;
 /**
  * LE CACHE DE RÉSOLUTION D'IDENTITÉ OPENCLOUD, et son index d'unicité.
  *
- * ---------------------------------------------------------------------------
  * **C'EST UN CACHE, PAS UNE AUTORITÉ.** La vérité de l'identité OpenCloud est
  * chez OpenCloud. Cette colonne évite de la redemander à chaque geste ; elle est
  * nullable, reconstructible, et sa perte ne coûte que des appels réseau — jamais
  * un accès.
- * ---------------------------------------------------------------------------
  *
  * **POURQUOI UNE COLONNE DE PLUS, ET PAS CELLE DE L'AUTRE PRODUIT.** Les deux
  * instances sont des annuaires DIFFÉRENTS : le même professeur y porte deux

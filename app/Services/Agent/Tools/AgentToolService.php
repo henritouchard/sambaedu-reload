@@ -11,8 +11,7 @@ use Illuminate\Support\Str;
 use ZipArchive;
 
 /**
- * Story 25.6 — Cycle de vie du catalogue d'outils agent côté serveur (D2, D5,
- * AC1-AC3).
+ * Cycle de vie du catalogue d'outils agent côté serveur.
  *
  * SEUL écrivain de la table `agent_tools` (pattern {@see \App\Services\Agent\Releases\ReleaseCreationService}) :
  * l'UI Livewire et toute autre façade passent par lui — jamais de `save()`
@@ -25,20 +24,20 @@ use ZipArchive;
  *    jamais le nom client brut), STRUCTURE du ZIP (`Rainmeter.exe` + `Skins/`
  *    à la racine = portable réel attendu par l'agent). Le SHA-256 et la taille
  *    sont CALCULÉS SERVEUR (`hash_file`, `filesize` — jamais un hash déclaré
- *    par le client). Mono-version (D5) : un nouvel upload du même `key`
+ *    par le client). Mono-version : un nouvel upload du même `key`
  *    REMPLACE l'archive active (ancien fichier purgé). Tout échec =
  *    {@see AgentToolException}, AUCUNE écriture DB, AUCUN fichier orphelin.
- *  - {@see toggle()} — bascule `enabled` (toggle GLOBAL — D3). Activé →
+ *  - {@see toggle()} — bascule `enabled`, GLOBALE. Activé →
  *    l'outil est exposé actif dans le manifest et déployé ; désactivé →
- *    no-op côté agent, SANS désinstaller (D4).
+ *    no-op côté agent, SANS désinstaller.
  *
- * NFR7 (critère Keycloak) : aucune dépendance AD/LDAP/APCu ici — pose d'un
+ * Critère Keycloak : aucune dépendance AD/LDAP/APCu ici — pose d'un
  * asset vérifié + bascule d'un drapeau, rien d'autre. Aucune écriture hors
  * `agent_tools`.
  */
 class AgentToolService
 {
-    /** Clé fonctionnelle du seul outil du MVP (généralise 27.1bis). */
+    /** Clé fonctionnelle du seul outil du MVP. */
     public const RAINMETER_KEY = 'rainmeter';
 
     /**
@@ -60,7 +59,7 @@ class AgentToolService
     private const REQUIRED_SKINS_DIR = 'Skins/';
 
     /**
-     * Ingère le portable Rainmeter uploadé pour la clé `rainmeter` (D5).
+     * Ingère le portable Rainmeter uploadé pour la clé `rainmeter`.
      * Le `filename` est dérivé de `$version` (anti-traversal) ; le SHA-256 et
      * la taille sont calculés SERVEUR sur le fichier réellement stocké.
      *
@@ -122,7 +121,7 @@ class AgentToolService
         $this->assertPortableStructure($file->getRealPath() ?: $file->getPathname());
 
         // 6. Stockage confiné sous tools_path + SHA-256/taille CALCULÉS SERVEUR
-        //    sur le fichier réellement écrit. Mono-version (D5) : on remplace
+        //    sur le fichier réellement écrit. Mono-version : on remplace
         //    l'archive active de la même key.
         $toolsPath = $this->toolsPath();
         if (! is_dir($toolsPath) && ! @mkdir($toolsPath, 0o755, true) && ! is_dir($toolsPath)) {
@@ -210,7 +209,7 @@ class AgentToolService
     }
 
     /**
-     * Story 27.17 — Enregistre un portable Rainmeter EMBARQUÉ dans le dépôt
+     * Enregistre un portable Rainmeter EMBARQUÉ dans le dépôt
      * (chemin local `$sourcePath`, ex. `resources/agent/tools/sambaedu-rainmeter-0.1.zip`)
      * via le SEUL écrivain, SANS passer par un `UploadedFile`. Idempotent :
      * si la clé `rainmeter` existe DÉJÀ (peu importe sa version), on ne touche à
@@ -328,7 +327,7 @@ class AgentToolService
     }
 
     /**
-     * Bascule le drapeau `enabled` (toggle GLOBAL — D3). SEUL écrivain.
+     * Bascule le drapeau `enabled`, GLOBALEMENT. SEUL écrivain.
      */
     public function toggle(AgentTool $tool, bool $enabled): AgentTool
     {
@@ -443,7 +442,7 @@ class AgentToolService
     }
 
     /**
-     * Refus AC2 : log warning `agent.tool.rejected` (raison machine + détail,
+     * Refus : log warning `agent.tool.rejected` (raison machine + détail,
      * chemins disque inclus — réservé au log serveur) puis exception, AUCUNE
      * écriture DB, aucun orphelin. Le `$message` détaillé n'est PAS destiné au
      * toast UI (P6) : la façade Livewire n'expose que `reason`, le détail reste

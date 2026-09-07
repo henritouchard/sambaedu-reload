@@ -11,7 +11,7 @@ use Tests\TestCase;
 use Tests\Traits\MocksAdminUser;
 
 /**
- * Tests TTL + purge + signature pour le listing post-bulk-reset (story 2.6, AC 9).
+ * Tests TTL + purge + signature pour le listing post-bulk-reset.
  *
  * Couvre :
  *   - stockage hors session PHP (cache Redis simulé ici par cache array en test)

@@ -123,9 +123,6 @@ class SE4FSApiToken extends Model
         return $this->is_active && !$this->isExpired();
     }
 
-    /**
-     * Valide un token webhook
-     */
     public function validateWebhookToken(string $providedToken): bool
     {
         $providedHash = hash('sha256', $providedToken);

@@ -12,22 +12,21 @@ use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
- * Story 60.5 — LA VOIE DE PEUPLEMENT de l'arbre NEUF.
+ * LA VOIE DE PEUPLEMENT de l'arbre NEUF.
  *
  * La création d'un groupe matérialise son arbre ; mais une instance en place a
  * déjà ses classes, créées bien avant que la recette existe. Sans cette commande,
  * l'arbre neuf ne se peuplerait qu'au fil des créations à venir, et la comparaison
- * des deux arbres — la raison d'être de la story — serait impossible à mener sur un
+ * des deux arbres — la raison d'être de cette commande — serait impossible à mener sur un
  * parc réel.
  *
- * ---------------------------------------------------------------------------
  * **DEUX COMMANDES, DEUX ARBRES — à ne jamais fusionner.**
  *
  * `shares:resync-class` reste l'outil de l'arbre HISTORIQUE, le seul réellement
  * servi aux établissements. Celle-ci peuple l'arbre NEUF, celui qu'on compare.
  * Elles écrivent dans des zones disjointes, avec des autorités différentes, et
  * l'une ne doit ni appeler l'autre ni la remplacer. Le jour où l'arbre servi
- * basculera, ce sera une décision explicite — une story de migration avec aperçu
+ * basculera, ce sera une décision explicite — une migration avec aperçu
  * avant exécution — pas un effet de bord de cette commande.
  *
  * **Exécution DIRECTE, et c'est le régime des commandes.** Une commande est déjà

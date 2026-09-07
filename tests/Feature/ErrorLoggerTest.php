@@ -39,10 +39,10 @@ class ErrorLoggerTest extends TestCase
         parent::tearDown();
     }
 
-    // ─── Tests unitaires ErrorLoggerService ───────────────────────────────
+    // Tests unitaires ErrorLoggerService
 
     /**
-     * AC1/AC2 — Le service insère correctement en DB avec source et message.
+     * Le service insère correctement en DB avec source et message.
      */
     public function test_service_logs_error_in_database(): void
     {
@@ -56,7 +56,7 @@ class ErrorLoggerTest extends TestCase
     }
 
     /**
-     * AC1/AC2 — Le service ne throw pas si la DB est inaccessible (silencieux).
+     * Le service ne throw pas si la DB est inaccessible (silencieux).
      */
     public function test_service_does_not_throw_on_db_failure(): void
     {
@@ -80,10 +80,10 @@ class ErrorLoggerTest extends TestCase
         });
     }
 
-    // ─── Tests Feature : Handler Laravel ──────────────────────────────────
+    // Tests Feature : Handler Laravel
 
     /**
-     * AC2 — Le Handler Laravel logge les exceptions via ErrorLoggerService.
+     * Le Handler Laravel logge les exceptions via ErrorLoggerService.
      *
      * On déclenche une vraie exception via report() pour exercer le chemin
      * Handler::reportable() → ErrorLoggerService::log().
@@ -101,10 +101,10 @@ class ErrorLoggerTest extends TestCase
         ]);
     }
 
-    // ─── Tests Feature : Dashboard admin ──────────────────────────────────
+    // Tests Feature : Dashboard admin
     //
     // Error Logger est désormais l'onglet « Logs » de la page
-    // /admin/settings/system-status (décision Henri 2026-07-17). Il capte aussi
+    // /admin/settings/system-status. Il capte aussi
     // les exceptions Laravel (diagnostic runtime SE5), donc PAS dans « Migration ».
     // La feature est embarquée : `/admin/error-logger` redirige vers cet onglet
     // et le contenu se teste directement sur le composant Livewire embarqué.
@@ -122,7 +122,7 @@ class ErrorLoggerTest extends TestCase
     }
 
     /**
-     * AC5 — Utilisateur non-admin → redirigé (auth du groupe /admin).
+     * Utilisateur non-admin → redirigé (auth du groupe /admin).
      */
     public function test_non_admin_is_redirected(): void
     {
@@ -132,7 +132,7 @@ class ErrorLoggerTest extends TestCase
     }
 
     /**
-     * AC3 — Le composant embarqué affiche les erreurs loggées.
+     * Le composant embarqué affiche les erreurs loggées.
      */
     public function test_page_displays_error_log_data(): void
     {
@@ -149,7 +149,7 @@ class ErrorLoggerTest extends TestCase
     }
 
     /**
-     * AC4 — Le filtre par source retourne les bonnes entrées.
+     * Le filtre par source retourne les bonnes entrées.
      */
     public function test_filter_by_source_returns_matching_rows_only(): void
     {

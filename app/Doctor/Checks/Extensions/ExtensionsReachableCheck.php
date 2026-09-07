@@ -13,13 +13,12 @@ use App\Services\Extensions\ExtensionHealthService;
 use Throwable;
 
 /**
- * Story 56.5 (AC3, FR34) — Les backends des extensions `app` installées
+ * Les backends des extensions `app` installées
  * répondent-ils, et l'état persisté est-il encore crédible ?
  *
  * Auto-découvert par `sambaedu:doctor` (scan de `app/Doctor/Checks/<Tag>/`) :
  * aucun registre à modifier. Filtrable par `--tag=extensions`, `--json` gratuit.
  *
- * ══════════════════════════════════════════════════════════════════════════
  *  READ-ONLY STRICT — ce check n'écrit RIEN
  *
  *  Il SONDE en direct (comme {@see \App\Doctor\Checks\ControlHub\ControlHubReachableCheck}
@@ -28,16 +27,14 @@ use Throwable;
  *  « aucun side effect » : la persistance appartient à `ext:health:check` et au
  *  bouton « Sonder maintenant » de la fiche. Un test dédié vérifie que les
  *  colonnes sont inchangées après `run()`.
- * ══════════════════════════════════════════════════════════════════════════
  *
- * Le verdict porte sur un CONCERN, pas sur une extension (décision n° 4 de la
- * story) : un seul check agrégé, dont le DÉTAIL nomme les clés fautives. Le
+ * Le verdict porte sur un CONCERN, pas sur une extension : un seul check agrégé,
+ * dont le DÉTAIL nomme les clés fautives. Le
  * par-extension vit sur la fiche.
  *
  *  - `error` : au moins un backend ne répond pas. Le détail nomme les clés, le
  *    `fix` donne la commande de diagnostic — il ne la LANCE pas : on ne
- *    redémarre jamais un service tout seul (pas d'auto-réparation, décision de
- *    périmètre de la story).
+ *    redémarre jamais un service tout seul (pas d'auto-réparation).
  *  - `warn` : tout répond, mais l'état PERSISTÉ est périmé — le scheduler est
  *    probablement arrêté. C'est un diagnostic à part entière : la tuile, elle,
  *    ne dit rien dans ce cas (un scheduler mort n'est pas une extension morte).
@@ -92,7 +89,7 @@ final class ExtensionsReachableCheck implements EnvironmentCheck
         $notProbed = [];
         $lastIncident = null;
 
-        // ⚠️ BUDGET DE TEMPS (review 56.5 #1) — ce check tourne DANS une requête
+        // ⚠️ BUDGET DE TEMPS — ce check tourne DANS une requête
         // HTTP, aux côtés des autres checks réseau de `/admin/settings/system-status`.
         // Les sondes sont séquentielles et un backend mort coûte
         // `connect_timeout + timeout` : sans borne, quelques extensions mortes
@@ -114,7 +111,7 @@ final class ExtensionsReachableCheck implements EnvironmentCheck
             }
 
             // ⚠️ MÊME `probe()` que la commande planifiée : « joignable » n'a
-            // qu'un seul énoncé dans le projet (leçon review 56.1 #3). Un
+            // qu'un seul énoncé dans le projet. Un
             // doctor qui aurait sa propre définition pourrait contredire la
             // tuile — le pire des diagnostics.
             if (! $this->health->probe($app)['reachable']) {

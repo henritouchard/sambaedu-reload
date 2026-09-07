@@ -24,9 +24,9 @@ use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
 
 /**
- * Story 36.4 (AC5/D6) — policy dédiée `folderrule.*` (refnum + ComputerAdmin +
- * superadmin auto) + délégation SCOPÉE par parc (anti-piège Gate global non
- * scopé, piège #9).
+ * Policy dédiée `folderrule.*` (refnum + ComputerAdmin +
+ * superadmin auto) + délégation SCOPÉE par parc (le Gate global n'est jamais
+ * scopé).
  */
 class FolderAccessRulePolicyTest extends TestCase
 {
@@ -83,7 +83,7 @@ class FolderAccessRulePolicyTest extends TestCase
         self::assertFalse(Gate::allows('manage-folderrule'));
     }
 
-    // ── Délégation scopée par parc (piège #9) ─────────────────────────────
+    // Délégation scopée par parc
 
     #[Test]
     public function a_delegate_scoped_to_parc_a_cannot_assign_parc_b(): void
@@ -121,7 +121,7 @@ class FolderAccessRulePolicyTest extends TestCase
     #[Test]
     public function a_delegate_scoped_to_a_parc_reaches_viewAny_and_manages_its_rule(): void
     {
-        // Correction review #1 : la délégation scopée est ATTEIGNABLE via l'app —
+        // La délégation scopée est ATTEIGNABLE via l'app —
         // un délégué SANS droit global mais avec `folderrule.manage` sur le parc A
         // passe `viewAny-folderrule` ET gère une règle assignée au parc A.
         $user = User::create(['login' => 'deleg2-' . uniqid(), 'role' => 'autre', 'is_active' => true]);

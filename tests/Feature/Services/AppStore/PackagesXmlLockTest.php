@@ -15,12 +15,12 @@ use Tests\TestCase;
 use Tests\Traits\CreatesAppStoreSchema;
 
 /**
- * Story 8.2.7 (AC8) — Sérialisation de la régénération packages.xml.
+ * Sérialisation de la régénération packages.xml.
  *
  * `updateLocalPackagesXml()` enveloppe `regenerate()` + génération du bundle
  * dans un `Cache::lock(...)->block(...)`. On vérifie ici que :
  *  - le flow nominal n'est PAS cassé par l'introduction du lock (le driver
- *    cache de test `array` supporte bien lock()/block()) ;
+ *  cache de test `array` supporte bien lock()/block()) ;
  *  - le lock est bien relâché après l'appel (réacquisition immédiate possible)
  *    — preuve qu'aucun lock zombi ne reste accroché.
  */
@@ -77,7 +77,7 @@ class PackagesXmlLockTest extends TestCase
         Log::shouldReceive('channel')->andReturnSelf();
         Log::shouldReceive('error')->andReturnNull();
 
-        // D4 résilience : un échec du bundle ne casse PAS l'ajout au catalogue.
+        // Résilience : un échec du bundle ne casse PAS l'ajout au catalogue.
         $xmlService = Mockery::mock(PackagesXmlService::class);
         $xmlService->shouldReceive('regenerate')->once();
 

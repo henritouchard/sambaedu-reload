@@ -5,7 +5,7 @@ use Livewire\Attributes\On;
 use Livewire\Component;
 
 /**
- * Bandeau persistant /users — story 2.6 (AC 9).
+ * Bandeau persistant /users.
  *
  * Affiché uniquement tant qu'un listing actif existe côté cache pour
  * l'opérateur courant. Poll toutes les 30 s pour mettre à jour le TTL

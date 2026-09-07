@@ -7,13 +7,13 @@ namespace App\OidcWitness\Support;
 use RuntimeException;
 
 /**
- * Story 55.3 — La découverte du fournisseur, vue d'un client honnête.
+ * La découverte du fournisseur, vue d'un client honnête.
  *
  * Le témoin ne connaît qu'une chose du fournisseur : son `issuer`. Tout le reste
  * — l'URL d'autorisation, celle du token endpoint, celle du JWKS — se DÉCOUVRE
  * par HTTP à `{issuer}/.well-known/openid-configuration`, exactement comme le
  * ferait une extension tierce. Aucun chemin `/oidc/...` n'est écrit en dur ici :
- * le jour où le fournisseur bougerait (ou serait remplacé par Keycloak, NFR12),
+ * le jour où le fournisseur bougerait (ou serait remplacé par Keycloak),
  * le témoin suivrait sans être modifié.
  *
  * **Contrôle du contrat, pas seulement de la disponibilité** : l'`issuer`
@@ -24,7 +24,7 @@ use RuntimeException;
  *
  * **Mise en cache d'instance seulement** (mémoïsation par objet) : pas de cache
  * partagé, pas de TTL à invalider. Une page de démonstration fait deux appels ;
- * un vrai SDK (Epic 58) portera une vraie politique de cache.
+ * Un vrai SDK portera une vraie politique de cache.
  */
 class WitnessProviderMetadata
 {

@@ -32,26 +32,27 @@ use Tests\Support\WpkgSchemaBootstrapper;
 use Tests\TestCase;
 
 /**
- * Story 31.3 — Approvisionnement d'une app ordonnée depuis le dépôt SambaEdu (FR6, gap D4).
+ * Approvisionnement d'une app ordonnée depuis le dépôt SambaEdu.
  *
  * Un ORDRE d'install amont (`controlhub_contract_items` `type='applications'`, non-`absent`)
  * vers un `app_id` ABSENT de l'inventaire local est MATÉRIALISÉ en `Application` (status
  * `Available`, recette WPKG `xml_url`/`xml_sha`) depuis la RÉFÉRENCE DE SOURCE par-app
- * portée par le catalogue amont (`controlhub_contract_catalog_apps`, « Option B », D1) —
+ * portée par le catalogue amont (`controlhub_contract_catalog_apps`) —
  * SANS install serveur, SANS `Depot`/`DepotApplication`/`DepotSyncService`.
  *
- * Couvre : matérialisation (AC1), honneur via 31.2 (AC2), idempotence/non-écrasement (AC3),
- * standalone + DepotSyncService jamais appelé (AC4), ordre sans source = log sans crash +
- * résilience (AC6), déclenchement par le listener `ControlHubContractChanged`.
- * (AC5 — ingestion source idempotente — vit dans {@see ControlHubContractIngestionTest}.
- *  AC7 — contrat agent figé — vit dans sa propre suite : aucun contrat dans ses fixtures.)
+ * Couvre : matérialisation, honneur via, idempotence/non-écrasement,
+ * standalone + DepotSyncService jamais appelé, ordre sans source = log sans crash +
+ * résilience, déclenchement par le listener `ControlHubContractChanged`.
+ * (ingestion source idempotente — vit dans {@see ControlHubContractIngestionTest}.
+ * Contrat agent figé — vit dans sa propre suite : aucun contrat dans ses fixtures.)
  *
  * Tests HÔTE (php8.4 + pdo_sqlite). Harnais {@see WpkgSchemaBootstrapper} (sans
  * `RefreshDatabase` — offline, aucune synchro AD). SQLite n'applique pas varchar/enum PG →
  * on teste des DÉCISIONS (présence/absence/status/count), jamais des bornes de colonne ; on
  * matche sur `app_id` (string).
  *
- * ⚠️ GARDE-FOU R3 : aucun « central » ; vocabulaire « amont » / `Upstream` / `ControlHub*`.
+ * ⚠️ RÈGLE DE NOMMAGE : aucun identifiant livré ne contient « central » ;
+ * vocabulaire « amont » / `Upstream` / `ControlHub*`.
  */
 class UpstreamOrderProvisioningTest extends TestCase
 {
@@ -74,7 +75,7 @@ class UpstreamOrderProvisioningTest extends TestCase
         parent::tearDown();
     }
 
-    // ── AC1 — matérialisation depuis la source ───────────────────────────────
+    // — matérialisation depuis la source
 
     #[Test]
     public function an_ordered_app_absent_locally_is_materialized_from_its_source(): void
@@ -83,7 +84,7 @@ class UpstreamOrderProvisioningTest extends TestCase
         $this->orderInstance($contract, 'firefox');
         $this->catalogWithSource($contract, 'firefox', 'Mozilla Firefox', 'https://depot.example/firefox.xml', 'sha-firefox');
 
-        // « Option B » (D1) — la matérialisation est DIRECTE : même dans un chemin où une
+        // La matérialisation est DIRECTE : même dans un chemin où une
         // app est RÉELLEMENT matérialisée, aucun pipeline de dépôt n'est sollicité.
         $depotSpy = $this->spy(DepotSyncService::class);
 
@@ -100,7 +101,7 @@ class UpstreamOrderProvisioningTest extends TestCase
         self::assertSame(ApplicationStatus::Available, $app->status);
         self::assertSame(1, $result->provisioned);
 
-        // AC4 (garde-fou Option B) — prouvé DANS le chemin de matérialisation réel :
+        // Prouvé DANS le chemin de matérialisation réel :
         // DepotSyncService n'est jamais appelé même quand une app est effectivement créée.
         $depotSpy->shouldNotHaveReceived('syncDepot');
         $depotSpy->shouldNotHaveReceived('syncAllDepots');
@@ -110,7 +111,7 @@ class UpstreamOrderProvisioningTest extends TestCase
     public function a_label_targeted_order_is_also_materialized_instance_wide(): void
     {
         // L'inventaire est instance-wide : la matérialisation ne dépend pas du ciblage
-        // par poste (c'est 31.2 qui projette par cible).
+        // par poste (c'est qui projette par cible).
         $contract = ControlHubContract::factory()->create();
         $this->orderLabel($contract, 'gimp', 'salle-arts');
         $this->catalogWithSource($contract, 'gimp', 'GIMP', 'https://depot.example/gimp.xml', 'sha-gimp');
@@ -120,7 +121,7 @@ class UpstreamOrderProvisioningTest extends TestCase
         self::assertTrue(Application::query()->where('app_id', 'gimp')->exists());
     }
 
-    // ── AC2 — l'ordre est pleinement honoré via 31.2 (plus de skip+warn) ─────
+    // — l'ordre est pleinement honoré via (plus de skip+warn)
 
     #[Test]
     public function once_materialized_the_ordered_app_is_emitted_in_the_desired_state(): void
@@ -131,17 +132,17 @@ class UpstreamOrderProvisioningTest extends TestCase
 
         $ws = Workstation::create(['name' => 'PC31-3-A', 'status' => 'active']);
 
-        // Avant matérialisation : l'ordre 31.2 retombe sur skip+warn (rien à hydrater).
+        // Avant matérialisation : l'ordre retombe sur skip+warn (rien à hydrater).
         self::assertSame([], $this->appIdsOf($this->provider()->itemsFor($this->ctx($ws))));
 
         // Approvisionnement → la ligne Application existe désormais.
         $this->provisioner()->provision();
 
-        // L'hydratation 27.5 trouve la ligne : l'app figure dans le désiré (machine).
+        // L'hydratation trouve la ligne : l'app figure dans le désiré (machine).
         self::assertSame(['firefox'], $this->appIdsOf($this->provider()->itemsFor($this->ctx($ws))));
     }
 
-    // ── Pose serveur : sans elle, l'ordre n'atteint jamais le poste ──────────
+    // Pose serveur : sans elle, l'ordre n'atteint jamais le poste
 
     /**
      * Le catalogue projeté au poste ne contient que les applications INSTALLÉES sur
@@ -239,7 +240,7 @@ class UpstreamOrderProvisioningTest extends TestCase
         self::assertSame(0, $result->installDispatched);
     }
 
-    // ── AC3 — idempotence / non-écrasement ───────────────────────────────────
+    // — idempotence / non-écrasement
 
     /**
      * Un paquet republié en amont change d'empreinte. Sans réalignement, la ligne
@@ -338,7 +339,7 @@ class UpstreamOrderProvisioningTest extends TestCase
         self::assertSame(1, Application::query()->where('app_id', 'firefox')->count());
     }
 
-    // ── AC4 — standalone + DepotSyncService JAMAIS appelé ────────────────────
+    // — standalone + DepotSyncService JAMAIS appelé
 
     #[Test]
     public function without_an_active_contract_nothing_is_provisioned_and_depot_sync_is_never_called(): void
@@ -400,7 +401,7 @@ class UpstreamOrderProvisioningTest extends TestCase
         self::assertFalse(Application::query()->where('app_id', 'firefox')->exists());
     }
 
-    // ── AC6 — ordre sans source = log sans crash + résilience par app ────────
+    // — ordre sans source = log sans crash + résilience par app
 
     #[Test]
     public function an_order_without_a_catalog_entry_is_skipped_and_logged(): void
@@ -498,7 +499,7 @@ class UpstreamOrderProvisioningTest extends TestCase
 
         $result = $this->provisioner()->provision();
 
-        // Résilience par app (AC6) : l'échec de `boom` n'empêche PAS `firefox`.
+        // Résilience par app : l'échec de `boom` n'empêche PAS `firefox`.
         self::assertSame(1, $result->provisioned);
         self::assertSame(1, $result->failed);
         self::assertNotEmpty($result->errors);
@@ -512,7 +513,7 @@ class UpstreamOrderProvisioningTest extends TestCase
             ->once();
     }
 
-    // ── Déclenchement par le listener ControlHubContractChanged ──────────────
+    // Déclenchement par le listener ControlHubContractChanged
 
     #[Test]
     public function the_listener_provisions_on_contract_change(): void
@@ -532,7 +533,7 @@ class UpstreamOrderProvisioningTest extends TestCase
         );
     }
 
-    // ── Commande artisan re-jouable ──────────────────────────────────────────
+    // Commande artisan re-jouable
 
     #[Test]
     public function artisan_command_provisions_when_a_contract_is_active(): void
@@ -574,7 +575,7 @@ class UpstreamOrderProvisioningTest extends TestCase
         $this->artisan('controlhub:provision-ordered-apps')->assertExitCode(1);
     }
 
-    // ── R3 — aucun identifiant « central » dans les classes 31.3 ─────────────
+    // Aucun identifiant « central » dans les classes
 
     #[Test]
     public function r3_no_central_identifier_in_provisioning_classes(): void
@@ -602,7 +603,7 @@ class UpstreamOrderProvisioningTest extends TestCase
         }
     }
 
-    // ── Helpers ──────────────────────────────────────────────────────────────
+    // Helpers
 
     private function provisioner(): OrderedApplicationProvisioner
     {

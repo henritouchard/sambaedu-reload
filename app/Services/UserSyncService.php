@@ -86,7 +86,7 @@ class UserSyncService
             'updated' => 0,
             'skipped' => 0,
             'errors' => 0,
-            // Story 49.3 (AC1/AC6) — comptes réactivés par le miroir `is_active`
+            // Comptes réactivés par le miroir `is_active`
             // (compte AD réapparu / réactivé : false → true sur la branche update).
             'reactivated' => 0,
             'admin_granted' => false,
@@ -95,12 +95,12 @@ class UserSyncService
             'etab_ou_tree' => 0,
             'etab_member_of' => 0,
             'etab_excluded' => 0,
-            // Story 49.3 (AC2) — santé du balayage : sans ces deux compteurs la
-            // garde anti-désactivation en masse (AC3) est AVEUGLE.
+            // Santé du balayage : sans ces deux compteurs la
+            // garde anti-désactivation en masse est AVEUGLE.
             'fetch_groups_failed' => 0,
             'main_groups_found' => 0,
-            // Story 49.3 (AC2) — identifiants PRÉSENTS au balayage (les deux
-            // familles, cf. D6 : `ad_guid` d'abord, `login` en repli).
+            // Identifiants PRÉSENTS au balayage, dans les deux
+            // familles : `ad_guid` d'abord, `login` en repli.
             'present_guids' => [],
             'present_logins' => [],
             'delta_mode' => $deltaMode,
@@ -115,7 +115,7 @@ class UserSyncService
             // S'assurer que les permissions et rôles Spatie existent
             $this->ensurePermissionsExist($log);
 
-            // Story 7.2 (AC4) — Rapatriement non-destructif des profils LDAP
+            // Rapatriement non-destructif des profils LDAP
             // custom de la branche `rights_rdn`. Crée les rôles personnalisés
             // (ex. "Animateur CDI") côté SER s'ils n'existent pas. Jamais
             // destructif sur les rôles existants. En cas d'erreur LDAP (ex.
@@ -209,7 +209,7 @@ class UserSyncService
     /**
      * S'assure que toutes les permissions et rôles Spatie existent en base
      *
-     * Story 7.2 (AC2) : NON-DESTRUCTIF.
+     * NON-DESTRUCTIF.
      *
      * Cette méthode garantit la simple **existence** des tables :
      *  - Les 19 permissions `SambaPermission` sont créées via `findOrCreate`.
@@ -243,7 +243,7 @@ class UserSyncService
             $role = Role::firstOrCreate(
                 ['name' => $sambaRole->value, 'guard_name' => 'web']
             );
-            // Story 7.2 — AC2 : on attache les permissions SEULEMENT si le rôle
+            // On attache les permissions SEULEMENT si le rôle
             // vient d'être créé. Sinon, préserver la configuration existante
             // (édition admin via UI ou rapatriement LDAP custom).
             if ($role->wasRecentlyCreated) {
@@ -260,13 +260,13 @@ class UserSyncService
     }
 
     /**
-     * Balayage fetch-only, SANS AUCUNE ÉCRITURE (Story 49.3 — AC2).
+     * Balayage fetch-only, SANS AUCUNE ÉCRITURE.
      *
      * Sert le `--dry-run` de `users:reconcile-departures` : l'admin doit pouvoir
      * lire le plan de désactivation AVANT d'assumer un `--force`, sans qu'un
      * seul upsert ne parte. C'est le MÊME chemin interne que l'import
      * (`fetchUsersFromAd`) — jamais un second code de fetch, sous peine de voir
-     * les deux diverger et le dry-run mentir (D2).
+     * les deux diverger et le dry-run mentir.
      *
      * @return array{
      *   total_ad: int,
@@ -298,9 +298,7 @@ class UserSyncService
     /**
      * Récupère les utilisateurs depuis l'AD via les groupes principaux
      *
-     * ─────────────────────────────────────────────────────────────────────────
-     * Story 49.3 (AC2 / D3) — pourquoi `paginate()` et NON `get()`.
-     * ─────────────────────────────────────────────────────────────────────────
+     * Pourquoi `paginate` et NON `get`.
      * `MaxPageSize` vaut 1000 par défaut côté AD : au-delà, le serveur renvoie
      * un résultat PARTIEL accompagné d'une erreur « Size limit exceeded » /
      * « Partial search results returned ». Or LdapRecord AVALE cette erreur —
@@ -335,7 +333,7 @@ class UserSyncService
     ): array {
         $users = [];
         $seenIdentifiers = [];
-        // Story 49.3 (AC2 / D6) — les DEUX familles d'identifiants présents,
+        // Les DEUX familles d'identifiants présents,
         // renseignées pour CHAQUE entrée retenue (et pas l'une ou l'autre selon
         // la clé de dédoublonnage) : le prédicat d'absence teste le guid ET le
         // login, une ligne SQL sans `ad_guid` (créée par SE5 avant sa première
@@ -377,7 +375,7 @@ class UserSyncService
                     'excluded' => 0,
                 ],
                 'max_whenchanged' => $maxWhenChanged,
-                // Story 49.3 (AC3-3) — `main_groups_found = 0` est une condition
+                // `main_groups_found = 0` est une condition
                 // d'ABANDON de la réconciliation : sans groupe principal, tout
                 // le parc paraîtrait absent.
                 'fetch_groups_failed' => 0,
@@ -478,7 +476,7 @@ class UserSyncService
                 $log('info', "  → {$count} utilisateurs dans {$groupName}");
 
             } catch (\Exception $e) {
-                // Story 49.3 (AC2 / AC3-2) — l'échec d'UN groupe principal était
+                // L'échec d'UN groupe principal était
                 // jusqu'ici un simple warning avalé : le retour d'`importFromAd`
                 // paraissait sain alors qu'un tiers du parc manquait, et la
                 // réconciliation des départs aurait désactivé tous les membres
@@ -644,7 +642,7 @@ class UserSyncService
 
         $businessObject = $ldapUser->toBusinessObject();
 
-        // Lecture pwdLastSet via le trait ResolvesPwdLastSet (story 14.4 — AC3 / Tâche 4.2)
+        // Lecture pwdLastSet via le trait ResolvesPwdLastSet (/ Tâche)
         $pwdLastSetRaw = $ldapUser->getFirstAttribute('pwdlastset');
         $pwdLastSetInt = $this->resolvePwdLastSetRaw($pwdLastSetRaw);
         $passwordChangedAt = self::pwdLastSetToCarbon($pwdLastSetInt);
@@ -660,7 +658,7 @@ class UserSyncService
             dn: $ldapUser->getDn(),
             groups: $groupNames,
             rights: $rightProfiles,
-            // Story 49.3 (AC1) — MIROIR de `useraccountcontrol`. Le business
+            // MIROIR de `useraccountcontrol`. Le business
             // object le calcule déjà (`LdapUser::toBusinessObject()` :
             // `uac === 512`) ; il n'était simplement pas transmis au DTO, si
             // bien que `upsertUser` posait un `true` en dur à la création et ne
@@ -706,7 +704,7 @@ class UserSyncService
     /**
      * Crée ou met à jour un utilisateur Eloquent depuis les données AD
      *
-     * Story 49.3 (AC1) — `is_active` est un MIROIR de l'AD sur les DEUX
+     * `is_active` est un MIROIR de l'AD sur les DEUX
      * branches. Ni un `true` en dur (il ressusciterait toutes les 5 minutes un
      * compte désactivé à la main : `UserService::disableUser()` pose
      * `uac=514` + `is_active=false`, mais le compte AD désactivé RESTE membre
@@ -714,7 +712,7 @@ class UserSyncService
      * utilisateur ne serait jamais reflété).
      *
      * @param bool|null $reactivated Renseigné par référence : `true` quand
-     *        l'update fait passer `is_active` de false à true (compteur AC6).
+     * L'update fait passer `is_active` de false à true (compteur).
      * @return string 'created'|'updated'|'skipped'
      */
     private function upsertUser(AdUser $adUser, ?bool &$reactivated = null): string
@@ -770,14 +768,14 @@ class UserSyncService
                 'role' => $adUser->role,
                 'school_code' => $adUser->etabCode,
                 'school_name' => $adUser->etabName,
-                // Story 49.3 (AC1) — miroir `useraccountcontrol` (512 = actif).
+                // Miroir `useraccountcontrol` (512 = actif).
                 'is_active' => $adUser->isActive,
                 'ad_synced_at' => now(),
-                // Story 14.4 — AC3 / Tâche 4.3 : backfill password_changed_at depuis pwdLastSet AD
+                // backfill password_changed_at depuis pwdLastSet AD
                 'password_changed_at' => $adUser->passwordChangedAt,
             ]);
         } else {
-            // Story 49.3 (AC1/AC6) — lu AVANT l'update : c'est la transition
+            // Lu AVANT l'update : c'est la transition
             // false → true qui compte comme « réactivation » dans le rapport.
             $wasActive = (bool) $user->is_active;
             $reactivated = ! $wasActive && $adUser->isActive;
@@ -793,15 +791,15 @@ class UserSyncService
                 'role' => $adUser->role !== '' ? $adUser->role : $user->role,
                 'school_code' => ($adUser->etabCode !== null && $adUser->etabCode !== '') ? $adUser->etabCode : $user->school_code,
                 'school_name' => ($adUser->etabName !== null && $adUser->etabName !== '') ? $adUser->etabName : $user->school_name,
-                // Story 49.3 (AC1) — miroir `useraccountcontrol` sur l'update
+                // Miroir `useraccountcontrol` sur l'update
                 // aussi : sans lui, `users.is_active` ne reflétait NI les
-                // désactivations AD, NI les retours (prérequis FR-R4).
+                // désactivations AD, NI les retours.
                 'is_active' => $adUser->isActive,
                 'ad_synced_at' => now(),
-                // Story 14.4 — AC3 / Tâche 4.3 : mise à jour password_changed_at.
+                // mise à jour password_changed_at.
                 // Préserve la date SQL existante si l'AD répond null
                 // (ex: pwdLastSet absent/filtré côté replica LDAP, ACL, etc.).
-                // D6 + R3 affinée post-review Opus 14.4 #2 : on évite d'écraser
+                // On évite d'écraser
                 // une vraie date persistée au login par un null transitoire de sync AD.
                 'password_changed_at' => $adUser->passwordChangedAt ?? $user->password_changed_at,
             ]);

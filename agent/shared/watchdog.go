@@ -2,11 +2,11 @@ package shared
 
 import "time"
 
-// Watchdog Rainmeter côté COMPAGNON (Story 27.1bis, volet 3 — décision D5).
+// Watchdog Rainmeter côté COMPAGNON.
 // Le compagnon tourne aux droits de la SESSION (relance triviale, os/exec) et
 // meurt au logoff (acceptable : pas de session = rien à rendre). Il relance
 // Rainmeter.exe s'il disparaît (élève qui le tue, crash), pointant la config
-// VERROUILLÉE sous ProgramData ACL. PAS d'obfuscation de process (D7) : l'élève
+// VERROUILLÉE sous ProgramData ACL. PAS d'obfuscation de process : l'élève
 // voit/tue son Rainmeter.exe → c'est le watchdog qui répond.
 //
 // Logique de décision PURE (testable hôte) : présence du process + back-off

@@ -1,8 +1,8 @@
-// Binaire agent SambaEdu desired-state — Windows (Stories 24.5 + 24.6, Epic 24).
+// Binaire agent SambaEdu desired-state — Windows.
 //
 // Service SYSTEM (portée machine + broker des sessions) : boucle de check-in
 // GET /state → cache → fetch des sessions + sync assets → POST /report
-// (items réels = drops session collectés/validés). Le cœur (rotation D5,
+// (items réels = drops session collectés/validés). Le cœur (rotation,
 // grâce, quarantaine, backoff, cache atomique, StateHasher, moteur §5,
 // compagnon, collecte des drops) vit dans sambaedu/agent/shared —
 // OS-agnostique et testé sur l'hôte. Ce package ne contient QUE le
@@ -19,13 +19,13 @@
 //	agent.exe companion      (tâche at-logon Users : convergence session, résident)
 //	agent.exe version
 //
-// Invariants (iso-24.2/24.3, contrat 23.3) :
+// Invariants (contrat) :
 //   - token : C:\ProgramData\SambaEdu\Agent\token (FIGÉ), relu à chaque cycle,
 //     ILLISIBLE du compagnon (ACL SYSTEM+Administrators — le canal réseau
-//     est 100 % SYSTEM, frontière NFR5) ;
+//     est 100 % SYSTEM, frontière de confiance) ;
 //   - hostname COURT dans le rapport (os.Hostname() = COMPUTERNAME) ;
-//   - NFR1 : rien dans le chemin synchrone du logon (tâches asynchrones) ;
-//   - NFR7 : aucune dépendance AD/Kerberos/LDAP — l'auth EST le bearer token.
+//   - rien dans le chemin synchrone du logon (tâches asynchrones) ;
+//   - aucune dépendance AD/Kerberos/LDAP — l'auth EST le bearer token.
 package main
 
 import (
@@ -41,7 +41,7 @@ import (
 const (
 	serviceName        = "SambaEduAgent"
 	serviceDisplayName = "SambaEdu Agent (desired-state)"
-	serviceDescription = "Agent SambaEdu SE5 : convergence état cible + rapport de conformité (Epic 24)."
+	serviceDescription = "Agent SambaEdu SE5 : convergence état cible + rapport de conformité."
 )
 
 func main() {
@@ -67,7 +67,7 @@ func main() {
 	case "install":
 		fs := flag.NewFlagSet("install", flag.ExitOnError)
 		serverURL := fs.String("server-url", "", "URL du serveur SE5 (obligatoire), ex. http://se5.mondomaine.lan")
-		interval := fs.Int("interval", shared.DefaultIntervalSeconds, "cadence de check-in en secondes (D7, défaut 3600)")
+		interval := fs.Int("interval", shared.DefaultIntervalSeconds, "cadence de check-in en secondes (défaut 3600)")
 		_ = fs.Parse(os.Args[2:])
 		if *serverURL == "" {
 			fmt.Fprintln(os.Stderr, "usage : agent.exe install -server-url http://<serveur-se5> [-interval 3600]")
@@ -86,11 +86,11 @@ func main() {
 	case "session-fetch":
 		// Tâche planifiée at-logon (SYSTEM) : un fetch des sessions + sync
 		// des assets, puis sortie. Jamais d'erreur visible au logon : log
-		// local + code retour (NFR1).
+		// local + code retour.
 		runSessionFetchTask()
 	case "companion":
 		// Tâche planifiée at-logon (BUILTIN\Users) : processus RÉSIDENT aux
-		// droits de la session — ni réseau, ni token (NFR5).
+		// droits de la session — ni réseau, ni token.
 		if err := runCompanion(); err != nil {
 			os.Exit(1)
 		}
@@ -118,7 +118,7 @@ func runSessionFetchTask() {
 	agent.RunSessionFetch(cfg)
 
 	// Composition d'overlay.json DANS CE PROCESS, après que RunSessionFetch a
-	// garanti l'écriture du cache per-SID (Story 27.1bis — correctif race
+	// garanti l'écriture du cache per-SID (correctif race
 	// logon). L'évènement WTS_SESSION_LOGON du service (qui écrit aussi
 	// overlay.json, idempotent) arrive avant que ce fetch réseau n'ait peuplé
 	// le cache : OverlayDocumentForSession y voyait un cache absent → no-op, et
@@ -135,15 +135,15 @@ func exitOn(err error) {
 }
 
 // newAgent assemble la boucle shared avec les implémentations Windows :
-// ACL icacls (iso-24.2 + per-SID/assets 24.6), UUID SMBIOS, hostname COURT,
+// ACL icacls (per-SID/assets), UUID SMBIOS, hostname COURT,
 // énumération WTS des sessions.
 func newAgent(echo bool) *shared.Agent {
 	store := &shared.Store{SetACL: setAgentACL}
 	logger := &shared.Logger{Dir: store.LogsDir(), SetACL: setAgentACL, Echo: echo}
 
 	// os.Hostname() sous Windows = GetComputerNameEx(ComputerNameDnsHostname),
-	// le nom COURT du poste (jamais le FQDN) — règle defer 24.1 #8 : le
-	// serveur compare ce champ à workstations.name.
+	// le nom COURT du poste (jamais le FQDN) : le serveur compare ce champ à
+	// workstations.name.
 	hostname, err := os.Hostname()
 	if err != nil || hostname == "" {
 		hostname = os.Getenv("COMPUTERNAME")
@@ -155,45 +155,46 @@ func newAgent(echo bool) *shared.Agent {
 		Log:      logger,
 		Hostname: hostname,
 		UUID:     smbiosUUID(logger),
-		// Story 25.4 : ancre MAC du faisceau d'enrôlement porte 2 (auto-enroll
+		// Ancre MAC du faisceau d'enrôlement porte 2 (auto-enroll
 		// du poste migré). Utilisée seulement quand le token est absent.
 		MAC:              macAddress(logger),
 		Sessions:         enumerateInteractiveSessions,
 		SessionCacheACL:  setSessionCacheACL,
 		SessionReportACL: setSessionReportACL,
 		AssetsACL:        setAssetsACL,
-		// Story 25.2 : primitives d'auto-update Windows (vérif Authenticode +
+		// Primitives d'auto-update Windows (vérif Authenticode +
 		// swap atomique restart-SCM) + ACL SYSTEM du staging — l'orchestration
 		// shared/ les injecte, nil en test/Linux (update inerte).
 		UpdateACL:          setUpdateACL,
 		VerifyAuthenticode: verifyAuthenticode,
 		SwapAndRestart:     swapAndRestart,
-		// Story 27.1bis : provisioning de l'outil de rendu Rainmeter au bootstrap
+		// Provisioning de l'outil de rendu Rainmeter au bootstrap
 		// du cycle SYSTEM (portable install-if-absent + config verrouillée). ACL
 		// dédiée Users:RX (Rainmeter.exe est lancé par le compagnon aux droits de
 		// la session — R seul refuserait l'exécution) / SYSTEM+Admins full. nil en
 		// test/Linux (provisioning inerte).
 		Rainmeter:    rainmeterPortableStore(),
 		RainmeterACL: setRainmeterACL,
-		// Story 35.7 : ops registre RÉELLES de la passe SYSTEM par-session —
+		// Ops registre RÉELLES de la passe SYSTEM par-session
 		// décorées PAR SID côté shared (HKCU → HKU\<SID>) pour appliquer les
 		// items `writer: "system"` (trees HKCU\…\Policies\*, non écrivables
 		// par le compagnon sur poste joint au domaine). Mêmes ops concrètes
 		// que le MachineEngine ; nil = passe inerte (tests hôte).
 		SessionSystemOps: &registryOps{log: logger},
-		// Story 27.3 : moteur de convergence de la portée MACHINE (le service
-		// SYSTEM en est le SEUL acteur — le compagnon ignore la portée machine,
-		// NFR5). Premier type machine : `registry` HKLM (droits SYSTEM). UN seul
-		// handler Go générique partagé avec le compagnon (côté HKCU) ; ici câblé
-		// pour la ruche machine. logsDir = racine SYSTEM (companion a son log).
+		// Moteur de convergence de la portée MACHINE (le service
+		// SYSTEM en est le SEUL acteur — le compagnon ignore la portée
+		// machine). Premier type machine : `registry` HKLM (droits SYSTEM).
+		// UN seul handler Go générique partagé avec le compagnon (côté
+		// HKCU) ; ici câblé pour la ruche machine. logsDir = racine SYSTEM
+		// (companion a son log).
 		MachineEngine: &shared.Engine{
 			Handlers: map[string]shared.Handler{
 				"registry": &shared.RegistryHandler{
 					Ops: &registryOps{log: logger},
 					Log: logger,
 				},
-				// Story 35.2 — listes registre a sous-valeurs indexees `\1..\N`
-				// (contrat §7.6, reconciliation de cle-conteneur D3). Le SERVICE
+				// Listes registre a sous-valeurs indexees `\1..\N`
+				// (contrat §7.6, reconciliation de cle-conteneur). Le SERVICE
 				// SYSTEM reconcilie les conteneurs HKLM (ex. Forcelist Chrome/
 				// Edge de pix_extension_forced) : ecrit 1..N dans l'ordre,
 				// supprime les noms numeriques hors canon — jamais les valeurs
@@ -209,63 +210,63 @@ func newAgent(echo bool) *shared.Agent {
 				// compagnon. Même cache d'assets (SyncWallpaperAssets pré-télécharge
 				// les deux types).
 				"lockscreen": &lockscreenHandler{AssetsDir: store.AssetsDir()},
-				// Story 27.4 — config d'app declarative (aggregate par app_kind /
-				// scope MACHINE, correctif post-review 2026-06-17 review #1) : le
-				// SERVICE SYSTEM pose le policies.json enterprise natif au chemin
+				// Config d'app declarative (aggregate par app_kind / scope
+				// MACHINE) : le SERVICE SYSTEM pose le policies.json enterprise
+				// natif au chemin
 				// d'install Firefox/Thunderbird (%ProgramFiles%\...\distribution\,
 				// ecriture atomique). policies.json est machine-wide, admin-write
 				// → SYSTEM ecrit (le compagnon user prenait ACCESS_DENIED). La
 				// resolution serveur est PAR PARC (niveaux 1-4 : template + auto +
 				// defaut etab + WG) ; le par-user de Firefox = le PROFIL (mecanisme
-				// B / roaming, hors 27.4). UN SEUL mecanisme : pas de registre, pas
+				// B / roaming, hors). UN SEUL mecanisme : pas de registre, pas
 				// de Chrome/Edge. Level-triggered, idempotent ; marqueur de
 				// perimetre = clef _sambaedu_managed (jamais ecraser un fichier
-				// pose hors SambaEdu — conflit => error, review #7).
+				// pose hors SambaEdu — conflit => error).
 				"app_config": &shared.AppConfigHandler{
 					Ops: &appConfigOps{log: logger},
 					Log: logger,
 				},
-				// Story 27.5 — applications (aggregate / scope MACHINE) : le
+				// Applications (aggregate / scope MACHINE) : le
 				// SERVICE SYSTEM DÉCLENCHE le moteur WPKG local à la place de la
 				// GPO se4_wpkg. Il DONNE l'URL du bundle (Apache statique) au
 				// bootstrap + DÉPOSE le profil par-hôte (profiles.xml/hosts.xml)
-				// dans %ProgramData%\SambaEdu\wpkg (D9) + DÉCLENCHE
-				// wpkg-client.vbs (le client télécharge, l'agent non — D7), puis
-				// LIT wpkg.xml pour l'état par paquet (inventaire AC4). WPKG reste
+				// dans %ProgramData%\SambaEdu\wpkg + DÉCLENCHE
+				// wpkg-client.vbs (le client télécharge, l'agent non), puis
+				// LIT wpkg.xml pour l'état par paquet (inventaire). WPKG reste
 				// le moteur déclaratif (non absorbé). Shell-out = seule exception
 				// justifiée (déclencher un moteur externe). MACHINE et non
-				// compagnon (WPKG installe machine-wide — leçon 🔴 27.4 #1).
+				// compagnon (WPKG installe machine-wide).
 				"applications": &shared.ApplicationsHandler{
 					Ops: &applicationsOps{log: logger, store: store},
 					Log: logger,
 				},
-				// Story 36.1 — fs_acl (exclusive PAR ACE / scope MACHINE) : le
+				// Fs_acl (exclusive PAR ACE / scope MACHINE) : le
 				// SERVICE SYSTEM converge les ACE NTFS gérées (chirurgie DACL —
 				// merge SetNamedSecurityInfo DACL-only, jamais de réécriture ;
-				// owner/SACL/héritées/tierces intacts, D4). Le store « dernier
+				// owner/SACL/héritées/tierces intacts). Le store « dernier
 				// appliqué » (fsacl-state.json) est la SEULE mémoire des ACE
 				// posées (aucune orpheline au changement de valeur). Résolution
-				// SID par LSA sur le poste joint (D5) ; refus deny système en
-				// défense en profondeur (piège #8). SYSTEM UNIQUEMENT (jamais
+				// SID par LSA sur le poste joint ; refus deny système en
+				// défense en profondeur. SYSTEM UNIQUEMENT (jamais
 				// companion_windows.go).
 				"fs_acl": &shared.FsAclHandler{
 					Ops:       &fsAclOps{log: logger},
 					StatePath: store.FsAclStatePath(),
 					Log:       logger,
 				},
-				// Story 36.2 — firewall (exclusive PAR rule_id / scope MACHINE) :
+				// Firewall (exclusive PAR rule_id / scope MACHINE) :
 				// le SERVICE SYSTEM converge les règles pare-feu POSSÉDÉES PAR
 				// GROUPE (`SambaEdu-Agent`, réconciliation par conteneur — le champ
 				// Grouping EST le marqueur, PAS de store). Les règles hors groupe,
 				// la politique par défaut et le service MpsSvc ne sont JAMAIS
-				// touchés (FirewallOps 3 ops). Refus Q3 en défense en profondeur
-				// (block couvrant le LAN interdit). Impl COM natif INetFwPolicy2
+				// touchés (FirewallOps 3 ops). Refus en défense en profondeur
+				// d'un block couvrant le LAN. Impl COM natif INetFwPolicy2
 				// (netsh ne sait pas poser le Grouping). SYSTEM UNIQUEMENT.
 				"firewall": &shared.FirewallHandler{
 					Ops: &firewallOps{log: logger},
 					Log: logger,
 				},
-				// Story 35.6 — privilege (exclusive PAR nom de privilège / scope
+				// Privilege (exclusive PAR nom de privilège / scope
 				// MACHINE) : le SERVICE SYSTEM converge les droits de logon LSA
 				// `SeDeny*` gérés (réconciliation de CONTENEUR — le privilège EST
 				// le conteneur, titulaires énumérables via
@@ -273,28 +274,29 @@ func newAgent(echo bool) *shared.Agent {
 				// révoque les surnuméraires — AUCUN store). Refus SeDeny*-only en
 				// défense en profondeur (un grant possédé en liste entière
 				// verrouillerait la machine). Résolution SID via windows.LookupSID
-				// (iso fs_acl, D5). SYSTEM UNIQUEMENT (jamais companion_windows.go).
+				// (iso fs_acl). SYSTEM UNIQUEMENT (jamais companion_windows.go).
 				"privilege": &shared.PrivilegeHandler{
 					Ops: &privilegeOps{log: logger},
 					Log: logger,
 				},
-				// Story 38.3 — legacy_cleanup (exclusive / scope MACHINE) : le
+				// Legacy_cleanup (exclusive / scope MACHINE) : le
 				// SERVICE SYSTEM retire les crochets clients legacy SE4 par
 				// SCAN idempotent SANS store (catalogue versionné DANS l'agent :
 				// blobs applications-*, tâches wpkg4/*-system gardées par
 				// action, scripts GPO locale curl-ant gpo/*.php, jonctions
 				// install/rapports reparse-only, helpers en liste blanche,
 				// autologon se4install gardé, paires Mozilla sambaedu.default —
-				// Q5-a VANILLA). Chaque suppression est individuellement gardée
-				// (piège #4) ; JAMAIS GroupPolicy\DataStore, wpkg.xml, le
-				// dossier SambaEdu ni Agent\**. MACHINE SEULEMENT (HKLM,
-				// schtasks, C:\Users\* — jamais le compagnon, D2).
+				// payload `mozilla: "vanilla"`). Chaque suppression est
+				// individuellement gardée ; JAMAIS GroupPolicy\DataStore,
+				// wpkg.xml, le dossier SambaEdu ni Agent\**. MACHINE
+				// SEULEMENT (HKLM,
+				// schtasks, C:\Users\* — jamais le compagnon).
 				"legacy_cleanup": newLegacyCleanupHandler(logger),
 			},
 			Log: logger,
 		},
 	}
-	// Story 27.9 : canal de réveil au logon initialisé À LA CONSTRUCTION, AVANT
+	// Canal de réveil au logon initialisé À LA CONSTRUCTION, AVANT
 	// que la goroutine Run ne démarre (le handler SCM y postera au
 	// WTS_SESSION_LOGON). Garantit qu'un RequestWake ne tombe jamais sur un canal
 	// nil (qui bloquerait pour toujours) et que le signal n'est jamais perdu

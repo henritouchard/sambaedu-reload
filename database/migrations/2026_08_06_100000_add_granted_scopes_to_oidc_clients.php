@@ -8,10 +8,9 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 56.4 — `oidc_clients.granted_scopes` : les scopes RÉELLEMENT ACCORDÉS
- * au client d'une extension (FR23).
+ * `oidc_clients.granted_scopes` : les scopes RÉELLEMENT ACCORDÉS
+ * au client d'une extension.
  *
- * ══════════════════════════════════════════════════════════════════════════
  *  POURQUOI CETTE COLONNE EXISTE, ET POURQUOI ICI
  *
  *  Le consentement est un attribut du CLIENT OIDC (sémantique OAuth standard :
@@ -19,10 +18,9 @@ use Illuminate\Support\Facades\Schema;
  *  réécrit à chaque synchro de catalogue — ni d'une table pivot : une liste
  *  fermée de deux valeurs (`profile`, `groups`) ne justifie pas une table.
  *
- *  Conséquence heureuse : `oidc_clients` est DÉJÀ dans la frontière NFR14
- *  (`UpstreamSyncExtensionsBoundaryTest`), donc cette story n'introduit aucune
- *  table neuve à y déclarer.
- * ══════════════════════════════════════════════════════════════════════════
+ *  Conséquence heureuse : `oidc_clients` est DÉJÀ dans la frontière d'isolement
+ *  (`UpstreamSyncExtensionsBoundaryTest`), donc aucune table neuve n'est à y
+ *  déclarer.
  *
  * **DÉFAUT `[]` = FAIL-CLOSED.** Un client qui n'a rien reçu n'obtient rien :
  * son scope effectif se réduit à `openid`, donc au seul `sub`. C'est
@@ -31,7 +29,7 @@ use Illuminate\Support\Facades\Schema;
  * (`oidc:witness:enable --rotate`, ou réinstallation de l'extension), jamais
  * hérités d'un consentement que personne n'a donné.
  *
- * **Additive et idempotente** : la migration `300000` (55.1) n'est PAS
+ * **Additive et idempotente** : la migration `300000` n'est PAS
  * retouchée — c'est un livrable clos, passé en review, et déjà appliqué sur des
  * instances. Gardes `hasTable`/`hasColumn` : rejouable.
  *

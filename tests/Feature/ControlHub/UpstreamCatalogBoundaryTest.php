@@ -35,7 +35,7 @@ use Tests\TestCase;
  *
  * Tests HÔTE (php8.4 + pdo_sqlite), `RefreshDatabase`. Match sur `app_id` (string).
  *
- * ⚠️ GARDE-FOU R3 : aucun « central ». [prd#R3]
+ * ⚠️ RÈGLE DE NOMMAGE : aucun identifiant livré ne contient « central ».
  */
 class UpstreamCatalogBoundaryTest extends TestCase
 {
@@ -62,13 +62,9 @@ class UpstreamCatalogBoundaryTest extends TestCase
         parent::tearDown();
     }
 
-    // ---------------------------------------------------------------------
-    // Helpers
-    // ---------------------------------------------------------------------
-
     private function makeRefnum(): User
     {
-        // Droit GLOBAL wpkg.assign ⇒ le Gate 29.1 passe sur n'importe quel parc/poste.
+        // Droit GLOBAL wpkg.assign ⇒ le Gate passe sur n'importe quel parc/poste.
         $user = User::create(['login' => 'refnum', 'role' => 'autre', 'is_active' => true]);
         $user->givePermissionTo('wpkg.assign');
 
@@ -102,10 +98,6 @@ class UpstreamCatalogBoundaryTest extends TestCase
 
         return $contract;
     }
-
-    // ---------------------------------------------------------------------
-    // Machinerie app-admin : le scope `inUpstreamCatalog` filtre toujours
-    // ---------------------------------------------------------------------
 
     #[Test]
     public function scope_only_returns_apps_in_catalog_when_bounded(): void
@@ -150,12 +142,6 @@ class UpstreamCatalogBoundaryTest extends TestCase
         );
         $this->assertSame([], $catalogQueries, 'NFR3 : zéro requête sur la table catalogue sans contrat actif');
     }
-
-    // ---------------------------------------------------------------------
-    // Assignation NON bornée : une app hors catalogue peut être assignée à
-    // une entité même sous un contrat amont actif (le bornage n'a lieu qu'à
-    // l'échelle de l'administration des applications).
-    // ---------------------------------------------------------------------
 
     #[Test]
     public function group_assignment_is_not_bounded_by_catalog(): void
@@ -224,10 +210,6 @@ class UpstreamCatalogBoundaryTest extends TestCase
         $this->assertEqualsCanonicalizing(['firefox', 'chrome'], $appIds, 'sélecteur de profil non borné');
     }
 
-    // ---------------------------------------------------------------------
-    // Résolveur unitaire — 3 états + lien rompu
-    // ---------------------------------------------------------------------
-
     #[Test]
     public function resolver_standalone_state(): void
     {
@@ -264,7 +246,7 @@ class UpstreamCatalogBoundaryTest extends TestCase
     #[Test]
     public function resolver_severed_contract_is_not_bounded(): void
     {
-        // Lien rompu (severed) ⇒ active() null ⇒ bornage levé automatiquement (Epic 32).
+        // Lien rompu (severed) ⇒ active null ⇒ bornage levé automatiquement.
         $contract = ControlHubContract::factory()->severed()->create();
         ControlHubContractCatalogApp::factory()->create([
             'controlhub_contract_id' => $contract->id,

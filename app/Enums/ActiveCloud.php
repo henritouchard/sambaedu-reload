@@ -5,11 +5,10 @@ declare(strict_types=1);
 namespace App\Enums;
 
 /**
- * Story 63.1 — LE CLOUD ACTIF EST UNE VALEUR, PAS DEUX BOOLÉENS.
+ * LE CLOUD ACTIF EST UNE VALEUR, PAS DEUX BOOLÉENS.
  *
  * SE5 sait parler à deux produits cloud (Nextcloud, OpenCloud), mais une
- * instance n'en active jamais qu'UN SEUL à la fois (décision Henri du
- * 2026-08-15, cadrage §2 : « il n'y a qu'un seul cloud possible »). Deux
+ * instance n'en active jamais qu'UN SEUL à la fois. Deux
  * booléens indépendants (`nextcloud_actif`, `opencloud_actif`) laisseraient
  * l'état « les deux vrais » PARFAITEMENT REPRÉSENTABLE — il faudrait alors une
  * garde applicative pour l'empêcher, et une garde applicative se contourne (un
@@ -20,9 +19,8 @@ namespace App\Enums;
  * faudrait se souvenir de rejouer partout.
  *
  * **`Aucun` est une CASE, PAS un `null`.** Un `?FileBackendName` ou un
- * `?ActiveCloud` rouvrirait un état « non décidé » — c'est exactement ce que
- * la garde n° 3 du cadrage interdit (« aucune valeur nulle, aucun repli
- * silencieux ») : chaque appelant devrait alors traiter un cas `null` en plus
+ * `?ActiveCloud` rouvrirait un état « non décidé » — ni valeur nulle, ni repli
+ * silencieux : chaque appelant devrait alors traiter un cas `null` en plus
  * des cas connus, et un seul appelant qui l'oublierait ferait planter un
  * `match` non exhaustif ou, pire, traiterait silencieusement `null` comme
  * `Nextcloud`. Trois cases fermées ne laissent ce choix à personne.

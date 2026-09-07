@@ -18,8 +18,8 @@ use Illuminate\Support\Facades\Log;
 /**
  * Importeur AD → SQL pour les AppProfile.
  *
- * Extrait de AppProfileService dans le cadre de la story 15.4 (review #7) pour
- * isoler les dépendances LDAP du service métier 15.4 (qui doit rester Eloquent-only).
+ * Extrait de AppProfileService pour isoler les dépendances LDAP du service
+ * métier, qui doit rester Eloquent-only.
  *
  * À utiliser uniquement pour la migration initiale AD → SQL. Une fois l'import
  * effectué, SQL est la source de vérité et les modifications passent par
@@ -28,8 +28,8 @@ use Illuminate\Support\Facades\Log;
 final class AppProfileAdImporter
 {
     /**
-     * Parc réservé SE4 (nom codé en dur — jamais configurable). Story 38.7 /
-     * AC10 : ce n'est pas un parc mais le socle « tous les postes ». Il ne
+     * Parc réservé SE4 (nom codé en dur — jamais configurable) :
+     * ce n'est pas un parc mais le socle « tous les postes ». Il ne
      * produit PAS d'AppProfile ; ses applications sont promues en défaut
      * d'établissement (`applications.is_parc_default = true`).
      */
@@ -80,7 +80,7 @@ final class AppProfileAdImporter
         ];
 
         try {
-            // AC9.1/9.2 + AC10 — un seul point de lecture legacy, partagé avec le
+            // + — un seul point de lecture legacy, partagé avec le
             // linker (étape 7) et l'import logique (étape 5). Source indisponible
             // ⇒ on NE crée AUCUN profil (créer « au cas où » est précisément la
             // pollution qu'on supprime) et on le signale bruyamment : l'import est
@@ -131,7 +131,7 @@ final class AppProfileAdImporter
                             continue;
                         }
 
-                        // AC10 — `_TousLesPostes` n'est pas un parc : ni AppProfile,
+                        // `_TousLesPostes` n'est pas un parc : ni AppProfile,
                         // ni ligne dans la liste des parcs. Ses applications sont
                         // promues en défaut d'établissement APRÈS la boucle.
                         if ($name === self::ALL_WORKSTATIONS_PARC) {
@@ -172,7 +172,7 @@ final class AppProfileAdImporter
                                 }
                             }
                         } else {
-                            // AC9.1 — ne réifier un AppProfile QUE si le parc legacy
+                            // Ne réifier un AppProfile QUE si le parc legacy
                             // homonyme porte au moins une application (appariement
                             // sur la même clé que le linker, cf. LegacyParcApplicationReader).
                             // Un parc de rangement sans application produisait jusqu'ici
@@ -205,7 +205,7 @@ final class AppProfileAdImporter
                     }
                 }
 
-                // AC10 — promotion des applications de `_TousLesPostes` en défaut
+                // Promotion des applications de `_TousLesPostes` en défaut
                 // d'établissement (couche Broadcast). Deux moitiés d'une même règle
                 // avec l'exclusion du parc ci-dessus.
                 $this->promoteAllWorkstationsDefaults($parcAppNames, $parcByName, $stats, $log);
@@ -230,7 +230,7 @@ final class AppProfileAdImporter
     }
 
     /**
-     * AC10 — promeut les applications du parc réservé `_TousLesPostes` en défaut
+     * Promeut les applications du parc réservé `_TousLesPostes` en défaut
      * d'établissement (`applications.is_parc_default = true`, couche Broadcast).
      *
      * Idempotent : ne marque que ce qui ne l'est pas encore, ne DÉ-marque JAMAIS

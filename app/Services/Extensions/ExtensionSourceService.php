@@ -17,15 +17,14 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 /**
- * Story 56.1 (FR2/FR4/FR36) — Les ACTES d'administration d'une source
+ * Les ACTES d'administration d'une source
  * d'extensions : ajouter, activer, désactiver, retirer, actualiser.
  *
  * Séparé de {@see RemoteCatalogSyncService} (le moteur réseau) et
  * d'{@see ExtensionCatalogService} (le registre) pour la même raison qui a
- * séparé le cycle de vie du catalogue en 54.2 : ce fichier est celui des
+ * séparé le cycle de vie du catalogue : ce fichier est celui des
  * DÉCISIONS de l'admin et de leurs gardes, il ne parle ni HTTP ni signature.
  *
- * ══════════════════════════════════════════════════════════════════════════
  *  LE PIN DE CLÉ (TOFU) — ce qui rend l'ensemble sûr
  *
  *  La clé publique d'une source est **pinnée à l'ajout**, par l'un de deux
@@ -46,23 +45,22 @@ use Illuminate\Support\Str;
  *  ultérieure d'un dépôt de substituer sa clé. La rotation légitime est un
  *  retrait + un ré-ajout explicites — deux actes journalisés, décidés par un
  *  humain. C'est le modèle `known_hosts` de SSH et le keyring d'apt.
- * ══════════════════════════════════════════════════════════════════════════
  *
  * **Gardes** :
  *  - la source `bundled` n'est ni désactivable ni retirable (ses manifests font
  *    partie du déploiement) ;
  *  - le retrait est REFUSÉ tant qu'une extension de la source est `integrated` :
  *    la cascade FK emporterait des tuiles en service, et on ne dé-intègre jamais
- *    silencieusement (invariant 54.1 #4). L'admin désinstalle d'abord.
+ *    silencieusement. L'admin désinstalle d'abord.
  *
- * **No-op = zéro audit** (discipline 54.2) : désactiver une source déjà
+ * **No-op = zéro audit** (discipline) : désactiver une source déjà
  * désactivée n'écrit rien, ni ligne, ni `updated_at`. Le journal trace des
  * transitions réelles, pas des clics.
  *
  * **Atomicité acte ↔ trace** : chaque mutation et son `ExtensionAuditLog` sont
  * dans la MÊME transaction.
  *
- * NFR15 : toutes les méthodes publiques rendent des **tableaux plats**, et
+ * Toutes les méthodes publiques rendent des **tableaux plats**, et
  * l'acteur est passé en PARAMÈTRE — le service ne lit jamais `auth()`.
  */
 class ExtensionSourceService
@@ -78,12 +76,8 @@ class ExtensionSourceService
     ) {
     }
 
-    // =====================================================================
-    // Lecture
-    // =====================================================================
-
     /**
-     * Toutes les sources du registre, prêtes à afficher (NFR15).
+     * Toutes les sources du registre, prêtes à afficher (tableaux plats).
      *
      * @return list<array<string, mixed>>
      */
@@ -145,10 +139,6 @@ class ExtensionSourceService
         return strlen($key) <= 16 ? $key : substr($key, 0, 8).'…'.substr($key, -8);
     }
 
-    // =====================================================================
-    // Actes
-    // =====================================================================
-
     /**
      * Ajoute une source DISTANTE, pinne sa clé, puis lance sa première synchro.
      *
@@ -183,7 +173,7 @@ class ExtensionSourceService
         // ci-dessous sont des `SELECT` : entre eux et l'`INSERT`, une seconde
         // requête admin concurrente peut avoir pris la place. La contrainte
         // `ext_sources_key_unique` est l'arbitre — mais sans ce catch elle
-        // remonterait en 500 au lieu du toast attendu (review 56.1 #3).
+        // remonterait en 500 au lieu du toast attendu.
         try {
             $source = DB::transaction(function () use ($name, $url, $publicKey, $actor): ExtensionSource {
                 $source = ExtensionSource::create([
@@ -191,7 +181,7 @@ class ExtensionSourceService
                     'name' => $name,
                     'kind' => ExtensionSourceKind::Remote,
                     'url' => $url,
-                    // FR4 — une source ajoutée par un admin n'est JAMAIS
+                    // Une source ajoutée par un admin n'est JAMAIS
                     // « officielle » : l'officialité désigne la source embarquée
                     // du dépôt SE5, pas la confiance que l'admin accorde. Elle
                     // n'est donc pas un réglage.
@@ -267,7 +257,7 @@ class ExtensionSourceService
             $source = $this->lockedSource($sourceId);
             $this->assertManageable($source);
 
-            // No-op = zéro écriture, zéro audit (discipline 54.2).
+            // No-op = zéro écriture, zéro audit (discipline).
             if ((bool) $source->enabled === $target) {
                 return ['changed' => false, 'enabled' => $target];
             }
@@ -364,10 +354,6 @@ class ExtensionSourceService
 
         return $this->sync->sync($source, $actor);
     }
-
-    // =====================================================================
-    // Gardes et normalisations
-    // =====================================================================
 
     /**
      * Relit la source DANS la transaction avec `lockForUpdate()` : deux admins

@@ -21,12 +21,11 @@ use Tests\TestCase;
 use Tests\Traits\CreatesPermissionSchema;
 
 /**
- * Story 49.1 — la colonne `user_groups.rights_profile_id`, et le fait qu'elle
+ * La colonne `user_groups.rights_profile_id`, et le fait qu'elle
  * reste VIDE tant qu'un administrateur n'en décide pas autrement.
  *
- * ─────────────────────────────────────────────────────────────────────────────
- * Ce fichier a remplacé `GroupRightsProfileSeedTest` (2026-08-03, décision
- * Henri) : il vérifiait un seed `Profs`→`prof` / `Eleves`→`eleve`, en deux
+ * Ce fichier a remplacé `GroupRightsProfileSeedTest`, qui vérifiait un seed
+ * `Profs`→`prof` / `Eleves`→`eleve`, en deux
  * volets — migration de données pour les parcs existants, défaut à la création
  * du groupe à l'import pour les installations neuves. Les deux ont été
  * SUPPRIMÉS. Les tests sont donc devenus leur propre inverse : ils verrouillent
@@ -75,10 +74,6 @@ class GroupRightsProfileMigrationTest extends TestCase
         parent::tearDown();
     }
 
-    // ========================================================================
-    // Helpers
-    // ========================================================================
-
     private function runMigration(): void
     {
         $migration = require base_path(self::MIGRATION);
@@ -120,10 +115,6 @@ class GroupRightsProfileMigrationTest extends TestCase
         );
     }
 
-    // ========================================================================
-    // La migration est PUREMENT structurelle
-    // ========================================================================
-
     #[Test]
     public function the_migration_adds_a_nullable_restrict_on_delete_column(): void
     {
@@ -137,7 +128,7 @@ class GroupRightsProfileMigrationTest extends TestCase
     /**
      * LE test de ce fichier : même dans la configuration où l'ancien seed
      * mordait — groupes `Profs`/`Eleves` présents ET rôles `prof`/`eleve`
-     * existants —, la migration ne pose plus rien.
+     * existants, la migration ne pose plus rien.
      */
     #[Test]
     public function the_migration_never_links_any_group_to_a_profile(): void
@@ -186,10 +177,6 @@ class GroupRightsProfileMigrationTest extends TestCase
         self::assertSame(0, DB::table('user_groups')->count());
     }
 
-    // ========================================================================
-    // L'import AD ne pose aucun profil
-    // ========================================================================
-
     #[Test]
     public function importing_profs_and_eleves_never_poses_a_profile(): void
     {
@@ -225,10 +212,6 @@ class GroupRightsProfileMigrationTest extends TestCase
             'la branche update de l\'import ne touche jamais le profil porté'
         );
     }
-
-    // ========================================================================
-    // Verrou anti-réintroduction
-    // ========================================================================
 
     /**
      * Le vrai risque n'est pas qu'on rétablisse le seed sciemment — c'est qu'un

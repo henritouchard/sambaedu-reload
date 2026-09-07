@@ -203,10 +203,6 @@ class AppStoreServiceTest extends TestCase
         $this->assertTrue(method_exists($this->service, 'uninstallApplication'));
     }
 
-    // ========================================
-    // Code mort supprimé (8.2.6)
-    // ========================================
-
     #[Test]
     public function download_package_xml_method_is_removed(): void
     {

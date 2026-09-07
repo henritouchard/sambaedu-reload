@@ -14,25 +14,25 @@ use Mockery;
 use Mockery\MockInterface;
 
 /**
- * Helper de test pour les services consommant {@see GpoService} (Story 16.1).
+ * Helper de test pour les services consommant {@see GpoService}.
  *
  * Fournit deux modes d'utilisation :
  *
  * 1. **Outputs samba-tool fixtures statiques** (`listallOutput()`,
- *    `showOutput()`, etc.) — pour tester `GpoService` lui-même via
- *    `Process::fake()`.
+ *  `showOutput()`, etc.) — pour tester `GpoService` lui-même via
+ *  `Process::fake()`.
  *
  * 2. **Builder fluide de mock** (`make()->withGpos(...)->bind()`) — pour les
  *    tests Feature Livewire qui n'ont besoin que de stubber les méthodes
  *    publiques de `GpoService` sans toucher au binaire. Évite la duplication
- *    de boilerplate Mockery dans chaque test (Story 16.2 fix #11).
+ *    de boilerplate Mockery dans chaque test.
  *
  * Exemples :
  *
  * ```php
  * // Mode fixtures samba-tool :
  * Process::fake([
- *     '*samba-tool* gpo listall *' => Process::result(FakesGpoService::listallOutput()),
+ *  '*samba-tool* gpo listall *' => Process::result(FakesGpoService::listallOutput()),
  * ]);
  * $service = FakesGpoService::makeService();
  *
@@ -146,10 +146,6 @@ OUT;
         return new GpoService($runner ?? new SambaToolRunner());
     }
 
-    // -------------------------------------------------------------------------
-    // Builder fluide de mock (Story 16.2 fix #11)
-    // -------------------------------------------------------------------------
-
     /**
      * Démarre la construction d'un mock fluide de {@see GpoService}.
      */
@@ -173,7 +169,7 @@ OUT;
     }
 
     /**
-     * Force `list()` à lever une exception (pour tester AC1.7).
+     * Force `list` à lever une exception (pour tester).
      */
     public function withListThrowing(\Throwable $exception): self
     {
@@ -246,10 +242,6 @@ OUT;
         $this->mock->shouldReceive('getInheritance')->andReturn($inherit);
         return $this;
     }
-
-    // -------------------------------------------------------------------------
-    // Builders write — Story 16.5 (setLink / removeLink / setInheritance / reorderLinks)
-    // -------------------------------------------------------------------------
 
     /**
      * Stub `setLink()` → retourne le bool fourni (true par défaut = succès).

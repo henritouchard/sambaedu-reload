@@ -19,7 +19,7 @@ func writeOverlaySessionCache(t *testing.T, store *Store, sid, body string) {
 }
 
 // writeOverlayMachineCache pose le cache MACHINE (cache/state.json) — la salle
-// vit en portée machine depuis la Story 27.10.
+// vit en portée machine.
 func writeOverlayMachineCache(t *testing.T, store *Store, body string) {
 	t.Helper()
 	if err := os.MkdirAll(store.CacheDir(), 0o700); err != nil {
@@ -30,7 +30,7 @@ func writeOverlayMachineCache(t *testing.T, store *Store, body string) {
 	}
 }
 
-// Cache machine : la salle est en portée `machine` (Story 27.10).
+// Cache machine : la salle est en portée `machine`.
 const overlayMachineState = `{
   "schema": "se5.desired-state/v1",
   "generated_at": "2026-06-16T08:00:00Z",
@@ -94,7 +94,7 @@ func TestOverlayDocumentForSession_ComposesFromBothCaches(t *testing.T) {
 }
 
 func TestOverlayDocumentForSession_PreloadsRoomWhenSessionAbsent(t *testing.T) {
-	// CŒUR Story 27.10 (AC3/AC4) — préchargement : cache MACHINE présent
+	// CŒUR — préchargement : cache MACHINE présent
 	// (salle), cache SESSION ABSENT (per-user pas encore frais au logon). Le
 	// document porte machine.room + machine.name (local), identity VIDE.
 	store := &Store{Root: t.TempDir()}
@@ -180,7 +180,7 @@ func TestOverlayDocumentForSession_CorruptedCacheGraceful(t *testing.T) {
 }
 
 func TestOverlayDocumentForSession_MachineSaneSessionCorrupted(t *testing.T) {
-	// Best-effort (Story 27.10, review F3) : cache MACHINE sain + cache SESSION
+	// Best-effort (review F3) : cache MACHINE sain + cache SESSION
 	// CORROMPU → la portée machine intacte est composée (salle préchargée), la
 	// session illisible est SAUTÉE (identity vide), ok=true. C'est LE scénario
 	// probable en prod : la salle persiste dans le cache machine, le cache

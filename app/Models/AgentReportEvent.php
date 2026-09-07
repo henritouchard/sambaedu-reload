@@ -9,8 +9,8 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * Story 24.1 — Journal des CHANGEMENTS d'état rapportés par l'agent
- * (D3 : dérive détectée, dérive corrigée, apply échoué — jamais un rapport
+ * Journal des CHANGEMENTS d'état rapportés par l'agent
+ * (dérive détectée, dérive corrigée, apply échoué — jamais un rapport
  * identique au précédent). Append-only : pas d'updated_at, jamais d'UPDATE.
  *
  * `previous_status` est null au premier rapport du type (pas d'état

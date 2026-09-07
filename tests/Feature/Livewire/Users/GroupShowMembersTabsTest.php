@@ -64,7 +64,7 @@ class GroupShowMembersTabsTest extends TestCase
                 $table->timestamps();
             });
         }
-        // Story 62.3 — les libellés de rôle par TYPE de groupe (« Élève »,
+        // Les libellés de rôle par TYPE de groupe (« Élève »,
         // « Enseignant », « Professeur principal ») ÉTAIENT une constante de code ;
         // ils sont désormais des DÉCLARATIONS en base, installées à la demande par
         // `php artisan college:seed:role-x-type` (la migration, elle, crée la table
@@ -93,11 +93,9 @@ class GroupShowMembersTabsTest extends TestCase
         UserGroupUserPivotObserver::enableSync();
         Mockery::close();
 
-
         $this->dropPermissionSchema();
         parent::tearDown();
     }
-
 
     /**
      * La table des déclarations et les trois lignes de `classe`, telles que la
@@ -160,7 +158,7 @@ class GroupShowMembersTabsTest extends TestCase
         $profPp = User::create(['login' => 'prof.pp', 'role' => 'prof', 'fullname' => 'Alice Pp', 'is_active' => true]);
         $prof = User::create(['login' => 'prof.simple', 'role' => 'prof', 'fullname' => 'Bob Simple', 'is_active' => true]);
         $eleve = User::create(['login' => 'eleve.un', 'role' => 'eleve', 'fullname' => 'Chloe Eleve', 'is_active' => true]);
-        // Story 42.1 — miroir `role` ⇔ `is_head_teacher` (owner pour le PP).
+        // Miroir `role` ⇔ `is_head_teacher` (owner pour le PP).
         $group->users()->sync([
             $profPp->id => ['is_head_teacher' => true, 'role' => UserGroupUserPivot::ROLE_OWNER],
             $prof->id => ['is_head_teacher' => false, 'role' => UserGroupUserPivot::ROLE_MANAGER],
@@ -254,10 +252,6 @@ class GroupShowMembersTabsTest extends TestCase
         );
     }
 
-    // =========================================================================
-    // Story 42.3 — AC1 : colonne « Rôle » en lecture (view-model + libellés FR)
-    // =========================================================================
-
     #[Test]
     public function it_exposes_edge_role_distinct_from_global_role(): void
     {
@@ -267,9 +261,9 @@ class GroupShowMembersTabsTest extends TestCase
         $members = collect(Livewire::test($this->componentPath(), ['id' => $group->id])->instance()->members())
             ->keyBy('id');
 
-        // Piège 42.1 #5 — collision de clés interdite : `role` (global) reste
+        // Collision de clés interdite : `role` (global) reste
         // prof/eleve/autre, `edge_role` (arête) porte member/manager/owner.
-        // Story 60.2 — les libellés viennent désormais de la table canonique par
+        // Les libellés viennent désormais de la table canonique par
         // TYPE de groupe (ici « classe ») : « Enseignant » et « Professeur
         // principal » remplacent les abréviations écrites en dur.
         $this->assertSame('prof', $members[$profPp->id]['role']);
@@ -291,9 +285,9 @@ class GroupShowMembersTabsTest extends TestCase
         $this->actingAs($this->makeAdmin());
         $group = UserGroup::create(['name' => 'Projet', 'type' => 'projet', 'display_name' => 'Projet X']);
         $user = User::create(['login' => 'sale.role', 'role' => 'eleve', 'fullname' => 'Sale Role', 'is_active' => true]);
-        // Arête hors vocabulaire (donnée sale) — D1 : ramenée au rôle le moins
-        // doté. Story 60.2 : dans un groupe de type « projet », ce rôle se lit
-        // « Membre » — écrire « Élève » là était un reste du seul cas scolaire.
+        // Arête hors vocabulaire (donnée sale) : ramenée au rôle le moins doté.
+        // Dans un groupe de type « projet », ce rôle se lit « Membre », jamais
+        // « Élève » qui n'appartient qu'au cas scolaire.
         $group->users()->sync([$user->id => ['role' => 'superadmin']]);
 
         $members = collect(Livewire::test($this->componentPath(), ['id' => $group->id])->instance()->members())

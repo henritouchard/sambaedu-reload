@@ -12,9 +12,9 @@ use Tests\TestCase;
 /**
  * Pont `php artisan test` → `go test ./...` du module agent (`agent/`).
  *
- * Demande Henri : la suite de tests Laravel doit AUSSI faire tourner les tests
- * de l'agent Go. Ce test shelle vers `go test ./...` dans `agent/` et échoue si
- * la suite Go échoue (sortie complète remontée dans le message d'assertion).
+ * La suite de tests Laravel fait AUSSI tourner les tests de l'agent Go : ce test
+ * shelle vers `go test ./...` dans `agent/` et échoue si la suite Go échoue
+ * (sortie complète remontée dans le message d'assertion).
  *
  * Robustesse :
  *  - SKIP propre (jamais d'échec) si la toolchain Go est absente — un poste de

@@ -10,7 +10,7 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 15.2 / AC6.3 — Régénération `.ini` per-poste.
+ * Régénération `.ini` per-poste.
  */
 final class WpkgIniRegenerateCommand extends Command
 {

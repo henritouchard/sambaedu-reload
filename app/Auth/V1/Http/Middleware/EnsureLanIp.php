@@ -14,13 +14,12 @@ use Symfony\Component\HttpFoundation\IpUtils;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * Story 16.11 — AC2.1.
  *
  * Restreint l'accès aux endpoints `/api/v1/agent/enroll` et
  * `/api/v1/agent/bootstrap.{cmd,sh}` au LAN scolaire (subnets RFC1918 par
  * défaut, surchargeable via `AUTH_V1_BOOTSTRAP_ALLOWED_SUBNETS`).
  *
- * Mitigation D1 — contre fixation UUID re-enroll : combiné avec le couple
+ * Mitigation contre la fixation d'UUID au re-enrollment : combiné avec le couple
  * token↔UUID, un attaquant doit être à la fois sur le LAN ET capter un
  * token md5 valide ET deviner le bon uuid déclaré dans le contexte APCu —
  * trois conditions cumulées qui rendent l'attaque très peu réaliste en
@@ -84,7 +83,7 @@ class EnsureLanIp
             ],
         );
 
-        // Story 16.11 Q2 (Opus-D) — tracer le rejet pour `migration:health-check`.
+        // Tracer le rejet pour `migration:health-check`.
         // L'uuid n'est pas extrait ici (le LAN check précède l'auth bootstrap-token).
         $this->attemptRecorder->recordFailure(
             $request,

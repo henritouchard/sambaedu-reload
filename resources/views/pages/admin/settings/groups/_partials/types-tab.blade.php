@@ -13,7 +13,7 @@ use Livewire\Attributes\Locked;
 use Livewire\Component;
 
 /**
- * Story 62.2 — onglet « Types de groupes » de /admin/settings/groups : LE
+ * Onglet « Types de groupes » de /admin/settings/groups : LE
  * CATALOGUE.
  *
  * Un type = une CLÉ immuable ⇔ un LIBELLÉ modifiable, plus une icône et un rang
@@ -27,15 +27,15 @@ use Livewire\Component;
  * ni ici, ni par le modèle, qui lève.
  *
  * **L'écran DIT l'invariant d'accrochage, il ne le devine pas.** Un type ne porte
- * qu'une recette d'ARBRE (garde applicative `assertSingleTreeAttachment()`, story
- * 60.5) ; les recettes PLATES, elles, peuvent être plusieurs sur le même type — le
+ * qu'une recette d'ARBRE (garde applicative `assertSingleTreeAttachment()`) ; les
+ * recettes PLATES, elles, peuvent être plusieurs sur le même type — le
  * type `classe` en porte deux dans le catalogue livré. La colonne
  * « Arborescence » montre l'arbre accroché et compte les plates, et la note sous la
  * liste énonce la règle : l'admin l'apprend AVANT de rencontrer l'exception, qui
  * reste la garde de dernier recours.
  *
  * **Lecture SEULE sur l'accrochage.** Aucune UI ne l'attribue ici : c'est de la
- * donnée seedée jusqu'à la story 62.6, qui apportera l'éditeur d'arborescences.
+ * donnée seedée, en attendant l'éditeur d'arborescences.
  *
  * **La suppression REFUSE, elle ne cascade jamais.** Un type porté par des groupes
  * ou visé par une recette n'est pas supprimable, et le refus NOMME le décompte. Les
@@ -43,7 +43,7 @@ use Livewire\Component;
  * littéral dans le code de SE5, et le prochain balayage d'annuaire les réécrirait.
  *
  * Sécurité : `server.admin` au `mount()` ET à chaque écriture (double garde,
- * patron des pages settings). Q4 = A — aucune permission Spatie nouvelle.
+ * patron des pages settings). Aucune permission Spatie nouvelle.
  */
 new class extends Component {
     use WithToasts;
@@ -51,7 +51,6 @@ new class extends Component {
     /** @var array<int, array<string, mixed>> */
     public array $rows = [];
 
-    // --- Modale création / édition ------------------------------------------
     public bool $isModalOpen = false;
 
     public bool $isEditing = false;
@@ -69,7 +68,6 @@ new class extends Component {
 
     public string $icon = '';
 
-    // --- Rôles déclarés par le type (story 62.3) ------------------------------
 
     /**
      * Clés de rôle COCHÉES dans la modale d'édition.
@@ -90,7 +88,6 @@ new class extends Component {
      */
     public array $roleLabels = [];
 
-    // --- Modale de suppression ----------------------------------------------
     public bool $isDeleteOpen = false;
 
     #[Locked]
@@ -122,7 +119,7 @@ new class extends Component {
                 'protected' => $type->isProtected(),
                 'usage' => $type->usage(),
                 'attachment' => $type->attachment(),
-                // Story 62.3 — ce que le type DÉCLARE, dans l'ordre du catalogue
+                // Ce que le type DÉCLARE, dans l'ordre du catalogue
                 // de rôles. Vide = régime de repli (tous les rôles disponibles),
                 // rendu « — » à l'écran.
                 'declared_roles' => $this->declaredRolesOf((string) $type->key),
@@ -204,9 +201,8 @@ new class extends Component {
     {
         $rows = RoleCatalog::rows();
 
-        // Review 62.3 #1 — `owner` porte la désignation du professeur principal :
-        // il n'a de sens qu'en classe, et la règle D3 empêche de toute façon de
-        // l'attribuer ailleurs. Le proposer ici produisait une déclaration
+        // `owner` porte la désignation du professeur principal : il n'a de sens
+        // qu'en classe, et le modèle empêche de toute façon de l'attribuer ailleurs. Le proposer ici produisait une déclaration
         // mort-née — et le bouton « tous les rôles » la posait en un clic. Le
         // modèle la refuse désormais ; on ne la propose pas non plus, pour que le
         // refus reste une garde et non une expérience utilisateur.
@@ -266,7 +262,7 @@ new class extends Component {
         $this->label = (string) $type->label;
         $this->icon = (string) ($type->icon ?? '');
 
-        // Story 62.3 — l'état des déclarations, lu sur la clé EXACTE de la ligne
+        // L'état des déclarations, lu sur la clé EXACTE de la ligne
         // éditée : on édite CETTE ligne du catalogue, pas ce que la résolution
         // apparierait (une ligne héritée `Custom` ne se voit pas attribuer les
         // déclarations de `custom`).
@@ -322,7 +318,7 @@ new class extends Component {
                 return;
             }
 
-            // Story 62.3 — les REFUS de retrait sont évalués AVANT toute écriture.
+            // Les REFUS de retrait sont évalués AVANT toute écriture.
             // Ce n'est pas une optimisation : l'AC exige le tout-ou-rien sur la
             // soumission ENTIÈRE — ni les retraits, ni les ajouts, ni les libellés
             // locaux, ni même le renommage du type ne doivent passer si l'un des
@@ -351,7 +347,7 @@ new class extends Component {
                 // check-then-act : deux soumissions concurrentes (double-clic,
                 // deux onglets) déclarant la même paire se disputent l'index
                 // unique composite. La perdante reçoit un message métier, jamais
-                // un SQLSTATE brut (leçon de la review 62.1 #3). La transaction a
+                // un SQLSTATE brut. La transaction a
                 // déjà tout annulé.
                 $this->addError('label', sprintf(
                     'Les rôles de ce type viennent d\'être modifiés ailleurs (%s). Rouvrez la fenêtre pour '
@@ -361,7 +357,7 @@ new class extends Component {
 
                 return;
             } catch (\Throwable $e) {
-                // Review 62.2 #1 — la branche création interceptait déjà les gardes
+                // La branche création interceptait déjà les gardes
                 // du modèle, pas celle-ci : une garde qui refusait ce type rendait
                 // un 500 au lieu d'un message. Le défaut de fond est corrigé sur le
                 // modèle ; ce filet reste, par symétrie avec la création, pour toute
@@ -407,7 +403,7 @@ new class extends Component {
             // soumissions concurrentes du même libellé (double-clic, deux
             // onglets) le passent toutes les deux et se disputent la contrainte
             // unique en base. La perdante reçoit le message métier, pas un
-            // SQLSTATE brut (leçon de la review 62.1).
+            // SQLSTATE brut (leçon de la review).
             $this->addError('label', sprintf(
                 'La clé « %s » est déjà prise par un type du catalogue. Choisissez un autre libellé.',
                 $key,
@@ -426,7 +422,6 @@ new class extends Component {
         $this->loadRows();
     }
 
-    // --- Déclarations de rôles (story 62.3) -----------------------------------
 
     /**
      * Les clés de rôle retenues par la soumission, dans l'ordre du CATALOGUE.
@@ -511,7 +506,6 @@ new class extends Component {
         RoleCatalog::flush();
     }
 
-    // --- Ordre d'affichage ---------------------------------------------------
 
     public function moveUp(int $id): void
     {
@@ -562,7 +556,6 @@ new class extends Component {
         $this->loadRows();
     }
 
-    // --- Suppression ---------------------------------------------------------
 
     public function confirmDelete(int $id): void
     {
@@ -680,7 +673,7 @@ new class extends Component {
                         {{ $row['usage']['groups'] }} groupe{{ $row['usage']['groups'] > 1 ? 's' : '' }}
                     </span>
                 </td>
-                {{-- Story 62.3 — le vocabulaire déclaré, lu tel qu'il s'affichera
+                {{-- Le vocabulaire déclaré, lu tel qu'il s'affichera
                      sur un groupe de ce type (libellé local sinon catalogue). Un
                      type sans déclaration montre « — » : tout le catalogue lui est
                      disponible, il n'a rien restreint. --}}
@@ -786,7 +779,7 @@ new class extends Component {
             @endif
         </x-molecules.modal.section>
 
-        {{-- Story 62.3 — LES RÔLES DISPONIBLES DANS CE TYPE.
+        {{-- LES RÔLES DISPONIBLES DANS CE TYPE.
 
              La section n'existe qu'à l'ÉDITION : un type neuf naît sans
              déclaration, donc en régime de repli, et proposer de déclarer avant

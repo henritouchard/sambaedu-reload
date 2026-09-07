@@ -7,12 +7,11 @@ namespace App\Ipxe\Http\Requests;
 use Illuminate\Foundation\Http\FormRequest;
 
 /**
- * Story 3.5 — AC5.7 / AC5.5.
  *
  * Validation du body de `GET|POST /ipxe/windows/sysprep.xml`.
  *
  * **Stub minimal D15** : la logique complète dépend de `IpxeProgrammedActionResolver`
- * non porté (3.7). En 3.5, on accepte juste `name` nullable + log info.
+ * non porté. En, on accepte juste `name` nullable + log info.
  *
  * `authorize()` = true (auth via middleware `auth.v1.lan-only`).
  */

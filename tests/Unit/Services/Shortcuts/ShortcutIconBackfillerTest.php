@@ -11,7 +11,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 27.7 (AC5) — backfill name-addressed → content-addressed.
+ * Backfill name-addressed → content-addressed.
  * Copie (jamais supprime), dédup checksum, idempotent, missing fail-soft.
  */
 class ShortcutIconBackfillerTest extends TestCase

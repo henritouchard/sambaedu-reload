@@ -5,7 +5,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 35.5 — Capacité `photo_viewer_restored` : dernière brique de la GPO CD95
+ * Capacité `photo_viewer_restored` : dernière brique de la GPO CD95
  * « Ajustement_Photo » (réenregistrement de la Visionneuse de photos Windows),
  * transformée en capacité (modèle capability-first, patron EXACT du palier A
  * `2026_07_02_100000` : `updateOrInsert` par `key` puis par
@@ -15,18 +15,18 @@ use Illuminate\Support\Facades\Schema;
  * ../GPO_spécialesCD95/Ajustement_Photo/{B1E4CA63-2196-40A7-A7AF-50B0FFE099BD}/
  * DomainSysvol/GPO/Machine/Preferences/Registry/Registry.xml
  *
- * ── ROUTAGE HKCR → HKCU\Software\Classes (iso `onedrive_hidden`, seed ISO) ────
+ * **ROUTAGE HKCR → HKCU\Software\Classes (iso `onedrive_hidden`, seed ISO)**
  * La GPO écrit HKEY_CLASSES_ROOT (vue MACHINE machine-wide). Le handler Go
  * `registry` ne route que HKLM (SYSTEM) / HKCU (compagnon de session). HKCR est la
  * vue FUSIONNÉE HKLM+HKCU\Software\Classes ; la branche per-user est écrite par le
  * compagnon → portée SESSION ({@see RegistryUserCapabilityProvider}), aucun droit
  * admin requis. On transcrit donc les 4 clés en `hive=HKCU,
- * path=Software\Classes\Applications\photoviewer.dll\…`. Nuance assumée par l'epic :
+ * path=Software\Classes\Applications\photoviewer.dll\…`. Nuance assumée :
  * la GPO appliquait machine-wide, la capacité applique par session convergée
  * (iso-intention : chaque session gérée voit la visionneuse ; l'overlay per-user
  * prime sur la vue machine).
  *
- * ── QUIRK GPO PRÉSERVÉ (fidélité iso-GPO stricte) ────────────────────────────
+ * **QUIRK GPO PRÉSERVÉ (fidélité iso-GPO stricte)**
  * La commande `print` utilise `ImageView_Fullscreen` (PAS `ImageView_PrintTo`) —
  * quirk de la GPO CD95, PRÉSERVÉ tel quel : le but est de REMPLACER la GPO à
  * l'identique, pas de la « corriger ». Les DEUX commandes portent donc la même
@@ -34,7 +34,7 @@ use Illuminate\Support\Facades\Schema;
  *   - open  = {FFE2A43C-56B9-4bf5-9A79-CC6D4285608A}
  *   - print = {60fd46de-f830-4894-a628-6fa81bc0190d}
  *
- * ── « off » = VRAIE ACTION (marqueur 35.1, DONE) ─────────────────────────────
+ * **« off » = VRAIE ACTION (marqueur, DONE)**
  * Chaque clé porte `'off' => ['$ensure' => 'absent']` (marqueur littéral dupliqué
  * ici — les migrations ne référencent pas le code applicatif, iso retrofit
  * `2026_07_03_100000` ; la référence d'authoring reste
@@ -43,7 +43,7 @@ use Illuminate\Support\Facades\Schema;
  * désenregistrer (suppression des 4 valeurs, Windows reprend son état),
  * unmanaged = rien d'émis (opt-in par override de parc, aucun broadcast).
  *
- * ── GATE D'HONNÊTETÉ `is_active = false` (Découverte de cadrage) ──────────────
+ * **GATE D'HONNÊTETÉ `is_active = false` (Découverte de cadrage)**
  * Les DEUX clés `…\shell\open\command` et `…\shell\print\command` écrivent la
  * valeur PAR DÉFAUT de la clé (`name=""` dans le Registry.xml source, c'est ce que
  * lit le shell — aucune valeur nommée alternative n'existe). Côté serveur tout
@@ -57,21 +57,19 @@ use Illuminate\Support\Facades\Schema;
  * `is_active = false` : invisible des onglets d'armement, grisée dans les réglages
  * parc-defaults, ignorée par le provider (`where('is_active', true)`) → RIEN n'est
  * émis, golden files intacts. L'ACTIVATION (`is_active = true`) est gated par une
- * micro-évolution agent hors story (accepter `name: ""` = valeur par défaut de la
- * clé : ~3 lignes de parse + doc contrat + bump + note de publication ; candidat
- * 35.2/35.3 qui touchent déjà `handler_registry.go`, sinon micro-story 35.5bis).
+ * micro-évolution agent à venir (accepter `name: ""` = valeur par défaut de la
+ * clé : ~3 lignes de parse + doc contrat + bump + note de publication).
  * Le flip se fera par une migration POSTÉRIEURE (`update(is_active=true)`).
  * ⚠️ La migration de flip doit AUSSI réécrire `description` (retirer la phrase
- * « Inactive tant que… ») — sinon le tooltip UI mentirait après activation
- * (review 35.5 #3).
+ * « Inactive tant que… ») — sinon le tooltip UI mentirait après activation.
  *
- * ── LIMITE DE PÉRIMÈTRE (à documenter partout) ───────────────────────────────
+ * **LIMITE DE PÉRIMÈTRE (à documenter partout)**
  * La capacité RÉENREGISTRE la visionneuse (rend l'app existante invocable —
  * iso-GPO CD95, qui ne touchait PAS UserChoice) ; le CHOIX effectif de
  * l'application par extension (`UserChoice`) relève du composer d'associations
- * existant (27.11) — HORS story. Corollaire : la visionneuse reste EXCLUE du
+ * existant — HORS périmètre. Corollaire : la visionneuse reste EXCLUE du
  * catalogue `NativeApplicationSeeder` (exe `rundll32.exe` générique non
- * fonctionnel — décision de curation 2026-06-18, inchangée).
+ * fonctionnel).
  */
 return new class extends Migration
 {
@@ -88,7 +86,7 @@ return new class extends Migration
         // sur open ET print (fidélité iso-GPO, cf. docblock).
         $command = '%SystemRoot%\\System32\\rundll32.exe "%ProgramFiles%\\Windows Photo Viewer\\PhotoViewer.dll", ImageView_Fullscreen %1';
 
-        // Marqueur de SUPPRESSION (35.1) — dupliqué en littéral (les migrations ne
+        // Marqueur de SUPPRESSION — dupliqué en littéral (les migrations ne
         // référencent pas le code applicatif). {@see AbstractCapabilityStateProvider::SPEC_ENSURE}.
         $ensureAbsent = ['$ensure' => 'absent'];
 
@@ -133,9 +131,10 @@ return new class extends Migration
             [
                 'label' => 'Visionneuse de photos Windows',
                 // ≤ 255 caractères : capabilities.description = varchar(255) sur
-                // Postgres, invisible sous SQLite (review 35.5 #1 — piège 22001).
-                // La nuance « ne choisit pas l'app par extension » vit dans la
-                // story + runbook QA (limite de périmètre), pas ici.
+                // Postgres : un dépassement y lève un SQLSTATE 22001, alors que
+                // SQLite tronque en silence.
+                // La nuance « ne choisit pas l'app par extension » vit dans le
+                // runbook QA, pas ici.
                 'description' => 'Réenregistre la Visionneuse de photos Windows (commandes open/print + DropTarget) '
                     .'pour la session — iso-GPO CD95 « Ajustement_Photo ». Inactive tant que l\'agent ne sait '
                     .'pas écrire la valeur par défaut d\'une clé.',

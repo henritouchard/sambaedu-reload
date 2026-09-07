@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Helper Story 15.2 — Crée les tables minimales nécessaires pour tester
+ * Helper — Crée les tables minimales nécessaires pour tester
  * les services / generators / listeners du pipeline `App\Wpkg\Deployment`
  * sur SQLite :memory: sans rejouer la baseline complète des migrations
  * (incompatibilité historique cf. WpkgDeploymentMigrationsTest::class).
@@ -28,7 +28,7 @@ final class WpkgSchemaBootstrapper
      */
     public static function bootstrap(): void
     {
-        // Mute le dispatcher Eloquent global (pipeline 15.2 = Eloquent-only,
+        // Mute le dispatcher Eloquent global (pipeline = Eloquent-only,
         // les observers métier touchent LDAP/AD = incompatible test offline).
         // `unsetEventDispatcher` met à null la référence statique partagée par
         // tous les modèles ; `tearDown()` restaure via le container.
@@ -42,7 +42,7 @@ final class WpkgSchemaBootstrapper
                 $table->string('status', 32)->default('active');
                 $table->string('ad_dn', 512)->nullable();
                 $table->string('ad_guid', 36)->nullable();
-                // Story 15.3 — colonne d'archivage logique (cf.
+                // Colonne d'archivage logique (cf.
                 // 2026_05_06_100000_add_archived_at_to_workstations_and_groups).
                 // Présente en bootstrap shim pour que les requêtes
                 // resolver/listener filtrant `archived_at IS NULL`
@@ -62,7 +62,7 @@ final class WpkgSchemaBootstrapper
                 $table->string('ad_guid', 36)->nullable();
                 $table->string('display_name', 255)->nullable();
                 $table->text('description')->nullable();
-                // Story 30.2 — label refnum d'un parc (par NOM, sans FK). Story 31.2
+                // Label refnum d'un parc (par NOM, sans FK).
                 // en a besoin pour le ciblage `target_type=label` des ordres d'install
                 // (labelsCarriedBy lit `controlhub_label != ''`). Nullable, additif.
                 $table->string('controlhub_label')->nullable();
@@ -98,21 +98,21 @@ final class WpkgSchemaBootstrapper
             Schema::create('applications', function (Blueprint $table): void {
                 $table->id();
                 $table->string('app_id', 100);
-                // Story 27.17 — app appliquée par défaut à tous les postes
+                // App appliquée par défaut à tous les postes
                 // (couche Broadcast, lue par ApplicationsStateProvider).
                 $table->boolean('is_parc_default')->default(false);
-                // Story 32.1 (Q2 — report review 31.3 #B) : trace d'origine posée par
+                // Trace d'origine posée par
                 // AppStoreService::materializeFromSource (managed_by_control_hub=true).
                 // Miroir de la colonne de prod ; nullable-default false, non-breaking.
                 $table->boolean('managed_by_control_hub')->default(false);
                 $table->string('name', 100)->default('');
                 $table->string('status', 32)->default('available');
-                // Story 17.6 — fragment XML `<package>` lu par
+                // Fragment XML `<package>` lu par
                 // LinuxOutController / WingetPackagesResolver (extraction des
                 // noeuds <linux type=apt> / <windows type=winget>). Nullable :
-                // non-breaking pour les tests 15.2 qui ne le renseignent pas.
+                // non-breaking pour les tests qui ne le renseignent pas.
                 $table->text('xml')->nullable();
-                // Story 31.3 — colonnes alimentées par la matérialisation depuis la
+                // Colonnes alimentées par la matérialisation depuis la
                 // source de dépôt (AppStoreService::materializeFromSource). Nullables,
                 // additives : non-breaking pour les tests antérieurs.
                 $table->unsignedBigInteger('depot_id')->nullable();
@@ -129,7 +129,7 @@ final class WpkgSchemaBootstrapper
                 $table->timestamps();
             });
 
-            // Story 31.3 (review #A) — index unique partiel sur `app_id` quand
+            // Index unique partiel sur `app_id` quand
             // `depot_id IS NULL` : fidélité avec la migration de prod (ferme la fenêtre
             // de doublon concurrent du chemin de matérialisation amont). SQLite supporte
             // les index partiels.
@@ -203,7 +203,7 @@ final class WpkgSchemaBootstrapper
             });
         }
 
-        // Story 15.6 — WpkgDeploymentSettings / EnsureLocalRequest lisent SystemSetting
+        // WpkgDeploymentSettings / EnsureLocalRequest lisent SystemSetting
         // (table system_settings). Ajouté ici pour éviter les patches inline dupliqués.
         if (! Schema::hasTable('system_settings')) {
             Schema::create('system_settings', function (Blueprint $table): void {
@@ -214,11 +214,11 @@ final class WpkgSchemaBootstrapper
             });
         }
 
-        // Story 31.1 — le bornage catalogue (AppProfileService::assertApplications-
+        // Le bornage catalogue (AppProfileService::assertApplications-
         // InUpstreamCatalog + Application::scopeInUpstreamCatalog) résout
         // ControlHubContract::active(). La table est requise même vide : sans contrat
-        // actif, le résolveur court-circuite (NFR3) et aucun bornage n'est appliqué,
-        // donc le comportement WPKG de ces tests reste inchangé.
+        // actif, le résolveur court-circuite et aucun bornage n'est appliqué, donc
+        // le comportement WPKG de ces tests reste inchangé.
         if (! Schema::hasTable('controlhub_contracts')) {
             Schema::create('controlhub_contracts', function (Blueprint $table): void {
                 $table->id();
@@ -228,29 +228,29 @@ final class WpkgSchemaBootstrapper
             });
         }
 
-        // Anti foot-gun (review 31.1 #3) : si un futur test de ce bootstrapper crée
-        // un contrat ACTIF, le résolveur requête catalogApps() → cette table doit
-        // exister (sinon « no such table »). Vide = aucun bornage (catalogue vide, D1).
+        // Si un futur test de ce bootstrapper crée un contrat ACTIF, le résolveur
+        // requête catalogApps() : la table doit exister, sinon « no such table ».
+        // Laissée vide, elle signifie catalogue vide, donc aucun bornage.
         if (! Schema::hasTable('controlhub_contract_catalog_apps')) {
             Schema::create('controlhub_contract_catalog_apps', function (Blueprint $table): void {
                 $table->id();
                 $table->unsignedBigInteger('controlhub_contract_id');
                 $table->string('app_key');
                 $table->string('display_name')->nullable();
-                // Story 31.3 — référence de source par-app (« Option B », D1). Nullables,
-                // additives : un contrat sans source reste accepté (NFR3).
+                // Référence de source par-app. Colonnes nullables et additives :
+                // un contrat sans source reste accepté.
                 $table->string('source_xml_url')->nullable();
                 $table->string('source_xml_sha')->nullable();
                 $table->timestamps();
             });
         }
 
-        // Story 31.2 — items imposés du contrat (28.1). Le pont des ORDRES D'INSTALL
+        // Items imposés du contrat. Le pont des ORDRES D'INSTALL
         // amont (UpstreamContractSource::orderedApplicationAppIds, type='applications')
         // lit cette table dès qu'un contrat est ACTIF ; ApplicationsStateProvider
         // l'interroge désormais à chaque itemsFor(). Requise même vide : sans contrat
-        // actif, `ensureResolved()` court-circuite (NFR3) et ne la touche jamais.
-        // Colonnes alignées sur la migration 28.1 (target_label NOT NULL DEFAULT '').
+        // actif, `ensureResolved()` court-circuite et ne la touche jamais.
+        // Colonnes alignées sur la migration (target_label NOT NULL DEFAULT '').
         if (! Schema::hasTable('controlhub_contract_items')) {
             Schema::create('controlhub_contract_items', function (Blueprint $table): void {
                 $table->id();
@@ -265,7 +265,7 @@ final class WpkgSchemaBootstrapper
             });
         }
 
-        // Story 32.1 (NFR5) — miroir de la migration additive
+        // Miroir de la migration additive
         // 2026_06_30_100000_create_controlhub_link_audit_logs_table : audit
         // append-only de la transition `active → severed`. Requise dès qu'un test
         // s'appuyant sur ce bootstrapper (sans `RefreshDatabase`) exerce la rupture
@@ -281,8 +281,8 @@ final class WpkgSchemaBootstrapper
                 $table->string('actor_label')->nullable();
                 $table->text('reason')->nullable();
                 $table->json('summary')->nullable();
-                // Correctif review #3 : aligné sur la migration (useCurrent(), NON
-                // nullable) — l'audit pose toujours `created_at` (manuel, now()).
+                // Aligné sur la migration : `useCurrent()`, NON nullable —
+                // l'audit pose toujours `created_at` lui-même.
                 $table->timestamp('created_at')->useCurrent();
             });
         }

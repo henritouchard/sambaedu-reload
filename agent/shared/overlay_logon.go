@@ -2,14 +2,14 @@ package shared
 
 import "os"
 
-// Écriture de overlay.json par le SERVICE SYSTEM au logon (Story 27.1bis,
-// volet 2 — décisions D1/D2). L'overlay QUITTE la map du compagnon (D1) : il
+// Écriture de overlay.json par le SERVICE SYSTEM au logon.
+// L'overlay QUITTE la map du compagnon : il
 // était écrit en droits user (falsifiable) ; il est désormais composé ET écrit
 // par SYSTEM au logon, possédé SYSTEM avec ACL <SID>:R (l'élève lit, ne
-// falsifie jamais — NFR5). La COMPOSITION (ComposeOverlayDocument) est
+// falsifie jamais). La COMPOSITION (ComposeOverlayDocument) est
 // réutilisée À L'IDENTIQUE (logique pure, golden inchangé).
 //
-// Q1 = Option B (logon-only, tranchée par Henri 2026-06-15) : écriture
+// Logon-only : écriture
 // ÉVÉNEMENTIELLE au logon UNIQUEMENT — pas de timer périodique SYSTEM, les
 // alertes live ne sont pas rafraîchies en cours de session (assumé démo).
 //
@@ -20,11 +20,11 @@ import "os"
 
 // OverlayDocumentForSession lit le cache d'état per-SID (alimenté par
 // session-fetch SYSTEM) ET le cache MACHINE persistant (cache/state.json,
-// alimenté par le cycle service + réveil-logon 27.9), en extrait les items
+// alimenté par le cycle service + réveil-logon), en extrait les items
 // overlay des DEUX, et compose le document overlay.json cible.
 //
 // La salle (`machine.room`) vient de la portée MACHINE du cache machine
-// (Story 27.10) : poste + salle sont ainsi composés DÈS le logon sans attendre
+// poste + salle sont ainsi composés DÈS le logon sans attendre
 // le fetch per-user. `identity.login/fullname` viennent de la portée session
 // du cache per-SID. Le compose tourne côté SYSTEM (logon-only) → l'accès aux
 // deux caches respecte la partition des portées (le COMPAGNON en droits user

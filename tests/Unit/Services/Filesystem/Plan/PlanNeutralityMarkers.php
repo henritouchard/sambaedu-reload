@@ -7,9 +7,9 @@ namespace Tests\Unit\Services\Filesystem\Plan;
 use App\Services\Filesystem\Plan\FilePlan;
 
 /**
- * Story 60.1/60.2 — le VOCABULAIRE interdit d'un plan, et la façon de le chercher.
+ * Le VOCABULAIRE interdit d'un plan, et la façon de le chercher.
  *
- * Extrait de {@see PlanNeutralityGuardTest} par la story 60.2 pour que la garde
+ * Extrait de {@see PlanNeutralityGuardTest} par la pour que la garde
  * s'exerce AUSSI sur un plan issu de la chaîne complète (groupe réel en base →
  * recette accrochée → plan), sans dupliquer la liste. Deux listes de marqueurs qui
  * divergeraient seraient pires qu'une seule : la garde la plus faible ferait

@@ -7,7 +7,7 @@ namespace Tests\Support;
 use App\Services\Print\Contracts\CommandRunner;
 
 /**
- * Story 6.1 — Test double pour `CommandRunner`.
+ * Test double pour `CommandRunner`.
  *
  * Programmable in-memory : on enregistre les réponses pour des commandes
  * précises (matching exact ou substring), et on récupère l'historique des

@@ -32,9 +32,8 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 37.1 — `DesiredStateOriginService` : origines exactes (AC4), multi-origines
- * (piège #5), ensembles vides (AC1), et FIDÉLITÉ à l'état servi à l'agent (AC3,
- * comparaison aux providers réels).
+ * `DesiredStateOriginService` : origines exactes, multi-origines, ensembles
+ * vides, et FIDÉLITÉ à l'état servi à l'agent (comparaison aux providers réels).
  */
 class DesiredStateOriginServiceTest extends TestCase
 {
@@ -89,7 +88,7 @@ class DesiredStateOriginServiceTest extends TestCase
         return null;
     }
 
-    // ── AC4 — origines exactes (applications) ─────────────────────────────────
+    // — origines exactes (applications)
 
     #[Test]
     public function app_directly_on_workstation_is_ce_poste(): void
@@ -202,7 +201,7 @@ class DesiredStateOriginServiceTest extends TestCase
     #[Test]
     public function app_ordered_by_active_upstream_contract_is_contrat_amont(): void
     {
-        // Review #2 — AC4 « Contrat amont » : une app ORDONNÉE par un contrat amont
+        // « Contrat amont » : une app ORDONNÉE par un contrat amont
         // ACTIF (item type=applications, cible instance) et NON résolue localement
         // doit apparaître avec le badge upstream (kind === 'upstream').
         $app = $this->newApp('teamviewer', 'TeamViewer');
@@ -238,7 +237,7 @@ class DesiredStateOriginServiceTest extends TestCase
         self::assertSame([], $this->service->shortcutsFor($ws));
     }
 
-    // ── AC4 — origines exactes (raccourcis) ───────────────────────────────────
+    // — origines exactes (raccourcis)
 
     #[Test]
     public function shortcut_on_room_is_physical_badge_distinct_from_logical(): void
@@ -290,7 +289,7 @@ class DesiredStateOriginServiceTest extends TestCase
         self::assertCount(2, $row['origins']);
     }
 
-    // ── AC3 — fidélité à l'état servi à l'agent ───────────────────────────────
+    // — fidélité à l'état servi à l'agent
 
     #[Test]
     public function applications_set_equals_applications_state_provider(): void
@@ -366,7 +365,7 @@ class DesiredStateOriginServiceTest extends TestCase
     }
 
     /**
-     * Story 63.2 — la ligne d'explication suit le PLAN DE FICHIERS, exactement
+     * La ligne d'explication suit le PLAN DE FICHIERS, exactement
      * comme le provider : un cloud actif ET un espace servi par lui. Une
      * condition qui divergerait ferait mentir l'écran : un raccourci annoncé et
      * jamais posé, ou posé et jamais annoncé.
@@ -437,7 +436,7 @@ class DesiredStateOriginServiceTest extends TestCase
         self::assertSame('https://opencloud.etab.fr', $row['detail']);
     }
 
-    // ── AC2/D4 — page parc ────────────────────────────────────────────────────
+    // Page parc
 
     #[Test]
     public function group_page_shows_direct_via_profile_and_socle(): void
@@ -484,9 +483,9 @@ class DesiredStateOriginServiceTest extends TestCase
     #[Test]
     public function physical_room_own_contribution_is_room_self(): void
     {
-        // Review #5 — sur la page d'une SALLE physique, la contribution propre est
-        // étiquetée `room_self` (« Cette salle », badge-warning) et non `group_self`
-        // (« Ce parc ») — cohérent D6/AC4 (salle/parc distingués partout).
+        // Sur la page d'une SALLE physique, la contribution propre est étiquetée
+        // `room_self` (« Cette salle », badge-warning) et non `group_self`
+        // (« Ce parc ») : salle et parc sont distingués partout.
         $salle = WorkstationGroup::create(['name' => 'salle-self', 'is_physical' => true]);
 
         $app = $this->newApp('roomapp');

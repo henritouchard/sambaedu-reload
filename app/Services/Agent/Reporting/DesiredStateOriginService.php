@@ -18,44 +18,44 @@ use App\Services\Filesystem\FileLocationService;
 use App\Wpkg\Deployment\Services\WorkstationPackagesResolver;
 
 /**
- * Story 37.1 — Projection en LECTURE SEULE de l'ÉTAT CIBLE (raccourcis +
+ * Projection en LECTURE SEULE de l'ÉTAT CIBLE (raccourcis +
  * applications) d'un poste / d'un parc, AVEC l'ORIGINE de chaque item, pour
  * l'onglet « État cible » des fiches poste et parc.
  *
- * **Chemin de CONSULTATION parallèle — pipeline agent SANCTUARISÉ (décision D1).**
+ * **Chemin de CONSULTATION parallèle — pipeline agent SANCTUARISÉ.**
  * Ce service N'appelle JAMAIS {@see \App\Services\Agent\StateCompiler::compile()}
  * ni ne modifie {@see \App\Services\Agent\StateCandidate} / les providers :
  * l'enveloppe 4-clés `{type, semantics, payload, hash}` (dont dépend l'ETag agent)
  * n'apporte rien à l'UI. Il RÉUTILISE les MÊMES sources que les providers :
  *  - applications : {@see WorkstationPackagesResolver::explainPackages()} (union
  *    4 sources + BFS de dépendances, NON CACHÉE — provenance par `app_id`) ∪
- *    `Application::is_parc_default` (socle commun 27.17) ∪
- *    {@see UpstreamContractSource::orderedApplicationAppIds()} (ordres d'install
- *    amont 31.2) — exactement l'union de l'`ApplicationsStateProvider` ;
+ *  `Application::is_parc_default` (socle commun) ∪
+ *  {@see UpstreamContractSource::orderedApplicationAppIds()} (ordres d'install
+ *  amont) — exactement l'union de l'`ApplicationsStateProvider` ;
  *  - raccourcis : pivot polymorphe `shortcut_assignables` restreint au périmètre
- *    machine DIRECT ({@see TargetContext::workstationGroupIds()}, filtre
- *    `is_active`), étiquetage salle/parc iso `ShortcutsStateProvider::mailleFor()`
- *    ∪ items amont ({@see UpstreamContractSource::candidatesFor()}).
+ *  machine DIRECT ({@see TargetContext::workstationGroupIds()}, filtre
+ *  `is_active`), étiquetage salle/parc iso `ShortcutsStateProvider::mailleFor()`
+ *  ∪ items amont ({@see UpstreamContractSource::candidatesFor()}).
  *
- * **PG-pur (NFR7)** : aucun `Cache::`/APCu/LDAP/`samba-tool`. Aucune écriture.
+ * **PG-pur** : aucun `Cache::`/APCu/LDAP/`samba-tool`. Aucune écriture.
  *
- * **Ciblage User/UserGroup EXCLU de la fiche poste (décision D3)** : ces
+ * **Ciblage User/UserGroup EXCLU de la fiche poste** : ces
  * raccourcis dépendent de la session (ils s'appliqueraient sur n'importe quel
  * poste) — l'UI les signale par une note et renvoie à la fiche du raccourci. On
  * construit donc le contexte avec `user = null` : les mailles user sont vides.
  *
- * **Multi-origines (piège #5)** : un même raccourci / une même app peut porter
+ * **Multi-origines** : un même raccourci / une même app peut porter
  * PLUSIEURS origines (poste ET parc, direct ET dépendance…). On les AGRÈGE par
  * item (le compilateur aggregate déduplique par contenu et perd l'origine) ; le
  * badge PRINCIPAL est l'origine la plus spécifique selon {@see self::RANKS}
- * (miroir d'affichage de {@see \App\Services\Agent\StateCompiler::specificity()},
- * décision D7 — on ne recode PAS la précédence).
+ * (miroir d'affichage de {@see \App\Services\Agent\StateCompiler::specificity()}
+ * — on ne recode PAS la précédence).
  */
 class DesiredStateOriginService
 {
     /**
      * Ordre de spécificité pour le badge PRINCIPAL (plus PETIT = plus spécifique).
-     * Miroir d'affichage de `StateCompiler::specificity()` (décision D7) : on ne
+     * Miroir d'affichage de `StateCompiler::specificity()` : on ne
      * recode PAS la précédence (types aggregate = union), c'est un simple ordre
      * d'affichage. `Contrat amont verrouillé` > `Ce poste`/`Ce parc` > `Parc
      * logique` > `Salle` > `Dépendance` > `Socle commun` > `Contrat amont`
@@ -65,7 +65,7 @@ class DesiredStateOriginService
         'upstream_locked' => 0,     // raccourci amont verrouillé (Upstream, rang -1)
         'workstation' => 1,         // Ce poste (fiche poste)
         'group_self' => 1,          // Ce parc (fiche parc logique)
-        'room_self' => 1,           // Cette salle (fiche salle physique — review #5)
+        'room_self' => 1,           // Cette salle (fiche salle physique)
         'group_profile' => 1,       // via profil X (fiche parc)
         'logical_group' => 2,       // parc logique
         'physical_group' => 3,      // salle physique
@@ -79,14 +79,14 @@ class DesiredStateOriginService
     public function __construct(
         private readonly WorkstationPackagesResolver $resolver,
         // Singleton mémoïsé partagé (≤ 1 requête « contrat actif ? », court-circuit
-        // NFR3 sans contrat). JAMAIS de requête directe aux tables controlhub_*.
+        // sans contrat). JAMAIS de requête directe aux tables controlhub_*.
         private readonly UpstreamContractSource $source,
     ) {}
 
     /**
      * Raccourcis résolus pour la MACHINE (fiche poste) : ciblages `Workstation` +
      * `WorkstationGroup` (salle directe / parc logique) — périmètre EXACT des
-     * candidats machine du provider avec `user = null` (D3, ciblages User/UserGroup
+     * candidats machine du provider avec `user = null` (ciblages User/UserGroup
      * exclus) — filtre `is_active`, agrégés par raccourci, + items amont.
      *
      * @return list<array<string,mixed>>
@@ -105,7 +105,7 @@ class DesiredStateOriginService
                         ->where('shortcut_assignables.assignable_type', WorkstationGroup::class)
                         ->whereIn('shortcut_assignables.assignable_id', $wgIds));
                 }
-                // D3 — User / UserGroup EXCLUS (session-dépendants).
+                // User / UserGroup EXCLUS (session-dépendants).
                 $q->orWhere(fn ($qq) => $qq
                     ->where('shortcut_assignables.assignable_type', Workstation::class)
                     ->where('shortcut_assignables.assignable_id', $ctx->workstation->id));
@@ -162,7 +162,7 @@ class DesiredStateOriginService
         }
 
         // Raccourcis AMONT (items contrat) — via UpstreamContractSource
-        // (court-circuit NFR3 : sans contrat / sans adaptateur `shortcuts` câblé →
+        // (court-circuit : sans contrat / sans adaptateur `shortcuts` câblé →
         // []). Keyés à part (pas d'id de raccourci local) → jamais de collision.
         foreach ($this->upstreamShortcutRows($ctx) as $row) {
             $result[] = $row;
@@ -197,12 +197,12 @@ class DesiredStateOriginService
             $originsByAppId[$appId] = array_merge($originsByAppId[$appId] ?? [], $origins);
         }
 
-        // Socle commun (27.17) — apps is_parc_default (Broadcast).
+        // Socle commun — apps is_parc_default (Broadcast).
         foreach ($this->parcDefaultAppIds() as $appId) {
             $originsByAppId[$appId][] = ['source' => 'parc_default'];
         }
 
-        // Ordres d'install amont (31.2) — court-circuit NFR3 sans contrat.
+        // Ordres d'install amont — court-circuit sans contrat.
         foreach ($this->source->orderedApplicationAppIds($ctx) as $appId) {
             $originsByAppId[(string) $appId][] = ['source' => 'upstream'];
         }
@@ -213,10 +213,10 @@ class DesiredStateOriginService
     }
 
     /**
-     * Raccourcis assignés à CE groupe (fiche parc, décision D4) : ciblages
+     * Raccourcis assignés à CE groupe (fiche parc) : ciblages
      * `shortcut_assignables` dont l'assignable EST ce groupe, `is_active`. Badge
-     * « Ce parc » — ou « Cette salle » si `is_physical` (review #5, cohérent D6 :
-     * la distinction salle/parc vaut aussi pour la contribution propre). (Les
+     * « Ce parc » — ou « Cette salle » si `is_physical` : la distinction
+     * salle/parc vaut aussi pour la contribution propre. (Les
      * réglages propres des postes membres sont sur leur fiche.)
      *
      * @return list<array<string,mixed>>
@@ -251,8 +251,8 @@ class DesiredStateOriginService
     }
 
     /**
-     * Applications qu'apporte CE parc (fiche parc, décision D4) : apps directes
-     * (« Ce parc » — ou « Cette salle » si `is_physical`, review #5) + apps de ses
+     * Applications qu'apporte CE parc (fiche parc) : apps directes
+     * (« Ce parc » — ou « Cette salle » si `is_physical`) + apps de ses
      * profils (« via profil X ») + planchers socle commun (`is_parc_default`) +
      * ordres d'install amont fleet-wide.
      *
@@ -281,7 +281,7 @@ class DesiredStateOriginService
             return $appId;
         };
 
-        // Apps directes du groupe → « Ce parc » / « Cette salle » (review #5).
+        // Apps directes du groupe → « Ce parc » / « Cette salle ».
         foreach ($group->applications as $app) {
             $appId = $remember($app);
             if ($appId !== '') {
@@ -308,8 +308,8 @@ class DesiredStateOriginService
         // Ordres d'install amont fleet-wide (`instance`) — via UpstreamContractSource
         // avec un contexte SANS appartenance de parc (workstationGroupIds() vide) :
         // seuls les ordres `instance` (toute la flotte) remontent. Court-circuit
-        // NFR3 sans contrat. Les ordres ciblés par label restent visibles sur les
-        // fiches des postes qui portent ce label (D3/D4 — le parc n'est pas un poste).
+        // sans contrat. Les ordres ciblés par label restent visibles sur les
+        // fiches des postes qui portent ce label — le parc n'est pas un poste.
         foreach ($this->source->orderedApplicationAppIds($this->fleetContext()) as $appId) {
             $originsByAppId[(string) $appId][] = ['source' => 'upstream'];
         }
@@ -317,7 +317,7 @@ class DesiredStateOriginService
         return $this->buildApplicationRows($originsByAppId, [], $appByAppId);
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
+    // Helpers
 
     /**
      * Construit les lignes « application » : hydrate les libellés manquants
@@ -469,9 +469,10 @@ class DesiredStateOriginService
     }
 
     /**
-     * Candidats raccourcis AMONT projetés en lignes UI. Court-circuit NFR3 :
+     * Candidats raccourcis AMONT projetés en lignes UI. Court-circuit :
      * `candidatesFor()` renvoie `[]` sans contrat actif (ou sans adaptateur
-     * `shortcuts` câblé — cas prod). Maille → verrouillé/permissif (D6).
+     * `shortcuts` câblé — cas prod). La maille détermine
+     * verrouillé/permissif.
      *
      * @return list<array<string,mixed>>
      */

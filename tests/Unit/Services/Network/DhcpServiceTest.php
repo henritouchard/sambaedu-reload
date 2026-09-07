@@ -16,7 +16,7 @@ use Tests\TestCase;
 use Tests\Traits\CreatesDhcpSchema;
 
 /**
- * Story 8.1 — Tests Unit du Service `DhcpService`.
+ * Tests Unit du Service `DhcpService`.
  *
  * Couvre :
  *  - Validations (name regex, MAC normalisation multi-format, IP IPv4).
@@ -60,10 +60,6 @@ class DhcpServiceTest extends TestCase
         $this->dropDhcpSchema();
         parent::tearDown();
     }
-
-    // ========================================================================
-    // VALIDATION
-    // ========================================================================
 
     #[Test]
     public function it_accepts_valid_names(): void
@@ -161,10 +157,6 @@ class DhcpServiceTest extends TestCase
         ];
     }
 
-    // ========================================================================
-    // RENDER reservations.inc
-    // ========================================================================
-
     #[Test]
     public function it_renders_reservations_file_in_legacy_format(): void
     {
@@ -189,10 +181,6 @@ class DhcpServiceTest extends TestCase
         $this->assertStringContainsString('NE PAS éditer manuellement', $content);
     }
 
-    // ========================================================================
-    // SERVICE STATUS
-    // ========================================================================
-
     #[Test]
     public function service_status_returns_active_when_systemctl_returns_zero_and_active(): void
     {
@@ -209,10 +197,6 @@ class DhcpServiceTest extends TestCase
         $this->assertFalse($status['active']);
         $this->assertSame('inactive', $status['details']);
     }
-
-    // ========================================================================
-    // RELOAD (DhcpCommandException si returnCode != 0)
-    // ========================================================================
 
     #[Test]
     public function reload_service_throws_when_script_fails(): void
@@ -232,10 +216,6 @@ class DhcpServiceTest extends TestCase
         // Vérifie l'escape de la commande
         $this->assertStringContainsString("'/usr/share/sambaedu/sbin/make_dhcpd_conf.sh'", $this->runner->lastCommand());
     }
-
-    // ========================================================================
-    // PARSING LEASES (fixture réelle)
-    // ========================================================================
 
     #[Test]
     public function it_parses_leases_with_dedup_by_ip_and_state_filter(): void
@@ -257,10 +237,6 @@ class DhcpServiceTest extends TestCase
         $lease100 = collect($leases)->firstWhere('ip', '10.0.0.100');
         $this->assertSame('client-recent', $lease100['hostname']);
     }
-
-    // ========================================================================
-    // UNICITÉ MÉTIER
-    // ========================================================================
 
     #[Test]
     public function create_throws_validation_exception_on_duplicate_mac(): void
@@ -317,10 +293,6 @@ class DhcpServiceTest extends TestCase
             'ip' => '10.0.0.11',
         ]);
     }
-
-    // ========================================================================
-    // Garde plage dynamique (symétrique de assertNoRangeCoversReservation)
-    // ========================================================================
 
     /**
      * Bind un SambaEduConfig factice exposant la plage du sous-réseau par

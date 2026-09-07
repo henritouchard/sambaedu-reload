@@ -274,7 +274,7 @@ new #[Title('Control Hub - Instance SE4FS')] class extends Component {
             $tokenStatus = 'valid';
             $tokenAlert = null;
 
-            // Rotation = re-handshake seul depuis la story 39.5 (renouvellement
+            // Rotation = re-handshake seul depuis la (renouvellement
             // hors-handshake retiré, `needsRenewal()` supprimé du modèle) : seul
             // l'état "expiré" subsiste.
             if ($connection && $connection->isExpired()) {

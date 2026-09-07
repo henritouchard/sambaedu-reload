@@ -11,10 +11,8 @@ namespace App\Dto\AppCustomization;
  * `applications.inc.php::get_apps()` (TTL 1800s) — seule source de vérité
  * pour l'état courant (user connecté, machine, salle, groupes AD, OS).
  *
- * Story 4.8 — AC 9.
- *
  * Structure similaire à `Wallpaper\WallpaperContext` — factorisable avec un
- * repository commun (voir vigilance 5 story 4.8).
+ * repository commun.
  */
 final readonly class AppContext
 {

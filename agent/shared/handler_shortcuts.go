@@ -9,12 +9,12 @@ import (
 	"strings"
 )
 
-// Handler `shortcuts` (aggregate / scope machine_user) — Story 27.1, fix
+// Handler `shortcuts` (aggregate / scope machine_user), fix
 // définitif du Bug C. Logique PURE, OS-agnostique (les opérations `.lnk`
 // réelles sont injectées via ShortcutOps) → testée sur l'hôte ; agent/windows
 // ne fait que câbler la création COM IShellLink.
 //
-// CONVERGENCE level-triggered (décision n° 5), JAMAIS accumulation : le legacy
+// CONVERGENCE level-triggered, JAMAIS accumulation : le legacy
 // téléchargeait un `.lnk` à chaque logon et tenait un `shortcuts.txt` pour
 // nettoyer. Ici :
 //   - test  : l'ensemble des `.lnk` GÉRÉS sur le poste correspond-il EXACTEMENT
@@ -23,14 +23,14 @@ import (
 //     raccourcis gérés sortis des règles. IDEMPOTENT (deux passes sur état
 //     stable = aucune écriture).
 //
-// MARQUEUR de périmètre (décision n° 5) : seuls les `.lnk` posés par l'agent
+// MARQUEUR de périmètre : seuls les `.lnk` posés par l'agent
 // sont gérés (l'impl Windows marque le champ Description du raccourci avec un
 // sentinel — ShortcutManagedMarker). Un raccourci créé par l'utilisateur n'est
 // JAMAIS listé donc JAMAIS supprimé. S'il occupe le chemin EXACT d'une cible
 // (homonyme : un prof crée « Intranet » sur son bureau), `test`/`apply`
 // IGNORENT ce chemin via Blocked() — ni écrasé, ni supprimé, ni erreur : les
 // AUTRES raccourcis convergent quand même (sinon un seul homonyme annulait
-// toute la convergence du type — bug review #1).
+// toute la convergence du type).
 //
 // Le `desktop_path` est résolu CÔTÉ SERVEUR (le provider l'a calculé depuis
 // WorkstationEnvironment — fix Bug C) ; l'agent substitue seulement les tokens
@@ -38,7 +38,7 @@ import (
 // standard. L'agent reste bête : aucune branche métier shared/personal ici.
 
 // ShortcutManagedMarker : sentinel écrit dans le champ Description d'un `.lnk`
-// posé par l'agent (décision n° 5). Distingue un raccourci GÉRÉ d'un raccourci
+// posé par l'agent. Distingue un raccourci GÉRÉ d'un raccourci
 // créé par l'utilisateur — seuls les gérés sont supprimables.
 const ShortcutManagedMarker = "SambaEdu desired-state managed shortcut"
 
@@ -50,7 +50,7 @@ const (
 )
 
 // shortcutSweepPathsKey : clé du payload `shortcuts` portant les emplacements
-// Bureau à BALAYER (Story 27.21, arbitrage option A — champ additif §9,
+// bureau à BALAYER (champ additif §9,
 // forward-compatible).
 //
 // POSE ≠ BALAYAGE — les deux notions sont DISTINCTES et ne se confondent pas :
@@ -65,8 +65,7 @@ const (
 // `\\<se4fs>\users\<user>\Bureau\` est un emplacement PAR UTILISATEUR, PARTAGÉ
 // entre TOUS ses postes, alors que le desired-state est compilé par couple
 // (poste, user). Un agent qui déciderait seul de le balayer y supprimerait les
-// `.lnk` d'un AUTRE poste du même utilisateur (finding 🔴 #1 de la review
-// 27.21). Seul le serveur connaît l'environnement du parc, donc l'autorité :
+// `.lnk` d'un AUTRE poste du même utilisateur. Seul le serveur connaît l'environnement du parc, donc l'autorité :
 // parc `shared_local` ⇒ [réseau, local] ; `personal_local`/`nomade` ⇒ [local].
 const shortcutSweepPathsKey = "desktop_sweep_paths"
 
@@ -81,14 +80,14 @@ type ShortcutSpec struct {
 	DesktopPath string // chemin du bureau résolu serveur (place=desktop only)
 
 	// IconAsset : filename content-addressed `<sha256>.ico` d'une icône
-	// UPLOADÉE (Story 27.7). Présent UNIQUEMENT pour une icône uploadée (nom
+	// UPLOADÉE. Présent UNIQUEMENT pour une icône uploadée (nom
 	// nu côté serveur) ; vide pour un chemin d'icône réel (`firefox.exe,0` →
 	// Icon). Quand présent ET que le `.ico` local est disponible (pré-
 	// téléchargé content-addressed par SyncShortcutIcons), l'impl OS pointe
 	// l'IconLocation sur le fichier LOCAL `IconPath(<sha>.ico)` ; absent /
 	// non téléchargé → pas d'IconLocation (icône défaut), JAMAIS un chemin
 	// irrésoluble (régression « feuille blanche »). Le drift résultant est
-	// rattrapé au cycle suivant (sous-décision F, piège n° 7).
+	// rattrapé au cycle suivant.
 	IconAsset    string
 	IconChecksum string // SHA-256 attendu (validé à l'écriture locale)
 }
@@ -126,7 +125,7 @@ func ParseIconLocation(icon string) (path string, index int) {
 }
 
 // ResolveUploadedIconLocation décide l'IconLocation BRUTE à poser pour une
-// icône UPLOADÉE content-addressed (Story 27.7), AVANT substitution de tokens.
+// icône UPLOADÉE content-addressed, AVANT substitution de tokens.
 // Logique PURE (stat + jointure de chemin), testée sur l'hôte ; l'impl Windows
 // l'appelle puis la passe à SetIconLocation / ParseIconLocation.
 //
@@ -135,8 +134,7 @@ func ParseIconLocation(icon string) (path string, index int) {
 //     « feuille blanche ».
 //   - asset NON encore disponible (pas téléchargé / checksum KO côté sync) →
 //     "" : pas d'IconLocation (icône défaut Windows), JAMAIS un chemin
-//     irrésoluble. Le drift est rattrapé au cycle suivant (sous-décision F,
-//     piège n° 7).
+//     irrésoluble. Le drift est rattrapé au cycle suivant.
 //
 // `iconAsset` est supposé DÉJÀ validé (ValidShortcutIconFilename) par
 // parseShortcutSpec — un asset hors format n'arrive jamais ici (il a été remis
@@ -154,7 +152,7 @@ func ResolveUploadedIconLocation(iconAsset, iconsDir string) string {
 }
 
 // UsableShortcutDir : le répertoire résolu est-il exploitable pour un balayage
-// ou une pose ? (Story 27.21, fail-soft.)
+// ou une pose ? (fail-soft.)
 //
 // Un chemin vide, ou un UNC dont le SERVEUR est vide (`\\\users\bob\Bureau\` —
 // symptôme d'un `<se4fs>` non substituable : poste hors-domaine, ni SE4FS ni
@@ -198,14 +196,14 @@ type ShortcutOps interface {
 	//   - géré mais divergent → (false, nil)  : apply doit le réécrire.
 	//   - homonyme NON géré   → (false, nil)  : un `.lnk` utilisateur occupe le
 	//     chemin. JAMAIS une erreur (sinon le moteur passe TOUT le type en
-	//     `error`, décision n° 5) ; apply consulte Blocked() pour ne PAS écraser.
+	//  `error`) ; apply consulte Blocked() pour ne PAS écraser.
 	//   - conforme            → (true, nil).
 	Matches(path string, spec ShortcutSpec) (bool, error)
 
 	// Blocked : un `.lnk` NON géré (sans marqueur) occupe-t-il déjà `path` ? Un
 	// raccourci créé par l'utilisateur (homonyme d'une cible) → true : le chemin
-	// est HORS périmètre SambaEdu, on ne l'écrase ni ne le supprime JAMAIS
-	// (décision n° 5). Absent / géré = false. Illisible = false (prudence : on
+	// est HORS périmètre SambaEdu, on ne l'écrase ni ne le supprime JAMAIS.
+	// Absent / géré = false. Illisible = false (prudence : on
 	// ne touche pas ce qu'on ne comprend pas).
 	Blocked(path string) (bool, error)
 
@@ -237,7 +235,7 @@ func joinLnk(dir, name string) string {
 // (target/args) DIFFÉRENTES = mauvaise config admin (garbage-in) : le
 // compilateur dédoublonne par CONTENU, donc des contenus distincts ne fusionnent
 // pas et c'est le DERNIER de l'itération qui gagne (non déterministe par nature
-// du cas). On ne pose pas de garde lourde (review #M2) : deux raccourcis de même
+// du cas). On ne pose pas de garde lourde : deux raccourcis de même
 // nom au même emplacement avec deux cibles est une erreur de configuration, pas
 // un état légitime à arbitrer. Cas nominal (contenus identiques) : déjà
 // dédoublonné côté serveur, aucune collision ici.
@@ -261,34 +259,34 @@ func (h *ShortcutsHandler) desiredSet(items []StateItem) (map[string]ShortcutSpe
 // managedDirs : répertoires DISTINCTS à balayer pour lister les `.lnk` gérés.
 //
 // On balaye l'UNION des emplacements gérables CONNUS (desktop/startup/taskbar),
-// PAS seulement ceux présents dans le `desired` courant (review #2). Sans cela,
+// PAS seulement ceux présents dans le `desired` courant. Sans cela,
 // si TOUTES les règles `place=desktop` disparaissent mais qu'une règle `startup`
 // subsiste, le Bureau ne serait plus balayé → un `.lnk` Bureau géré resterait
-// orphelin pour toujours (viole AC3 level-triggered). En balayant tous les
+// orphelin pour toujours (viole level-triggered). En balayant tous les
 // emplacements, un emplacement vidé de ses règles voit ses `.lnk` GÉRÉS
 // (marqueur) supprimés au passage suivant — jamais les fichiers utilisateur
 // (ListManaged ne liste que les `.lnk` marqués).
 //
-// **Story 27.21 (arbitrage option A) — les emplacements Bureau à balayer sont
+// **les emplacements Bureau à balayer sont
 // NOMMÉS PAR LE SERVEUR** (`desktop_sweep_paths`, cf. shortcutSweepPathsKey).
 // L'agent n'en invente aucun : il obéit. Parc `shared_local` ⇒ le serveur
 // ordonne [Bureau réseau, Bureau local] (double-balayage anti-orphelins : une
 // bascule de la politique home ne laisse jamais de `.lnk` géré à l'ancien
 // emplacement) ; parc `personal_local`/`nomade` ⇒ [Bureau local] SEULEMENT —
 // ces postes n'ont aucune autorité sur le Bureau réseau, partagé entre tous les
-// postes de l'utilisateur (finding 🔴 #1).
+// postes de l'utilisateur.
 //
 // Deux emplacements sont ajoutés d'office, et c'est SÛR car ils sont PROPRES AU
 // POSTE (jamais partagés entre postes, donc jamais de suppression d'un fichier
 // dont un autre poste est l'autorité) :
 //   - le Bureau LOCAL standard (`%USERPROFILE%\Desktop`, probe sans
-//     desktop_path) — garde le nettoyage cross-placement de la review #2 de 27.1
+//     desktop_path) — garde le nettoyage cross-placement
 //     même si le serveur ne nomme rien (payload d'un serveur antérieur) ;
 //   - les `desktop_path` du desired courant — on POSE là, donc on doit y
 //     nettoyer ce qui est sorti des règles.
 //
 // L'UNC réseau reste JOIGNABLE même quand K: n'est pas monté (le montage client
-// ≠ l'accès UNC — même principe que la décorrélation 36.7). Si l'emplacement
+// ≠ l'accès UNC — même principe que la décorrélation). Si l'emplacement
 // n'est PAS résoluble sur ce poste (hors-domaine, SE4FS absent), PlaceDir
 // retourne une erreur et la probe est simplement IGNORÉE : fail-soft, jamais
 // fatal — les autres emplacements convergent quand même.
@@ -340,7 +338,7 @@ func (h *ShortcutsHandler) managedDirs(desired map[string]ShortcutSpec, sweepPat
 			// Emplacement non résoluble pour CE passage : on l'ignore — pas une
 			// erreur fatale (les autres emplacements convergent quand même).
 			//
-			// TRACÉ (review 27.21 #4) : un balayage sauté en SILENCE rend le
+			// TRACÉ : un balayage sauté en SILENCE rend le
 			// level-triggered malhonnête — `Test` rapporterait `compliant` alors
 			// que des `.lnk` gérés fantômes subsistent à l'emplacement non
 			// balayé. On veut qu'un opérateur puisse le constater dans le log.
@@ -366,26 +364,26 @@ func (h *ShortcutsHandler) managedDirs(desired map[string]ShortcutSpec, sweepPat
 }
 
 // sweepPathsFrom : emplacements Bureau à BALAYER, tels que NOMMÉS par le serveur
-// (`desktop_sweep_paths`, Story 27.21 option A). Union dédoublonnée sur les
+// (`desktop_sweep_paths`). Union dédoublonnée sur les
 // items, dans l'ordre d'émission du serveur (déterministe : `items` est une
 // slice, jamais une map).
 //
 // Ce champ est une donnée de CONTEXTE (poste), pas une propriété du raccourci :
 // il est recopié à l'identique sur CHAQUE item du type, y compris les
 // `place=startup`/`taskbar`. C'est délibéré — l'agent doit connaître les Bureaux
-// à balayer MÊME quand plus aucune règle `place=desktop` n'existe (leçon de la
-// review #2 de 27.1 : sinon un Bureau vidé de ses règles n'est plus jamais
-// nettoyé et garde ses `.lnk` gérés orphelins à vie).
+// à balayer MÊME quand plus aucune règle `place=desktop` n'existe :
+// sinon un Bureau vidé de ses règles n'est plus jamais
+// nettoyé et garde ses `.lnk` gérés orphelins à vie.
 //
-// LIMITE (préexistante, niveau moteur — pas propre à 27.21) : ceci ne tient que
+// LIMITE (préexistante, niveau moteur — pas propre) : ceci ne tient que
 // tant qu'il reste AU MOINS UN item `shortcuts` (n'importe quel `place`). Si la
 // DERNIÈRE règle raccourci d'un couple (poste, user) disparaît, le type est
 // absent de l'état, le moteur ne convoque JAMAIS ce handler, et un `.lnk` géré
 // résiduel reste orphelin. Vaut aussi pour le Bureau local et pour les autres
-// types agrégés (drives, etc.). Correction = story dédiée (sentinelle de type
-// vidé, ou invocation des handlers sur types absents), hors périmètre 27.21.
+// types agrégés (drives, etc.). La correction (sentinelle de type vidé, ou
+// invocation des handlers sur types absents) reste à faire.
 //
-// Absent (payload d'un serveur antérieur à 27.21, ou aucun item) ⇒ liste vide :
+// Absent (payload d'un serveur antérieur, ou aucun item) ⇒ liste vide :
 // repli CONSERVATEUR sur les seuls emplacements propres au poste (cf.
 // managedDirs). On ne touche JAMAIS un emplacement partagé que le serveur n'a
 // pas explicitement nommé.
@@ -459,7 +457,7 @@ func (h *ShortcutsHandler) Test(items []StateItem) (bool, error) {
 	// Chaque cible doit être présente ET correspondre exactement — SAUF si un
 	// raccourci utilisateur (homonyme non géré) occupe le chemin : ce chemin est
 	// hors périmètre SambaEdu, on ne le compte ni en faveur ni en défaveur de la
-	// convergence (décision n° 5 — « jamais toucher un raccourci hors
+	// convergence (« jamais toucher un raccourci hors
 	// périmètre »). Les AUTRES cibles convergent quand même.
 	for path, spec := range desired {
 		blocked, err := h.Ops.Blocked(path)
@@ -519,7 +517,7 @@ func (h *ShortcutsHandler) Apply(items []StateItem) error {
 	for _, path := range paths {
 		spec := desired[path]
 		// Un raccourci utilisateur (homonyme non géré) occupe le chemin : on ne
-		// l'écrase JAMAIS (décision n° 5). On saute ce chemin (les autres cibles
+		// l'écrase JAMAIS. On saute ce chemin (les autres cibles
 		// convergent quand même) — pas d'erreur, pas d'écriture, pas de delete.
 		blocked, err := h.Ops.Blocked(path)
 		if err != nil {
@@ -569,7 +567,7 @@ func parseShortcutSpec(raw any) (ShortcutSpec, bool) {
 	icon, _ := payload["icon"].(string)
 	desktopPath, _ := payload["desktop_path"].(string)
 
-	// Story 27.7 : champs ajoutés (forward-compatible) — une icône UPLOADÉE
+	// Champs ajoutés (forward-compatible) — une icône UPLOADÉE
 	// porte `icon_asset`/`icon_checksum`. Validés STRICTEMENT : un asset hors
 	// format est IGNORÉ (on retombe sur `icon` brut, jamais un asset cassé).
 	iconAsset, _ := payload["icon_asset"].(string)

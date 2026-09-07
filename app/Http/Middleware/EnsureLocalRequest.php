@@ -52,7 +52,7 @@ class EnsureLocalRequest
             return true;
         }
 
-        // IPs/CIDRs supplémentaires via résolveur (Story 15.6 : DB > env > défaut).
+        // IPs/CIDRs supplémentaires via résolveur ( : DB > env > défaut).
         // Le résolveur WpkgDeploymentSettings garantit la précédence DB > config()
         // et filtre les entrées vides/non-string.
         $allowedList = app(WpkgDeploymentSettings::class)->allowedIps();

@@ -9,14 +9,14 @@ use App\Services\Filesystem\Plan\PlanGrant;
 use App\Services\Filesystem\Plan\PlanSubject;
 
 /**
- * Story 60.3 — un octroi RELU côté backend, dit en VOCABULAIRE DE PLAN.
+ * Un octroi RELU côté backend, dit en VOCABULAIRE DE PLAN.
  *
  * Un sujet ({@see PlanSubject} : identité interne SE5) et une LISTE DE VERBES
- * (story 62.4). Jamais un nom de groupe système, jamais un login d'exécution, jamais
+ * . Jamais un nom de groupe système, jamais un login d'exécution, jamais
  * un identifiant produit par le backend distant. La reprojection de ce que le
  * backend connaît vers l'identité interne est un savoir d'IMPLÉMENTATION : le
- * backend POSIX la fera par son index de projection (60.4), un backend distant par
- * son cache d'identifiants (61.3). Si un nom système remontait ici, la ligne de
+ * backend POSIX la fera par son index de projection, un backend distant par
+ * son cache d'identifiants. Si un nom système remontait ici, la ligne de
  * coupe serait franchie par la relecture — porte dérobée exacte de celle que les
  * gardes ferment côté écriture.
  *
@@ -27,8 +27,7 @@ use App\Services\Filesystem\Plan\PlanSubject;
  * obligerait chaque backend à le deviner, et deux backends le devineraient
  * différemment.
  *
- * ---------------------------------------------------------------------------
- * **Story 60.4 → 62.4 — L'OBSERVATION SAIT DIRE « AUCUN », LE PLAN NON.**
+ * ** → — L'OBSERVATION SAIT DIRE « AUCUN », LE PLAN NON.**
  *
  * Une relecture peut trouver un octroi PRÉSENT et VIDE. C'est la forme
  * matérialisée d'une suspension : l'octroi existe, il ne donne rien, le dossier et
@@ -36,8 +35,8 @@ use App\Services\Filesystem\Plan\PlanSubject;
  * pas distinguer « octroi vide » de « pas d'octroi » — et la comparaison
  * désiré/observé aurait donc lu une suspension appliquée comme une matérialisation
  * manquante, ou pire, une suspension NON appliquée comme conforme. C'était le legs
- * le plus subtil de la story 60.3 ; il s'est soldé en 60.4 par un troisième
- * niveau d'accès nommé, et il se dit désormais par la LISTE DE VERBES VIDE.
+ * le plus subtil ; il s'est soldé par un troisième niveau d'accès nommé, et il
+ * se dit désormais par la LISTE DE VERBES VIDE.
  *
  * **L'asymétrie avec {@see PlanGrant} est VOULUE, et c'est le point.** Le plan dit
  * une INTENTION : un octroi y porte toujours au moins un verbe, jamais « rien » —

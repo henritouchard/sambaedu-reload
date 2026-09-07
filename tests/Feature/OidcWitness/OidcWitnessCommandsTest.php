@@ -16,9 +16,9 @@ use Tests\Feature\Oidc\Concerns\CapturesOidcLogs;
 use Tests\TestCase;
 
 /**
- * Story 55.3 — **AC4** : le provisioning de l'app-témoin.
+ * Le provisioning de l'app-témoin.
  *
- * Patron `OidcClientCommandsTest` (55.1), avec UNE différence de doctrine
+ * Patron `OidcClientCommandsTest`, avec UNE différence de doctrine
  * assumée : `oidc:client:register` AFFICHE le secret une fois (son destinataire
  * est un humain qui doit le recopier ailleurs) ; `oidc:witness:enable` ne
  * l'affiche JAMAIS — son destinataire est un fichier que la commande écrit
@@ -61,10 +61,6 @@ class OidcWitnessCommandsTest extends TestCase
     {
         (new BundledExtensionSeeder())->run();
     }
-
-    // =====================================================================
-    // enable
-    // =====================================================================
 
     /**
      * Le dossier de destination peut ne pas exister (chemin surchargé par
@@ -112,7 +108,6 @@ class OidcWitnessCommandsTest extends TestCase
 
         $this->artisan('oidc:witness:enable')->assertExitCode(0);
 
-        // ── Le client ────────────────────────────────────────────────────
         $client = OidcClient::query()->firstOrFail();
 
         self::assertSame(OidcWitnessEnable::CLIENT_NAME, $client->name);
@@ -120,7 +115,7 @@ class OidcWitnessCommandsTest extends TestCase
         self::assertSame([OidcWitnessEnable::REDIRECT_URI], $client->redirectUris());
         self::assertSame(OidcWitnessEnable::EXTENSION_KEY, $client->extension_key);
 
-        // ── Le fichier ───────────────────────────────────────────────────
+        // Le fichier
         self::assertFileExists($this->credentialsPath);
         self::assertSame('0600', substr(sprintf('%o', fileperms($this->credentialsPath)), -4));
 
@@ -160,7 +155,7 @@ class OidcWitnessCommandsTest extends TestCase
         // Contrôle POSITIF : le secret existe bel et bien (32 octets hex).
         self::assertMatchesRegularExpression('/^[a-f0-9]{64}$/', $credentials->clientSecret);
 
-        // NFR3 — il n'est ni à l'écran, ni au journal.
+        // Il n'est ni à l'écran, ni au journal.
         self::assertStringNotContainsString($credentials->clientSecret, $output);
         self::assertStringNotContainsString($credentials->clientSecret, $this->flattenedLogs());
 
@@ -280,10 +275,6 @@ class OidcWitnessCommandsTest extends TestCase
         self::assertSame(2, OidcClient::query()->count());
     }
 
-    // =====================================================================
-    // disable
-    // =====================================================================
-
     #[Test]
     public function disable_revokes_the_client_and_removes_the_file(): void
     {
@@ -352,10 +343,6 @@ class OidcWitnessCommandsTest extends TestCase
         self::assertTrue(WitnessCredentials::isProvisioned(), 'le fichier existe');
         self::assertNull(WitnessCredentials::load(), 'mais il est inexploitable');
     }
-
-    // =====================================================================
-    // Story 56.4 — l'octroi des scopes du témoin
-    // =====================================================================
 
     /**
      * Le témoin affiche « Bonjour {name}, rôle {role}, groupes {groups} » : son

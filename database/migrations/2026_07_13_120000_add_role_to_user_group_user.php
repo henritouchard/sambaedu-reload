@@ -6,7 +6,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 42.1 — Colonne d'arête `role` sur le pivot `user_group_user` (socle du
+ * Colonne d'arête `role` sur le pivot `user_group_user` (socle du
  * rôle sur l'arête user↔groupe).
  *
  * `up()` ajoute la colonne `role` (`string(20)`, non null, défaut `'member'`,
@@ -15,7 +15,7 @@ use Illuminate\Support\Facades\Schema;
  * est rétro-rempli sur les arêtes existantes (Laravel/SQLite + PG). Le backfill
  * déterministe (`owner`/`manager`/`member` depuis `is_head_teacher` + `users.role`)
  * est ensuite appliqué via l'action invocable {@see BackfillUserGroupUserRoles}
- * (extraite pour la testabilité — patron 4.14 `MergeLegacyUserGroups`).
+ * (extraite pour la testabilité — patron `MergeLegacyUserGroups`).
  *
  * Le vocabulaire est BORNÉ APPLICATIVEMENT ({@see \App\Models\Pivot\UserGroupUserPivot::assertValidRole})
  * et non par un enum SQL : SQLite ne borne pas les varchar (les tests ne
@@ -25,7 +25,7 @@ use Illuminate\Support\Facades\Schema;
  * `Schema::hasColumn`). Partie data no-op documentée — les rôles se
  * reconstruisent par backfill / re-import (`syncFromAd` autoritaire, transitoire).
  *
- * Note exécution (D5, `project_vm_migrations_not_auto_applied`) : les migrations
+ * Note exécution : les migrations
  * VM ne sont PAS auto-jouées par le dev-cycle (SQLite migré pour les tests
  * uniquement ; la VM reste `Pending`). L'exécution réelle sur PG est un geste
  * post-merge MANUEL (`php artisan migrate` + `migrate:status` sur /vm) — voir

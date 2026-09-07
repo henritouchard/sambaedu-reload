@@ -18,11 +18,11 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 54.1 (AC1) / 54.2 (AC1-AC3) — page `/admin/extensions` : bibliothèque.
+ * Page `/admin/extensions` : bibliothèque.
  *
  * Couvre : liste alimentée par le registre multi-sources (nom, type, éditeur,
  * source, état), état vide propre, la garde `server.admin` (403 + middleware
- * de route), et depuis 54.2 les gestes « Intégrer » / « Désinstaller »
+ * de route), et depuis les gestes « Intégrer » / « Désinstaller »
  * (boutons conditionnels, flux de modale, idempotence, defense-in-depth).
  */
 class ExtensionsLibraryPageTest extends TestCase
@@ -52,7 +52,7 @@ class ExtensionsLibraryPageTest extends TestCase
         Gate::before(fn ($user, string $ability) => in_array($ability, $abilities, true) ? true : null);
     }
 
-    // ── Sécurité ──────────────────────────────────────────────────────────
+    // Sécurité
 
     #[Test]
     public function mount_is_forbidden_without_server_admin(): void
@@ -71,7 +71,7 @@ class ExtensionsLibraryPageTest extends TestCase
         self::assertContains('sambaedu.admin', $route->gatherMiddleware());
     }
 
-    // ── AC1 — la bibliothèque liste le registre ───────────────────────────
+    // — la bibliothèque liste le registre
 
     #[Test]
     public function lists_extensions_with_name_publisher_source_and_state(): void
@@ -152,7 +152,7 @@ class ExtensionsLibraryPageTest extends TestCase
             ->assertSet('extensions', []);
     }
 
-    // ── Story 54.2 — AC1 : boutons suivent l'état ─────────────────────────
+    // : boutons suivent l'état
 
     #[Test]
     public function shows_the_integrate_button_for_an_available_link_extension(): void
@@ -194,7 +194,7 @@ class ExtensionsLibraryPageTest extends TestCase
             ->assertDontSeeHtml("uninstall-{$extension->id}");
     }
 
-    // ── AC1 — intégrer, direct, tracé ─────────────────────────────────────
+    // — intégrer, direct, tracé
 
     #[Test]
     public function integrate_mutates_and_dispatches_a_success_toast(): void
@@ -210,7 +210,7 @@ class ExtensionsLibraryPageTest extends TestCase
         self::assertSame(1, ExtensionAuditLog::query()->count());
     }
 
-    // ── AC3 — idempotence : intégrer une extension déjà intégrée ─────────
+    // — idempotence : intégrer une extension déjà intégrée
 
     #[Test]
     public function integrate_on_an_already_integrated_extension_is_a_noop_with_info_toast(): void
@@ -225,16 +225,14 @@ class ExtensionsLibraryPageTest extends TestCase
         self::assertSame(0, ExtensionAuditLog::query()->count());
     }
 
-    // ── Correctifs de review 54.2 ─────────────────────────────────────────
-
     #[Test]
     public function confirming_uninstall_twice_is_a_clean_noop_and_never_reports_extension_zero(): void
     {
-        // Review #1 : `confirmUninstall()` appelait `closeUninstall()`, qui remet
-        // `uninstallTargetId` à 0. Le bouton restant cliquable tant que la 1re
-        // réponse n'est pas revenue, un double-clic rejouait la 2e invocation
-        // avec l'id 0 → toast d'ERREUR « Extension #0 introuvable », au lieu du
-        // no-op propre exigé par l'AC3 (« clic rejoué, double-clic »).
+        // `confirmUninstall()` ne doit pas remettre `uninstallTargetId` à 0 par
+        // `closeUninstall()` : le bouton reste cliquable tant que la 1re réponse
+        // n'est pas revenue, et un double-clic rejouerait la 2e invocation avec
+        // l'id 0 → toast d'ERREUR « Extension #0 introuvable », au lieu du no-op
+        // attendu.
         $this->grant(['server.admin']);
         $extension = Extension::factory()->fromBundled()->link()->integrated()->create();
 
@@ -254,7 +252,7 @@ class ExtensionsLibraryPageTest extends TestCase
     #[Test]
     public function a_noop_refreshes_the_stale_screen_instead_of_contradicting_it(): void
     {
-        // Review #2 : le no-op n'arrive QUE sur un écran périmé (second admin,
+        // Le no-op n'arrive QUE sur un écran périmé (second admin,
         // onglet dupliqué). Toaster « déjà intégrée » sans recharger laissait la
         // carte afficher « Disponible » + le bouton « Intégrer » — le message de
         // l'application et son écran se contredisaient.
@@ -275,7 +273,7 @@ class ExtensionsLibraryPageTest extends TestCase
             ->assertDontSeeHtml('data-testid="integrate-'.$extension->id.'"');
     }
 
-    // ── AC2 — flux de la modale de désinstallation ────────────────────────
+    // — flux de la modale de désinstallation
 
     #[Test]
     public function ask_uninstall_opens_the_confirmation_modal(): void
@@ -322,7 +320,7 @@ class ExtensionsLibraryPageTest extends TestCase
         self::assertSame(0, ExtensionAuditLog::query()->count());
     }
 
-    // ── AC3 — fail-closed : type non pris en charge, id inconnu ──────────
+    // — fail-closed : type non pris en charge, id inconnu
 
     #[Test]
     public function integrating_an_app_type_extension_is_refused_with_an_error_toast(): void
@@ -348,7 +346,7 @@ class ExtensionsLibraryPageTest extends TestCase
             ->assertDispatched('toastMagic', status: 'error');
     }
 
-    // ── AC1/AC2 — defense-in-depth : garde révoquée APRÈS mount() ────────
+    // — defense-in-depth : garde révoquée APRÈS mount
 
     #[Test]
     public function integrate_is_forbidden_when_the_ability_is_revoked_after_mount(): void
@@ -410,14 +408,12 @@ class ExtensionsLibraryPageTest extends TestCase
         self::assertSame(0, ExtensionAuditLog::query()->count());
     }
 
-    // ══════════════════════════════════════════════════════════════════════
-    // Story 56.1 — provenance impossible à ignorer (AC2) et filtrage (AC3/AC4)
-    // ══════════════════════════════════════════════════════════════════════
+    // Provenance impossible à ignorer et filtrage
 
     #[Test]
     public function every_card_carries_an_unambiguous_provenance_badge(): void
     {
-        // FR4/UX-DR4 : icône + libellé, jamais une couleur seule.
+        // Icône + libellé, jamais une couleur seule.
         $this->grant(['server.admin']);
 
         $bundled = ExtensionSource::factory()->bundled()->create();
@@ -476,8 +472,8 @@ class ExtensionsLibraryPageTest extends TestCase
     #[Test]
     public function a_double_click_on_the_warning_confirmation_is_a_clean_no_op(): void
     {
-        // Piège review 54.2 #1 reproduit : la cible n'est PAS remise à zéro
-        // avant l'appel, sinon le second clic parle de l'extension #0.
+        // La cible n'est PAS remise à zéro avant l'appel : sinon le second
+        // clic parle de l'extension #0.
         $this->grant(['server.admin']);
 
         $remote = ExtensionSource::factory()->remote()->create();
@@ -500,7 +496,7 @@ class ExtensionsLibraryPageTest extends TestCase
     #[Test]
     public function an_official_extension_is_still_integrated_in_a_single_click(): void
     {
-        // Comportement 54.2 INCHANGÉ pour la source officielle.
+        // Comportement INCHANGÉ pour la source officielle.
         $this->grant(['server.admin']);
 
         $extension = Extension::factory()->fromBundled()->link()->create();

@@ -17,7 +17,7 @@ use Tests\TestCase;
 use ZipArchive;
 
 /**
- * Story 25.6 — surface « Tools » du catalogue agent (AC2, AC3, AC6).
+ * Surface « Tools » du catalogue agent.
  *
  * Façade UI sur le SEUL écrivain `AgentToolService` : upload (délègue
  * `upload()`), toggle (délègue `toggle()`). Gate `server.admin` sur chaque
@@ -90,7 +90,7 @@ class ToolsCatalogSurfaceTest extends TestCase
         return UploadedFile::fake()->createWithContent('portable.zip', file_get_contents($path));
     }
 
-    // ── AC2/AC6 — upload via le service, SHA-256 serveur ─────────────────
+    // — upload via le service, SHA-256 serveur
 
     #[Test]
     public function upload_persists_a_tool_through_the_service(): void
@@ -126,7 +126,7 @@ class ToolsCatalogSurfaceTest extends TestCase
         self::assertSame(0, AgentTool::query()->count());
     }
 
-    // ── AC3 — toggle via le service ──────────────────────────────────────
+    // — toggle via le service
 
     #[Test]
     public function toggle_flips_enabled_through_the_service(): void
@@ -143,8 +143,6 @@ class ToolsCatalogSurfaceTest extends TestCase
 
         self::assertTrue(AgentTool::query()->where('key', 'rainmeter')->first()->enabled);
     }
-
-    // ── AC3/piège #9 — Gate sur CHAQUE mutation (/livewire/update) ───────
 
     #[Test]
     public function upload_is_gated_by_permission(): void

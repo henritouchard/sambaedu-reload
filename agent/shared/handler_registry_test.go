@@ -18,17 +18,17 @@ type fakeRegistryOps struct {
 	writeErr  map[string]error         // identité → erreur d'écriture
 	deleteErr map[string]error         // identité → erreur de suppression
 	// namesErr : identité de CONTENEUR {hive\path} → erreur d'énumération
-	// (Story 35.2, RegistryOps.ValueNames).
+	// (RegistryOps.ValueNames).
 	namesErr  map[string]error
 	writeCnt  int
 	readCnt   int
 	deleteCnt int // appels Delete EFFECTIFS (valeur supprimée)
 	namesCnt  int // appels ValueNames
 	// unmountedHku : bases HKU (`.default`/`<sid>` en minuscules) DÉMONTÉES
-	// après l'énumération (race logoff, review 35.3 #1) — Read les voit
+	// après l'énumération (race logoff) — Read les voit
 	// absentes (aucune value posée), Write les SAUTE (no-op, iso Windows).
 	unmountedHku map[string]bool
-	// userHives : cibles du fan-out HKU (Story 35.3, RegistryOps.UserHives) —
+	// UserHives : cibles du fan-out HKU (RegistryOps.UserHives)
 	// ".DEFAULT" + SID chargés, injectables par le test (l'impl Windows filtre
 	// et trie ; le fake rend la liste telle quelle). userHivesErr simule un
 	// échec d'énumération (item HKU inapplicable) ; userHivesCnt prouve
@@ -38,7 +38,7 @@ type fakeRegistryOps struct {
 	userHivesCnt int
 }
 
-// NB (Story 43.1) : plus de NotifyShellChanged ici — le rafraîchissement n'est
+// NB : plus de NotifyShellChanged ici — le rafraîchissement n'est
 // PLUS un hook sur Ops : les handlers ACCUMULENT (RefreshRequester), le
 // compagnon exécute. Les tests lisent h.TakeRefreshRequest().
 
@@ -63,10 +63,10 @@ func (o *fakeRegistryOps) Read(hive, path, name string) (RegistryValue, bool, er
 	if err := o.readErr[id]; err != nil {
 		return RegistryValue{}, false, err
 	}
-	// Iso impl Windows (Story 35.7 review #2) : lire une cible HKU dont la
+	// Iso impl Windows : lire une cible HKU dont la
 	// ruche de fan-out a été DÉMONTÉE depuis l'énumération est une ABSENCE
 	// gracieuse (no-op nil), jamais une erreur — c'est ce que garantit le
-	// verdict « drift silencieux sans clé orpheline » du piège #4 de bout en
+	// verdict « drift silencieux sans clé orpheline » de bout en
 	// bout (l'assertion Status != error de la passe par-session en dépend).
 	if isUsersHive(hive) {
 		base, _, _ := strings.Cut(strings.ToLower(path), `\`)
@@ -84,7 +84,7 @@ func (o *fakeRegistryOps) Write(spec RegistrySpec) error {
 	if err := o.writeErr[id]; err != nil {
 		return err
 	}
-	// Iso impl Windows (review 35.3 #1) : une cible HKU dont la ruche de
+	// Iso impl Windows : une cible HKU dont la ruche de
 	// fan-out a été DÉMONTÉE depuis l'énumération est SAUTÉE (no-op nil,
 	// jamais d'orpheline) — la base est le premier segment du path.
 	if isUsersHive(spec.Hive) {
@@ -115,7 +115,7 @@ func (o *fakeRegistryOps) Delete(hive, path, name string) error {
 	return nil
 }
 
-// ValueNames : énumère les noms des valeurs d'une clé (Story 35.2). Iso impl
+// ValueNames : énumère les noms des valeurs d'une clé. Iso impl
 // Windows : clé sans aucune valeur ⇒ (nil, nil), jamais une erreur. Les noms
 // rendus sont en minuscules (le fake indexe par identité insensible à la
 // casse) — sans incidence : les noms possédés par la réconciliation de liste
@@ -147,7 +147,7 @@ func (o *fakeRegistryOps) ValueNames(hive, path string) ([]string, error) {
 	return names, nil
 }
 
-// UserHives : cibles du fan-out HKU (Story 35.3). Copie défensive, comptée par
+// UserHives : cibles du fan-out HKU. Copie défensive, comptée par
 // appel (l'énumération est PAR APPEL Test/Apply — jamais de cache).
 func (o *fakeRegistryOps) UserHives() ([]string, error) {
 	o.userHivesCnt++
@@ -190,8 +190,6 @@ func szItem(hive, path, name, value string) StateItem {
 	}
 }
 
-// --- Set cible + idempotence -------------------------------------------------
-
 func TestRegistryApplyWritesTargetThenIdempotent(t *testing.T) {
 	ops := newFakeRegistryOps()
 	h := &RegistryHandler{Ops: ops}
@@ -222,8 +220,6 @@ func TestRegistryApplyWritesTargetThenIdempotent(t *testing.T) {
 	}
 }
 
-// --- Drift (valeur réelle ≠ cible) → réapplication ---------------------------
-
 func TestRegistryDriftIsRewritten(t *testing.T) {
 	ops := newFakeRegistryOps()
 	// La clé existe mais avec une MAUVAISE valeur (1 au lieu de 0).
@@ -248,8 +244,6 @@ func TestRegistryDriftIsRewritten(t *testing.T) {
 	}
 }
 
-// --- Clé absente → écriture --------------------------------------------------
-
 func TestRegistryMissingKeyIsWritten(t *testing.T) {
 	ops := newFakeRegistryOps()
 	h := &RegistryHandler{Ops: ops}
@@ -268,8 +262,6 @@ func TestRegistryMissingKeyIsWritten(t *testing.T) {
 	}
 }
 
-// --- « Désactiver = cesser de gérer » : un réglage retiré N'EFFACE RIEN -------
-
 func TestRegistryDoesNotRemoveKeysAbsentFromTarget(t *testing.T) {
 	ops := newFakeRegistryOps()
 	// Une clé gérée précédemment, désormais ABSENTE de la cible.
@@ -282,7 +274,7 @@ func TestRegistryDoesNotRemoveKeysAbsentFromTarget(t *testing.T) {
 		t.Fatalf("apply: %v", err)
 	}
 
-	// L'ancienne clé est INTACTE (jamais effacée — piège n° 5).
+	// L'ancienne clé est INTACTE (jamais effacée : « ne pas gérer » = ne pas toucher).
 	old, ok := ops.values[keyID("HKCU", `Software\Test\Advanced`, "OldSetting")]
 	if !ok || old.Int != 1 {
 		t.Fatalf("clé hors cible NE doit PAS être touchée : %v ok=%v", old, ok)
@@ -292,8 +284,6 @@ func TestRegistryDoesNotRemoveKeysAbsentFromTarget(t *testing.T) {
 		t.Fatalf("la clé cible aurait dû être écrite")
 	}
 }
-
-// --- Erreur isolée + isolation inter-items -----------------------------------
 
 func TestRegistryErrorIsolatedAcrossKeys(t *testing.T) {
 	ops := newFakeRegistryOps()
@@ -331,8 +321,6 @@ func TestRegistryReadErrorIsError(t *testing.T) {
 	}
 }
 
-// --- HKLM et HKCU via le MÊME handler (D-Q2) ---------------------------------
-
 func TestRegistryHandlesBothHivesGenerically(t *testing.T) {
 	ops := newFakeRegistryOps()
 	h := &RegistryHandler{Ops: ops}
@@ -351,7 +339,6 @@ func TestRegistryHandlesBothHivesGenerically(t *testing.T) {
 	}
 }
 
-// --- Rafraîchissement : accumulé sur changement HKCU seul (Story 43.1) -------
 // Migration des tests `notifyCnt` : la même séquence observable (plancher
 // shell_notify sur changement HKCU effectif, silence sinon) se lit désormais
 // via TakeRefreshRequest() — plus aucune émission inline par le handler.
@@ -405,8 +392,6 @@ func TestRegistryShellRefreshOnUserHiveChangeOnly(t *testing.T) {
 		}
 	})
 }
-
-// --- Hint `refresh` du payload : escalade du plancher (Story 43.1, AC1/AC3) --
 
 func TestRegistryRefreshHintEscalatesFloorOnChange(t *testing.T) {
 	t.Run("item changé avec hint explorer_restart → niveau escaladé", func(t *testing.T) {
@@ -492,7 +477,7 @@ func TestRegistryRefreshHintEscalatesFloorOnChange(t *testing.T) {
 }
 
 func TestRegistryUnknownRefreshHintLoggedOncePerPass(t *testing.T) {
-	// Review 43.1 #3 : Test PUIS Apply re-parsent les MÊMES items dans une
+	// Test PUIS Apply re-parsent les MÊMES items dans une
 	// passe (dispatch §5) — la trace debug du hint inconnu ne part qu'UNE fois
 	// par passe et par item (chemin Test seulement, logHints).
 	ops := newFakeRegistryOps()
@@ -518,8 +503,6 @@ func TestRegistryUnknownRefreshHintLoggedOncePerPass(t *testing.T) {
 	}
 }
 
-// --- Payload invalide → error (enveloppe) ------------------------------------
-
 func TestRegistryInvalidPayloadIsError(t *testing.T) {
 	h := &RegistryHandler{Ops: newFakeRegistryOps()}
 	cases := []struct {
@@ -528,7 +511,7 @@ func TestRegistryInvalidPayloadIsError(t *testing.T) {
 	}{
 		{"hive vide", map[string]any{"hive": "", "path": "p", "name": "n", "type": "REG_DWORD", "value": 0}},
 		{"path vide", map[string]any{"hive": "HKCU", "path": "", "name": "n", "type": "REG_DWORD", "value": 0}},
-		// Story 35.2 : `name: ""` n'est PLUS invalide (valeur PAR DÉFAUT de la
+		// `name: ""` n'est PLUS invalide (valeur PAR DÉFAUT de la
 		// clé, contrat §7.1) — c'est l'ABSENCE de la clé `name` qui l'est.
 		{"name absent", map[string]any{"hive": "HKCU", "path": "p", "type": "REG_DWORD", "value": 0}},
 		{"name non-string", map[string]any{"hive": "HKCU", "path": "p", "name": 3, "type": "REG_DWORD", "value": 0}},
@@ -546,8 +529,6 @@ func TestRegistryInvalidPayloadIsError(t *testing.T) {
 		})
 	}
 }
-
-// --- REG_MULTI_SZ : convergence par liste ------------------------------------
 
 func TestRegistryMultiSzConvergence(t *testing.T) {
 	ops := newFakeRegistryOps()
@@ -575,8 +556,6 @@ func TestRegistryMultiSzConvergence(t *testing.T) {
 		t.Fatalf("MULTI_SZ non idempotent")
 	}
 }
-
-// --- Verbe `ensure:"absent"` (Story 35.1) : convergence du delete ------------
 
 // absentItem construit un StateItem `registry` de SUPPRESSION (payload 4 clés,
 // ni type ni value — contrat §7.1).
@@ -653,9 +632,9 @@ func TestRegistryAbsentValueAlreadyGoneIsCompliant(t *testing.T) {
 }
 
 func TestRegistryAbsentDeletesValueOfUnmanagedKind(t *testing.T) {
-	// Review 35.1 #1 : une valeur EXISTANTE d'un type hors contrat (REG_BINARY,
+	// Une valeur EXISTANTE d'un type hors contrat (REG_BINARY,
 	// REG_NONE, … — impl Windows : present=true, Kind sentinelle) est une dérive
-	// pour un item `ensure:"absent"` : Test false, Apply la SUPPRIME (AC3 « peu
+	// pour un item `ensure:"absent"` : Test false, Apply la SUPPRIME ( « peu
 	// importe son type/contenu » — jamais de résidu rapporté compliant).
 	ops := newFakeRegistryOps()
 	ops.values[keyID("HKLM", `SOFTWARE\Policies\DNSClient`, "EnableMulticast")] =
@@ -810,7 +789,7 @@ func TestRegistryEnsureInvalidOrIncompletePayloadIsError(t *testing.T) {
 		{"ensure non-string", map[string]any{"hive": "HKLM", "path": "p", "name": "n", "ensure": 1}},
 		{"absent sans hive", map[string]any{"hive": "", "path": "p", "name": "n", "ensure": "absent"}},
 		{"absent sans path", map[string]any{"hive": "HKLM", "path": "", "name": "n", "ensure": "absent"}},
-		// Story 35.2 : `name: ""` = valeur par défaut (LÉGITIME) — seule
+		// `name: ""` = valeur par défaut (LÉGITIME) — seule
 		// l'ABSENCE de la clé `name` reste une enveloppe invalide.
 		{"absent sans clé name", map[string]any{"hive": "HKLM", "path": "p", "ensure": "absent"}},
 		{"present sans type ni value", map[string]any{"hive": "HKLM", "path": "p", "name": "n", "ensure": "present"}},
@@ -859,13 +838,12 @@ func TestRegistryEnsurePresentExplicitBehavesAsWriteItem(t *testing.T) {
 	}
 }
 
-// --- Valeur PAR DÉFAUT d'une clé : `name: ""` (Story 35.2, scope 35.5) -------
 //
 // `""` est le nom LÉGITIME de la valeur par défaut d'une clé Windows
 // (`(Default)` dans regedit) : les API registre (RegQueryValueEx/RegSetValueEx/
 // RegDeleteValue via golang.org/x/sys/windows/registry) traitent un nom vide
 // comme cette valeur — Get/Set/DeleteValue("") la ciblent, aucun cas
-// particulier côté handler. Besoin réel : 35.5 pose
+// particulier côté handler. Besoin réel : pose
 // `Applications\photoviewer.dll\shell\open\command` (default value).
 
 func TestRegistryDefaultValueNameParsesWriteAndAbsent(t *testing.T) {
@@ -943,8 +921,6 @@ func TestRegistryDefaultValueNameConvergesTestApplyDelete(t *testing.T) {
 		t.Fatalf("1 suppression effective attendue, obtenu %d", ops.deleteCnt)
 	}
 }
-
-// --- Machine d'états §5 via le moteur (STRICT inconditionnel) ----------------
 
 func TestRegistryThroughEngineSection5(t *testing.T) {
 	target := []StateItem{dwordItem("HKLM", `SOFTWARE\Test\System`, "EnableLUA", 0)}
@@ -1036,7 +1012,6 @@ func TestMergeReportItemsByTypeNoopOnUniqueTypes(t *testing.T) {
 	}
 }
 
-// --- Ruche HKU : fan-out .DEFAULT + ruches chargées (Story 35.3) --------------
 //
 // Un item `hive:"HKU"` (portée machine, service SYSTEM) est UNE cible logique
 // que le handler applique à `HKU\.DEFAULT` + chaque ruche utilisateur chargée
@@ -1047,8 +1022,8 @@ const hkuNumlockPath = `Control Panel\Keyboard`
 
 const hkuNumlockName = "InitialKeyboardIndicators"
 
-// hkuItem : l'item numlock écran de logon (cas réel de la story). Le path ne
-// porte JAMAIS `.DEFAULT\` (piège n° 6 : c'est le handler qui préfixe).
+// hkuItem : l'item numlock écran de logon, cas réel. Le path ne porte JAMAIS
+// `.DEFAULT\` : c'est le handler qui préfixe.
 func hkuItem(value string) StateItem {
 	return szItem("HKU", hkuNumlockPath, hkuNumlockName, value)
 }
@@ -1104,7 +1079,7 @@ func TestRegistryHkuWriteFansOutToAllHivesThenIdempotent(t *testing.T) {
 }
 
 func TestRegistryHkuWriteSkipsHiveUnmountedAfterEnumeration(t *testing.T) {
-	// Race logoff RÉELLE (review 35.3 #1) : UserHives a énuméré un SID, la
+	// Race logoff RÉELLE : UserHives a énuméré un SID, la
 	// ruche est démontée avant l'écriture. Chemin Windows réel : Read
 	// not-present (drift) puis Write SKIP no-op — JAMAIS de clé orpheline
 	// matérialisée sous HKEY_USERS. Les autres ruches convergent, aucune
@@ -1214,7 +1189,7 @@ func TestRegistryHkuNewSessionCoveredNextCycleThroughEngineStrict(t *testing.T) 
 func TestRegistryHkuAbsentDeletesAcrossAllHivesIncludingUnsupportedKind(t *testing.T) {
 	// (d) `ensure:"absent"` HKU supprime la valeur nommée dans TOUTES les
 	// ruches — y compris une valeur d'un type hors contrat (sentinelle
-	// REG_UNSUPPORTED, piège n° 10) présente dans UNE seule ruche alors que
+	// REG_UNSUPPORTED) présente dans UNE seule ruche alors que
 	// .DEFAULT est déjà propre (drift agrégé).
 	ops := newFakeRegistryOps()
 	ops.userHives = []string{".DEFAULT", "S-1-5-21-111", "S-1-5-21-222"}
@@ -1336,8 +1311,8 @@ func TestRegistryHkuAndHklmMixedInOneMachinePass(t *testing.T) {
 }
 
 func TestRegistryHkuNeverTriggersShellRefresh(t *testing.T) {
-	// (g) aucun besoin de rafraîchissement pour HKU (piège n° 9, test négatif
-	// piège n° 2 de 43.1) : le service écrit depuis la session 0 — isUserHive
+	// Aucun besoin de rafraîchissement pour HKU (test négatif du gate
+	// isUserHive) : le service écrit depuis la session 0 — isUserHive
 	// rend false pour HKU, écriture ET suppression effectives comprises, MÊME
 	// avec un hint `refresh` fort sur l'item (le fan-out HKU changé rend
 	// TakeRefreshRequest() == RefreshNone).

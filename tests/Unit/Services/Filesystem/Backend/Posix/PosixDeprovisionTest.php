@@ -17,8 +17,8 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Epic 34 → story 60.4 — la RÉVOCATION, descendue. Les assertions viennent des
- * tests de l'Epic 34 ; elles survivent, leur emplacement suit le code.
+ * La RÉVOCATION, descendue. Les assertions viennent des tests du
+ * provisionnement ; elles survivent, leur emplacement suit le code.
  *
  * L'obligation que le contrat DÉCRIVAIT sans que personne ne la tienne — « cette
  * méthode ne détruit pas de données » — est tenue ici, et vérifiée : aucune
@@ -89,7 +89,7 @@ class PosixDeprovisionTest extends TestCase
     }
 
     /**
-     * D9 : AUCUNE DESTRUCTION. Le contenu part par déplacement, jamais par
+     * AUCUNE DESTRUCTION. Le contenu part par déplacement, jamais par
      * suppression — vérifié sur les commandes émises, pas sur une intention.
      */
     #[Test]

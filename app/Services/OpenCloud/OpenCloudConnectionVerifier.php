@@ -22,7 +22,7 @@ use Illuminate\Support\Facades\Cache;
  *  3. la **persistance du diagnostic**, et avec elle l'état « déclaré mais NON
  *     VÉRIFIÉ depuis le dernier changement de secret ». Une propriété d'écran ne
  *     le tiendrait pas : au prochain montage elle repart vide, et l'écran
- *     redevient muet sur une configuration qui n'est plus confirmée —
+ *  redevient muet sur une configuration qui n'est plus confirmée
  *     c'est-à-dire qu'il laisse croire qu'elle l'est.
  *
  * **La sonde ne s'exécute QUE quand ce qui définit la connexion change.** Le point

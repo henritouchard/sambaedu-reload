@@ -9,7 +9,7 @@ use LdapRecord\Container;
 use Throwable;
 
 /**
- * Story 38.6 — Vérifie que la GPO de domaine « applications » est neutralisée
+ * Vérifie que la GPO de domaine « applications » est neutralisée
  * pour le périmètre de l'instance (l'OU des postes, `LdapDnHelper::computersDn()`).
  *
  * La GPO est hébergée AU-DESSUS de l'ensemble des collèges (AD fédéré, liée à

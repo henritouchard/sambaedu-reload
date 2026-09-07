@@ -10,12 +10,12 @@ use Throwable;
 /**
  * Handle d'action loggée GPO — émis par {@see GpoLogger::action()}.
  *
- * Convention Epic 16 : chaque action GPO (lecture, écriture, sync, audit)
+ * Convention : chaque action GPO (lecture, écriture, sync, audit)
  * émet au moins 3 logs : `start` (constructeur), `step` (étape intermédiaire),
  * `end` (success ou failure). Toutes les méthodes propagent automatiquement
  * `operation_id`, `action_type` et la durée écoulée dans le contexte Monolog.
  *
- * Voir `app/Gpo/README.md` § Convention de logging Epic 16 pour le catalogue
+ * Voir `app/Gpo/README.md` § Convention de logging pour le catalogue
  * complet des `action_type` reconnus.
  */
 final class GpoActionLog

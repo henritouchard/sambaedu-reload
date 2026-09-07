@@ -31,7 +31,7 @@ func TestCollectSessionReportsValidDrop(t *testing.T) {
 	if len(items) != 2 {
 		t.Fatalf("2 items attendus : %+v", items)
 	}
-	// Ordre des types ASCENDANT (déterminisme, acquis 24.4 n° 5).
+	// Ordre des types ASCENDANT (déterminisme, acquis n° 5).
 	if items[0].Type != "overlay" || items[1].Type != "wallpaper" {
 		t.Errorf("types asc attendus : %+v", items)
 	}
@@ -39,7 +39,7 @@ func TestCollectSessionReportsValidDrop(t *testing.T) {
 
 func TestCollectSessionReportsStrictValidation(t *testing.T) {
 	// FRONTIÈRE DE CONFIANCE : chaque entrée forgeable est validée AVANT
-	// fusion — table-driven (piège n° 8).
+	// fusion — table-driven.
 	cases := []struct {
 		name string
 		item string
@@ -156,7 +156,7 @@ func TestCollectSessionReportsNoDropsDir(t *testing.T) {
 	}
 }
 
-// ── PurgeOrphanDrops (fix fantômes) ──────────────────────────────────────────
+// PurgeOrphanDrops (fix fantômes)
 
 func TestPurgeOrphanDropsRemovesInactiveKeepsActive(t *testing.T) {
 	store := newTestStore(t)

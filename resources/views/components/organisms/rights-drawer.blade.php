@@ -13,7 +13,7 @@ use Spatie\Permission\Models\Role as SpatieRole;
 /**
  * Drawer de gestion des rôles et permissions Spatie d'un utilisateur.
  *
- * Story 7.3 — Refactor UI Spatie (2026-04-25) :
+ * Refactor UI Spatie (2026-04-25) :
  *   La source de données est désormais Spatie (rôles + permissions effectives)
  *   au lieu du bitmask hex LDAP. L'UX globale (drawer, structure, fermeture,
  *   header) est préservée — c'est une refonte de la source et du rendu
@@ -21,14 +21,14 @@ use Spatie\Permission\Models\Role as SpatieRole;
  *
  *   Affichage :
  *     - Liste des rôles disponibles avec toggle (source = `SpatieRole` DB,
- *       seedés `SambaRole::isSeeded()` + custom rapatriés 7.2).
+ *  seedés `SambaRole::isSeeded()` + custom rapatriés).
  *     - Pour chaque rôle : label lisible + permissions associées sous forme
- *       de badges (labels FR depuis `SambaPermission::label()`).
+ *  de badges (labels FR depuis `SambaPermission::label()`).
  *     - Permissions directes effectives de l'utilisateur (hors rôles) en
  *       section dédiée.
  *
  *   Sauvegarde :
- *     - Toggle d'un rôle → `$user->assignRole()` / `$user->removeRole()` sur
+ *  - Toggle d'un rôle → `$user->assignRole()` / `$user->removeRole()` sur
  *       la table Spatie `model_has_roles`. Les permissions individuelles ne
  *       sont pas modifiées ici — elles passent par le drawer délégations.
  *     - Post-save : reload de la page pour refléter les nouvelles permissions.
@@ -96,12 +96,12 @@ new class extends Component {
         $this->rolesState = [];
         $this->rolesMeta = [];
 
-        // Story 49.1 (AC8) — état « porté » DÉRIVÉ en lecture (aucune
+        // État « porté » DÉRIVÉ en lecture (aucune
         // persistance) : un profil porté par au moins un groupe est affiché
         // mais ni attribuable ni décochable ici.
         $carriers = app(GroupRightsProfileService::class)->carriersByRoleId();
 
-        // Tous les rôles DB (seedés + custom rapatriés 7.2).
+        // Tous les rôles DB (seedés + custom rapatriés).
         $allRoles = SpatieRole::where('guard_name', 'web')->orderBy('name')->get();
         foreach ($allRoles as $role) {
             $isSeeded = SambaRole::isSeeded($role->name);
@@ -122,7 +122,7 @@ new class extends Component {
                 'label' => $label,
                 'is_seeded' => $isSeeded,
                 'permissions' => $permsWithLabels,
-                // Story 49.1 (AC8) — groupes portant ce profil (vide = délégation
+                // Groupes portant ce profil (vide = délégation
                 // libre, comportement inchangé).
                 'carried_by' => $carriers[(int) $role->id] ?? [],
             ];
@@ -144,7 +144,7 @@ new class extends Component {
 
     public function toggleRole(string $roleName): void
     {
-        // Story 49.1 (AC8) — un profil PORTÉ par un groupe n'est pas
+        // Un profil PORTÉ par un groupe n'est pas
         // basculable ici : l'appartenance au groupe l'attribue, et le drawer
         // le rendrait mensonger (la réconciliation le re-poserait / re-retirerait).
         if (!empty($this->rolesMeta[$roleName]['carried_by'] ?? [])) {
@@ -175,7 +175,7 @@ new class extends Component {
         $protectedSkipped = 0;
         $carriedBlocked = [];
 
-        // Story 49.1 (AC8 / D8) — les groupes porteurs sont relus EN BASE ici
+        // Les groupes porteurs sont relus EN BASE ici
         // (et non depuis `rolesMeta`, qui vient de l'état Livewire et pourrait
         // être forgé) : defense in depth, un payload forgé ne doit pas écrire.
         $carriers = app(GroupRightsProfileService::class)->carriersByRoleId();
@@ -276,7 +276,7 @@ new class extends Component {
                 <div class="space-y-1 max-h-[50vh] overflow-y-auto pr-1">
                     @foreach ($rolesMeta as $roleName => $meta)
                         @php
-                            // Story 49.1 (AC8) — profil porté par un groupe :
+                            // Profil porté par un groupe :
                             // affiché, mais ni attribuable ni décochable ici.
                             $carriedBy = $meta['carried_by'] ?? [];
                             $isCarried = !empty($carriedBy);

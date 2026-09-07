@@ -15,7 +15,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 36.4 (AC6/D5) — validator prédictif : recouvrement de capacité
+ * Validator prédictif : recouvrement de capacité
  * (littéral / map / jeton `@…`) sans faux positif sur identité différente +
  * avertissement `ad_dn` manquant.
  */

@@ -5,7 +5,7 @@ namespace App\Services;
 /**
  * Handlers PHP pour capturer les erreurs et exceptions du code legacy.
  *
- * Ces handlers seront branchés dans legacy/bootstrap.php (story 1bis.2).
+ * Ces handlers seront branchés dans legacy/bootstrap.php (.2).
  * Pour l'instant, seul le code est créé — le branchement viendra plus tard.
  */
 class LegacyErrorHandler

@@ -12,7 +12,7 @@ import (
 )
 
 // StateHasher Go — miroir bit-à-bit de app/Services/Agent/StateHasher.php
-// (algorithme unique et déterministe du contrat, FR7).
+// (algorithme unique et déterministe du contrat).
 //
 // SHA-256 sur une forme JSON canonicalisée : tri récursif lexicographique
 // octet-par-octet des clés des objets (iso `ksort(…, SORT_STRING)` — les
@@ -21,12 +21,12 @@ import (
 // JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)`).
 //
 // ⚠️ RÔLE : conformité prouvée par tests croisés contre les golden files
-// (NFR13) + besoins futurs (empreintes locales 24.6). En RUNTIME l'agent ne
+// + besoins futurs (empreintes locales). En RUNTIME l'agent ne
 // recalcule JAMAIS un hash depuis sa propre sérialisation pour décider : il
 // compare des hashes OPAQUES fournis par le serveur (ETag verbatim,
 // item.hash).
 //
-// ⚠️ PIÈGES encoding/json évités ici (story 24.5, pièges n° 7-9) :
+// ⚠️ PIÈGES encoding/json évités ici :
 //   - les nombres sont décodés en json.Number (UseNumber) et ré-émis
 //     VERBATIM — zéro float (contrat §4.1), jamais de float64 ;
 //   - l'encodage des chaînes est implémenté À LA MAIN (appendCanonicalString)
@@ -40,17 +40,16 @@ import (
 //   - les objets sont décodés en OrderedMap (ordre du document préservé) :
 //     la sémantique liste/objet de PHP dépend de l'ORDRE D'INSERTION des
 //     clés (`array_is_list` après json_decode assoc), pas seulement de leur
-//     ensemble — une map Go native perd cette information (review 24.5 #1).
+//  ensemble — une map Go native perd cette information.
 
 // volatileStateKeys : champs volatils exclus du hash d'état (single point of
-// truth, iso StateHasher::VOLATILE_STATE_KEYS). `ttl_seconds` ajouté par la
-// Story 43.3 (AC3, D6) : le TTL dépend désormais du contexte (bascule
+// truth, iso StateHasher::VOLATILE_STATE_KEYS). Le TTL dépend du contexte (bascule
 // sensible ou non, cf. app/Services/Agent/AgentTtlResolver.php côté PHP) mais
 // reste une cadence de poll CONSEILLÉE, pas une donnée sémantique de la
 // cible — un changement de TTL seul ne doit pas invalider l'ETag. HashState
 // Go n'a AUCUN appelant runtime (seul le test l'appelle ; l'agent stocke
 // l'ETag verbatim et ne recalcule jamais le hash d'état) : ce miroir n'est
-// exercé que par les tests croisés (NFR13), aucun changement de comportement
+// exercé que par les tests croisés, aucun changement de comportement
 // agent.
 var volatileStateKeys = []string{"generated_at", "ttl_seconds"}
 
@@ -210,7 +209,7 @@ func decodeOrderedValue(dec *json.Decoder) (any, error) {
 }
 
 // HashState hashe un état cible complet (enveloppe) : `generated_at` et
-// `ttl_seconds` (Story 43.3, AC3) sont exclus AVANT canonicalisation, de
+// `ttl_seconds` sont exclus AVANT canonicalisation, de
 // sorte que seuls des changements sémantiques modifient le hash (iso
 // StateHasher::hashState).
 func HashState(state *OrderedMap) (string, error) {
@@ -269,7 +268,7 @@ func appendCanonical(buf *bytes.Buffer, v any) error {
 		// Littéral wire VERBATIM. Le contrat interdit les floats (§4.1 —
 		// leur sérialisation PHP dépend de serialize_precision, un float
 		// rendrait le hash instable) : les entiers transitent inchangés.
-		// NB review 24.5 #2 : un entier hors plage int PHP (> 2^63-1) serait
+		// NB : un entier hors plage int PHP (> 2^63-1) serait
 		// décodé en float côté PHP (`1.0e+23`) et divergerait — cas
 		// hors-contrat des deux côtés (§4.1 « zéro float »), non gardé ici.
 		buf.WriteString(value.String())
@@ -301,7 +300,7 @@ func appendCanonical(buf *bytes.Buffer, v any) error {
 
 // appendCanonicalObject reproduit la chaîne PHP `json_decode(assoc:true)` →
 // `sortRecursive` → `json_encode` pour un objet JSON. La sémantique
-// liste/objet se joue en DEUX temps (review 24.5 #1, confirmé contre le
+// liste/objet se joue en DEUX temps (confirmé contre le
 // StateHasher PHP réel sur la VM, 2026-06-12) :
 //
 //  1. clés "0","1",…,"n-1" dans l'ORDRE DU DOCUMENT ⇒ `array_is_list` vrai

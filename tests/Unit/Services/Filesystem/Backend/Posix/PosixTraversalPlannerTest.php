@@ -16,7 +16,7 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Story 62.5 — LA RÈGLE DE DÉRIVATION, TESTÉE À NU.
+ * LA RÈGLE DE DÉRIVATION, TESTÉE À NU.
  *
  * `TestCase` PUR : aucune base, aucune simulation d'exécution, aucun conteneur. Ce
  * n'est pas de l'ascétisme, c'est la propriété du planificateur — il ne consomme que
@@ -61,10 +61,6 @@ class PosixTraversalPlannerTest extends TestCase
     {
         return array_map(static fn (PosixTraversal $t): string => $t->subject->type . '#' . $t->subject->id, $traversals);
     }
-
-    // =========================================================================
-    // LE CAS CENTRAL
-    // =========================================================================
 
     /**
      * Un rôle qui ne reçoit quelque chose QU'EN PROFONDEUR obtient un couloir sur
@@ -124,10 +120,6 @@ class PosixTraversalPlannerTest extends TestCase
             self::assertCount(1, $this->planner()->forNode($plan, $node));
         }
     }
-
-    // =========================================================================
-    // LES QUATRE EXCLUSIONS
-    // =========================================================================
 
     #[Test]
     public function a_subject_already_served_on_the_ancestor_gets_no_corridor(): void
@@ -233,7 +225,7 @@ class PosixTraversalPlannerTest extends TestCase
     }
 
     /**
-     * Review 62.5 #1 — une personne DÉSIGNÉE, répétée sur chaque dossier personnel,
+     * Une personne DÉSIGNÉE, répétée sur chaque dossier personnel,
      * n'est pas le membre énuméré et doit obtenir son couloir.
      *
      * Le critère de mécanisme seul (« sur un nœud par membre, tout sujet nominatif
@@ -241,7 +233,7 @@ class PosixTraversalPlannerTest extends TestCase
      * ressembler : celui qui change à chaque nœud, et celui qui est le même partout
      * — un CPE, un référent, résolus par la stratégie `designated`. Le second
      * recevait un accès complet sur chaque dossier d'élève sans pouvoir en atteindre
-     * aucun depuis l'extérieur : un mirage, exactement ce que cette story élimine.
+     * aucun depuis l'extérieur : un mirage, exactement ce que le couloir élimine.
      *
      * On les sépare par la répétition, qui est une propriété du plan lui-même.
      */
@@ -302,16 +294,12 @@ class PosixTraversalPlannerTest extends TestCase
         $plan = $this->plan(
             $this->node('a'),
             // « supprimer » seul : le seul levier disponible donnerait aussi la
-            // création, donc rien n'est rendu (story 62.4).
+            // création, donc rien n'est rendu.
             $this->node('a/b', [$this->grant('classe', PlanSubject::group(self::CLASSE), [PlanGrant::VERB_SUPPRIMER])]),
         );
 
         self::assertSame([], $this->planner()->forNode($plan, $plan->node('a')));
     }
-
-    // =========================================================================
-    // Cas limites de forme
-    // =========================================================================
 
     /** Servi sur `a/b`, pas sur `a` : le couloir n'apparaît que là où il manque. */
     #[Test]

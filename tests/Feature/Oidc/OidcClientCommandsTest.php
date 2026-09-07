@@ -15,13 +15,13 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 55.1 — **AC1/AC3** : les commandes de gestion des clients confidentiels.
+ * Les commandes de gestion des clients confidentiels.
  *
- * En 55.1, l'artisan est le SEUL canal d'enregistrement (le provisioning
- * automatique à l'installation d'une extension `app` arrive avec l'Epic 56, et
- * s'accrochera au même `OidcClientRegistry::register()`).
+ * L'artisan est le SEUL canal d'enregistrement ; le provisioning automatique à
+ * l'installation d'une extension `app` viendra plus tard, et s'accrochera au même
+ * `OidcClientRegistry::register()`.
  *
- * ⚠️ L'invariant NFR3 le plus important est vérifié ici : **le secret clair
+ * ⚠️ L'invariant le plus important est vérifié ici : **le secret clair
  * n'est nulle part en base**. Il est affiché une fois, puis n'existe plus que
  * chez l'intégrateur.
  */
@@ -29,7 +29,7 @@ class OidcClientCommandsTest extends TestCase
 {
     use RefreshDatabase;
 
-    // ── register ──────────────────────────────────────────────────────────
+    // register
 
     #[Test]
     public function register_displays_the_secret_once_and_stores_only_its_hash(): void
@@ -49,7 +49,7 @@ class OidcClientCommandsTest extends TestCase
         // Le hash stocké est bien un sha256 (64 hex), pas un secret déguisé.
         self::assertMatchesRegularExpression('/^[a-f0-9]{64}$/', $client->client_secret_hash);
 
-        // ⚠️ NFR3 : le hash ne sort JAMAIS d'une sérialisation du modèle.
+        // ⚠️ Le hash ne sort JAMAIS d'une sérialisation du modèle.
         self::assertArrayNotHasKey('client_secret_hash', $client->toArray());
     }
 
@@ -99,7 +99,7 @@ class OidcClientCommandsTest extends TestCase
 
         self::assertSame($extension->id, $client->extension_id);
         // La clé DÉNORMALISÉE survivra à la suppression de l'extension
-        // (patron du journal d'audit 54.2).
+        // (patron du journal d'audit).
         self::assertSame('doc', $client->extension_key);
     }
 
@@ -128,8 +128,7 @@ class OidcClientCommandsTest extends TestCase
     #[Test]
     public function register_refuses_dangerous_redirect_uri_schemes(): void
     {
-        // Précédent : correctif `entry_url` de la review 54.3. Une URI
-        // `javascript:` ou `//hôte` placée dans un `Location:` détournerait
+        // Une URI `javascript:` ou `//hôte` placée dans un `Location:` détournerait
         // l'utilisateur — et le code d'autorisation avec lui.
         foreach (['javascript:alert(1)', 'data:text/html,<script>', '//evil.example/cb'] as $dangerous) {
             $this->artisan('oidc:client:register', [
@@ -163,11 +162,11 @@ class OidcClientCommandsTest extends TestCase
     #[Test]
     public function the_registry_refuses_a_redirect_uri_longer_than_the_column_that_will_store_it(): void
     {
-        // Correctif review 55.1 (#3). L'URI validée est RECOPIÉE dans
+        // L'URI validée est RECOPIÉE dans
         // `oidc_authorization_codes.redirect_uri` (VARCHAR 512) à chaque
         // émission de code. Sans borne ici, un client accepté à
         // l'enregistrement échouerait à CHAQUE flux sur une `QueryException`
-        // PostgreSQL → 500 générique, hors du journal `oidc` (FR20 non tenu).
+        // PostgreSQL → 500 générique, hors du journal `oidc`.
         //
         // ⚠️ Ce test assert le comportement APPLICATIF, jamais la contrainte
         // SQL : SQLite (driver de toute la suite) n'applique aucune limite de
@@ -201,7 +200,7 @@ class OidcClientCommandsTest extends TestCase
         self::assertSame([$atLimit], OidcClient::query()->firstOrFail()->redirectUris());
     }
 
-    // ── revoke ────────────────────────────────────────────────────────────
+    // revoke
 
     #[Test]
     public function revoke_disables_the_client_and_is_idempotent(): void
@@ -246,10 +245,6 @@ class OidcClientCommandsTest extends TestCase
         self::assertNull($registry->authenticate($result['client_id'], $result['client_secret']));
         self::assertNull($registry->findEnabledByClientId($result['client_id']));
     }
-
-    // =====================================================================
-    // Story 56.4 — `--scope` : l'octroi à l'enregistrement MANUEL
-    // =====================================================================
 
     /**
      * Le DÉFAUT accorde tous les scopes à claims : l'enregistrement manuel est

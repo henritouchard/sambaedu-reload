@@ -33,8 +33,8 @@ use Livewire\Wireable;
  * @property string|null $linux_icon Chemin de l'icône Linux
  * @property string|null $linux_startupwmclass StartupWMClass Linux
  * @property string|null $icon_path Chemin de l'icône uploadée
- * @property string|null $icon_asset Filename content-addressed `<sha256>.ico` de l'icône uploadée (Story 27.7)
- * @property string|null $icon_checksum SHA-256 hex du `.ico` content-addressed (Story 27.7)
+ * @property string|null $icon_asset Filename content-addressed `<sha256>.ico` de l'icône uploadée
+ * @property string|null $icon_checksum SHA-256 hex du `.ico` content-addressed
  * @property string|null $category Catégorie du raccourci
  * @property string|null $description Description du raccourci
  * @property bool $is_active Raccourci actif
@@ -113,8 +113,8 @@ class Shortcut extends Model implements Wireable
     ];
 
     /**
-     * Identifiant FIGÉ du type de ressource desired-state (contrat §7, NFR12).
-     * Story 27.1 — iso `Wallpaper::TYPE_WALLPAPER`, consommé par le
+     * Identifiant FIGÉ du type de ressource desired-state (contrat §7).
+     * Iso `Wallpaper::TYPE_WALLPAPER`, consommé par le
      * `ShortcutsStateProvider`. Jamais renommé une fois publié.
      */
     public const TYPE_SHORTCUTS = 'shortcuts';
@@ -229,7 +229,7 @@ class Shortcut extends Model implements Wireable
      * Utilisateurs (SQL) associés à ce raccourci.
      *
      * Le ciblage utilisateur passe par le MÊME pivot polymorphe que les postes.
-     * `ShortcutsStateProvider` sait le lire depuis 27.14 ; jusqu'ici seule
+     * `ShortcutsStateProvider` sait le lire depuis ; jusqu'ici seule
      * l'écriture manquait — l'UI déposait des logins AD dans la colonne JSON
      * `ad_users`, que plus aucun canal ne lit. Une assignation utilisateur
      * n'avait donc aucun effet.

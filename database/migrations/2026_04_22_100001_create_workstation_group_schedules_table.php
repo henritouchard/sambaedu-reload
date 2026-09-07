@@ -8,16 +8,16 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 4-4 (tâche 2.2) — Programmations de WorkstationGroup (crons récurrents + one-shot).
+ * -4 (tâche) — Programmations de WorkstationGroup (crons récurrents + one-shot).
  *
- * Deux modes mutuellement exclusifs (D7) :
+ * Deux modes mutuellement exclusifs :
  *  - `recurring` : triplet `days_of_week` (ISO 8601 SMALLINT[]) + `time_of_day` + `timezone`.
  *  - `one_shot`  : `run_at` TIMESTAMPTZ unique futur, auto-complétion post-exécution.
  *
  * Contrainte CHECK garantit l'exclusivité des deux représentations au niveau DB,
  * indépendamment de la validation FormRequest côté app (défense en profondeur).
  *
- * Actions autorisées MVP (D5) : `wake` + `shutdown` seulement.
+ * Seules les actions `wake` et `shutdown` sont autorisées.
  */
 return new class extends Migration
 {
@@ -31,10 +31,9 @@ return new class extends Migration
                 ->constrained('workstation_groups')
                 ->cascadeOnDelete();
 
-            // Actions MVP (D5) — enum stocké en VARCHAR pour portabilité SQLite.
+            // Enum stocké en VARCHAR pour portabilité SQLite.
             $table->string('action', 16);
 
-            // Discriminant mode (D7)
             $table->string('mode', 16)->default('recurring');
 
             // days_of_week est ajouté plus bas via DB::statement (pgsql) ou
@@ -74,7 +73,7 @@ return new class extends Migration
             $table->index(['mode', 'enabled', 'completed_at', 'run_at'], 'wgs_one_shot_due_idx');
         });
 
-        // v0.2 D7 — Colonne days_of_week : type-specifique pgsql
+        // days_of_week : SMALLINT[] natif en pgsql, JSON ailleurs.
         if ($driver === 'pgsql') {
             DB::statement("ALTER TABLE workstation_group_schedules ADD COLUMN days_of_week SMALLINT[]");
         } else {
@@ -84,7 +83,7 @@ return new class extends Migration
             });
         }
 
-        // v0.2 D7 — Contrainte CHECK exclusivité recurring / one_shot (pgsql only).
+        // Contrainte CHECK exclusivité recurring / one_shot (pgsql only).
         // SQLite n'a pas de CHECK contrainte compatible ARRAY, on laisse la
         // validation FormRequest + service faire le garde-fou.
         if ($driver === 'pgsql') {
@@ -97,7 +96,7 @@ return new class extends Migration
                 )
             ");
 
-            // Contrainte d'actions autorisées (D5)
+            // Contrainte d'actions autorisées.
             DB::statement("
                 ALTER TABLE workstation_group_schedules
                 ADD CONSTRAINT wgs_action_allowed CHECK (action IN ('wake', 'shutdown'))

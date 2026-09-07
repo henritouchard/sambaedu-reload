@@ -9,11 +9,11 @@ use PHPUnit\Framework\TestCase;
 use Symfony\Component\Finder\Finder;
 
 /**
- * Story 60.1 — **la coupe passe AVANT la dérivation des permissions, et c'est
+ * **la coupe passe AVANT la dérivation des permissions, et c'est
  * STRUCTUREL.**
  *
  * Le service qui dérive les permissions concrètes d'un répertoire réseau existe
- * déjà, trois fichiers plus loin. C'est le piège le plus probable de tout l'epic :
+ * déjà, trois fichiers plus loin. C'est le piège le plus probable :
  * il suffit d'un `use` pour qu'il remonte au-dessus de la ligne, et le plan cesse
  * alors d'être portable — il devient une description POSIX déguisée, que le
  * premier backend étranger contredira.
@@ -52,13 +52,13 @@ class PlanNamespaceIsolationTest extends TestCase
     private const PLAN_NAMESPACE_DIR = 'app/Services/Filesystem/Plan';
 
     /**
-     * Story 60.2 — l'ASSEMBLEUR, qui vit HORS du namespace pur.
+     * L'ASSEMBLEUR, qui vit HORS du namespace pur.
      *
      * Il requête Eloquent — c'est sa raison d'être, et c'est pour cela qu'il n'est
      * pas dans le namespace du plan : la pureté du résolveur est ce qui rend ses
      * tests rapides et sa sortie rejouable, et on ne la dilue pas. Mais le sortir
      * du namespace sans rien à la place rouvrirait exactement le chemin que la
-     * story 60.1 a fermé : celui qui va chercher la dérivation des noms de groupes
+     * A fermé : celui qui va chercher la dérivation des noms de groupes
      * système « pour la réutiliser ». La ligne de coupe passe donc AUSSI par ici,
      * avec un sous-ensemble de règles : pas de service d'exécution, pas de
      * processus, pas de commande système.
@@ -66,7 +66,7 @@ class PlanNamespaceIsolationTest extends TestCase
     private const ASSEMBLER_FILE = 'app/Services/Filesystem/TreePlanService.php';
 
     /**
-     * Story 60.3 — LA LIGNE DE CONTRAT elle-même, et ce qui la borde.
+     * LA LIGNE DE CONTRAT elle-même, et ce qui la borde.
      *
      * L'interface, les DTO de rapport et le backend qui n'exécute rien vivent
      * AU-DESSUS de la ligne : ils décrivent ce qu'un backend fait, ils ne le font
@@ -91,7 +91,7 @@ class PlanNamespaceIsolationTest extends TestCase
     private const CONTRACT_PURE_EXCLUDED = 'FileBackendRegistry.php';
 
     /**
-     * Story 60.4 → 61.3 — les sous-dossiers des IMPLÉMENTATIONS, qui vivent SOUS la
+     * → — les sous-dossiers des IMPLÉMENTATIONS, qui vivent SOUS la
      * ligne.
      *
      * Un backend exécute : c'est sa fonction. Il a donc tout le vocabulaire concret
@@ -101,7 +101,7 @@ class PlanNamespaceIsolationTest extends TestCase
      * affaibli la garde là où elle compte.
      *
      * **La liste s'allonge d'une entrée à chaque backend réel, et c'est la seule
-     * retouche que l'arrivée d'un backend impose ici.** Le second (story 61.3) parle
+     * retouche que l'arrivée d'un backend impose ici.** Le second parle
      * à une instance distante : il interroge la base pour ses identités et sort en
      * HTTP, deux choses que le contrat pur s'interdit et qu'aucun backend ne peut
      * s'interdire. Ses PROPRES gardes vivent dans le test de son namespace (aucun
@@ -119,7 +119,7 @@ class PlanNamespaceIsolationTest extends TestCase
     private const CONTRACT_IMPLEMENTATION_DIR = ['Posix', 'Nextcloud', 'OpenCloud'];
 
     /**
-     * Story 60.3 — l'ASSEMBLEUR de plan de partage plat et le REGISTRE.
+     * L'ASSEMBLEUR de plan de partage plat et le REGISTRE.
      *
      * Ces deux-là requêtent (l'un lit un pivot, l'autre lit une colonne et
      * demande au conteneur) : c'est leur raison d'être, et c'est pourquoi ils
@@ -155,10 +155,10 @@ class PlanNamespaceIsolationTest extends TestCase
         // fichier ajoutés « pour dépanner » passeraient, pendant que le docblock
         // continuerait d'affirmer que c'est structurellement impossible. Une
         // garantie qui ne vit que dans le commentaire est la signature de défaut
-        // que cet epic rencontre le plus souvent.
+        // qu'on rencontre le plus souvent.
         'accès réseau',
         'accès au système de fichiers',
-        // Story 60.3 — le faux ami. Il abstrait les OPÉRATIONS sur les fichiers,
+        // Le faux ami. Il abstrait les OPÉRATIONS sur les fichiers,
         // pas les permissions ; et SE5 ne crée aucun fichier. S'y brancher
         // donnerait une dépendance inutile et une fausse impression de
         // portabilité, exactement là où la portabilité doit être vraie.
@@ -188,7 +188,7 @@ class PlanNamespaceIsolationTest extends TestCase
         'commandes de système de fichiers' => '/\b(setfacl|getfacl|chown|chgrp|sudo)\b/',
         'accès au système de fichiers' => '/\b(file_get_contents|file_put_contents|fopen|mkdir|rmdir|unlink|scandir|glob|realpath|is_dir|is_file)\s*\(/',
 
-        // 2bis. Story 60.3 — LE FAUX AMI, nommé. L'abstraction de fichiers du
+        // 2bis. — LE FAUX AMI, nommé. L'abstraction de fichiers du
         //       framework est la « réutilisation de l'existant » la plus tentante
         //       du chantier, et la plus fausse : elle couvre lire/écrire/lister,
         //       jamais les permissions — or c'est la partie difficile, et c'est
@@ -229,10 +229,6 @@ class PlanNamespaceIsolationTest extends TestCase
         'modèle groupe d\'utilisateurs' => 'use App\\Models\\UserGroup;',
     ];
 
-    // =========================================================================
-    // Story 60.4 — LA COUPE PASSE AVANT LA DÉRIVATION DES PERMISSIONS
-    // =========================================================================
-
     /**
      * Le dossier des services de fichiers, scanné à PLAT (profondeur 0).
      *
@@ -256,25 +252,25 @@ class PlanNamespaceIsolationTest extends TestCase
      * disparition constatable — une exclusion par motif les aurait rendus
      * invisibles, et le jour où l'un d'eux meurt, personne ne l'aurait remarqué.
      *
-     *  - `ShareService` — chemin figé du partage de classe depuis la story 5.2.
-     *    **Il VIT, et son sort n'est plus celui qu'annonçait la story 60.4.** La
-     *    story 60.5 a tranché contre l'écrasement de l'arbre historique : SE5 écrit
+     *  - `ShareService` — chemin figé du partage de classe.
+     * **Il VIT**, et il a été tranché contre l'écrasement de l'arbre historique :
+     * SE5 écrit
      *    désormais ses arbres de classe dans une racine NEUVE, les deux arbres
      *    COEXISTENT, et celui-ci reste le seul réellement servi aux établissements.
      *    Le supprimer aujourd'hui couperait le chemin qui alimente cet arbre-là.
-     *    Son extinction appartient à la story de MIGRATION (bascule de l'arbre
-     *    servi, rapatriement délibéré des données, descente de la dérivation des
-     *    noms), qui n'a pas de calendrier promis. Zéro diff exigé par la 60.5.
-     *  - `AclService` — garde de chemin et pose de droits de la baseline 5.2, même
-     *    vie, même sort, même story de migration. Zéro diff exigé.
-     *  - `HomeDirService` — répertoires personnels, hors du périmètre de l'epic 60
-     *    (le plan de fichiers ne les gouverne pas encore).
-     *  - `XfsQuotaService` — plafonds de zone. La story qui les brancherait au plan
-     *    est SUSPENDUE (décision Q-D, 2026-08-04) ; d'ici là ce service reste le
-     *    seul pilote des plafonds, hors de la ligne.
+     *    Son extinction appartient à la MIGRATION (bascule de l'arbre servi,
+     *    rapatriement délibéré des données, descente de la dérivation des noms),
+     *    qui n'a pas de calendrier promis. Zéro diff exigé.
+     *  - `AclService` — garde de chemin et pose de droits de la baseline, même vie,
+     *    même sort, même migration. Zéro diff exigé.
+     *  - `HomeDirService` — répertoires personnels, hors périmètre (le plan de
+     *    fichiers ne les gouverne pas encore).
+     *  - `XfsQuotaService` — plafonds de zone. Leur branchement au plan est
+     *    SUSPENDU ; d'ici là ce service reste le seul pilote des plafonds, hors
+     *    de la ligne.
      *
      * **`DirectoryTemplateService` n'a PAS besoin d'exclusion**, et c'est une
-     * information : la story 60.4 lui demandait de rester en base seule et de
+     * information : la lui demandait de rester en base seule et de
      * déléguer. Il est donc SCANNÉ comme les autres, et il passe. Une exclusion
      * creuse aurait affirmé le contraire.
      *
@@ -302,7 +298,7 @@ class PlanNamespaceIsolationTest extends TestCase
      *
      * Elles complètent les règles de pureté : celles-ci interdisaient les services
      * d'exécution PAR LEUR NOM de classe ; celles-là interdisent le VOCABULAIRE.
-     * La descente de la story 60.4 aurait pu être cosmétique — déplacer la
+     * La descente de la aurait pu être cosmétique — déplacer la
      * dérivation des permissions dans un fichier neuf en laissant ses appelants
      * la manipuler au-dessus — et aucune règle existante ne l'aurait vu.
      *
@@ -444,7 +440,7 @@ class PlanNamespaceIsolationTest extends TestCase
     }
 
     /**
-     * Story 60.2 — l'assembleur requête, mais il n'exécute rien.
+     * L'assembleur requête, mais il n'exécute rien.
      */
     #[Test]
     public function the_assembler_queries_but_never_executes(): void
@@ -475,7 +471,7 @@ class PlanNamespaceIsolationTest extends TestCase
     }
 
     /**
-     * Story 60.2 — chaque règle appliquée à l'assembleur voit son aiguille. Sans
+     * Chaque règle appliquée à l'assembleur voit son aiguille. Sans
      * ce contrôle, une étiquette mal orthographiée dans la liste ci-dessus
      * rendrait la garde de l'assembleur silencieusement vide.
      */
@@ -499,7 +495,7 @@ class PlanNamespaceIsolationTest extends TestCase
     }
 
     /**
-     * Story 60.3 — LA LIGNE DE CONTRAT est du même côté que le plan.
+     * LA LIGNE DE CONTRAT est du même côté que le plan.
      *
      * L'interface, les DTO de rapport et le backend qui n'exécute rien DÉCRIVENT
      * ce qu'un backend fait ; ils ne le font pas. Le jour où l'un d'eux importe un
@@ -549,7 +545,7 @@ class PlanNamespaceIsolationTest extends TestCase
     }
 
     /**
-     * Story 60.3 — le PROJECTEUR et le REGISTRE requêtent, mais n'exécutent rien.
+     * Le PROJECTEUR et le REGISTRE requêtent, mais n'exécutent rien.
      */
     #[Test]
     public function the_contract_assemblers_query_but_never_execute(): void
@@ -580,7 +576,7 @@ class PlanNamespaceIsolationTest extends TestCase
     }
 
     /**
-     * Story 60.3 — MÉTA-TEST de la règle NOMMÉE du faux ami.
+     * MÉTA-TEST de la règle NOMMÉE du faux ami.
      *
      * Elle est nouvelle, donc elle est le premier candidat à l'aveuglement : une
      * règle mal écrite passerait éternellement au vert sur un dossier qui n'a
@@ -617,7 +613,7 @@ class PlanNamespaceIsolationTest extends TestCase
     }
 
     /**
-     * Story 60.4 — LE VOCABULAIRE DU SERVEUR DE FICHIERS N'EXISTE QUE SOUS LA
+     * LE VOCABULAIRE DU SERVEUR DE FICHIERS N'EXISTE QUE SOUS LA
      * LIGNE.
      *
      * C'est le piège numéro un du chantier, et il est cosmétique : on descend la
@@ -664,7 +660,7 @@ class PlanNamespaceIsolationTest extends TestCase
         // Le CONTRAT lui-même est au-dessus de la ligne. Ses objets de rapport
         // décrivent ce qu'un backend a fait sans jamais dire comment : un exemple
         // illustratif glissé dans un commentaire y ferait entrer le vocabulaire
-        // d'une implémentation particulière, et la règle 60.3 voisine ne le
+        // d'une implémentation particulière, et la règle voisine ne le
         // verrait pas — elle ne détecte que des noms de classe, pas de la prose.
         $contractDir = realpath(self::repoPath(self::CONTRACT_DIR));
         self::assertNotFalse($contractDir, self::CONTRACT_DIR . ' doit exister');
@@ -697,7 +693,7 @@ class PlanNamespaceIsolationTest extends TestCase
     }
 
     /**
-     * Story 60.4 — MÉTA-TEST D'AIGUILLE de la règle ci-dessus.
+     * MÉTA-TEST D'AIGUILLE de la règle ci-dessus.
      *
      * Chaque étiquette voit la forme qu'un contributeur pressé écrirait, et aucune
      * ne mord sur du vocabulaire honnête d'orchestrateur. Sans les deux moitiés, la
@@ -731,7 +727,7 @@ class PlanNamespaceIsolationTest extends TestCase
             '/** Le plan de fichiers est neutre : ni mode, ni nom de groupe système. */',
             "return ['status' => 'conforme', 'nodes' => []];",
             'use App\\Services\\Filesystem\\Plan\\PlanSubject;',
-            // Story 62.4 — AIGUILLE mise à jour, pas règle changée. Elle citait
+            // AIGUILLE mise à jour, pas règle changée. Elle citait
             // l'ancienne constante d'accès binaire, qui n'existe plus ; son rôle
             // (un contrôle NÉGATIF : le vocabulaire honnête d'un orchestrateur ne
             // déclenche rien) est inchangé, et son équivalent en verbes le tient
@@ -743,7 +739,7 @@ class PlanNamespaceIsolationTest extends TestCase
     }
 
     /**
-     * Story 60.4 — les deux ZONES AUTORISÉES portent bien ce vocabulaire.
+     * Les deux ZONES AUTORISÉES portent bien ce vocabulaire.
      *
      * Contrôle inverse du précédent, et il n'est pas décoratif : si le backend du
      * serveur de fichiers ne contenait AUCUN marqueur, c'est que la descente
@@ -780,11 +776,6 @@ class PlanNamespaceIsolationTest extends TestCase
         self::assertSame([], $this->violations('use App\Models\DirectoryTemplate;'));
     }
 
-    // =========================================================================
-    // Story 60.5 — l'emplacement d'affichage : la seule chaîne que le contrat
-    // laisse remonter, et la seule promesse qui n'était portée que par un mot
-    // =========================================================================
-
     /**
      * Les consommateurs AUTORISÉS de l'emplacement d'affichage rendu par le
      * contrat. Liste FERMÉE, et courte par nature : c'est un texte à montrer.
@@ -806,7 +797,7 @@ class PlanNamespaceIsolationTest extends TestCase
      * construction, leur sérialisation LÈVE. Ici, rien — et la valeur de retour a
      * l'apparence d'un chemin qu'on pourrait passer à une commande.
      *
-     * Cet epic a rencontré quatre fois la même signature de défaut : une garantie
+     * La même signature de défaut s'est présentée quatre fois : une garantie
      * vraie sur le chemin heureux et fausse ailleurs. On ferme donc la liste de
      * ceux qui appellent, plutôt que de compter sur la lecture du commentaire.
      */

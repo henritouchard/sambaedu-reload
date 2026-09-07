@@ -8,15 +8,13 @@ import (
 	"testing"
 )
 
-// Tests du handler `legacy_cleanup` (Story 38.3, contrat §7.10) — fake
+// Tests du handler `legacy_cleanup` (contrat §7.10) — fake
 // LegacyCleanupOps en mémoire. Racines injectées (WinDir/UsersDir/
 // ProgramFiles/Netinst) pour des chemins Windows déterministes sur l'hôte.
 // Couvre : chaque catégorie A-F, chaque GARDE (négatifs explicites),
 // l'idempotence (2 RunPass), l'échec partiel (acquis conservés), le silence
 // du poste sain (compliant sans Detail, zéro écriture) et le format des
 // identifiants d'artefacts (T4).
-
-// --- Fake LegacyCleanupOps -----------------------------------------------------
 
 type fakeLegacyOps struct {
 	files   map[string][]byte // chemin → contenu
@@ -232,8 +230,6 @@ func (f *fakeLegacyOps) opCount() int {
 	return f.removeCnt + f.removeAllCnt + f.writeCnt + f.taskDelCnt + f.regDelCnt
 }
 
-// --- Helpers ---------------------------------------------------------------------
-
 const (
 	tWin   = `C:\Windows`
 	tUsers = `C:\Users`
@@ -341,14 +337,12 @@ func hasFile(ops *fakeLegacyOps, path string) bool {
 	return ok
 }
 
-// --- (a) Nettoyage complet A-F + gardes négatives + idempotence ----------------
-
 func TestLegacyCleanupFullPassRemovesCatalogAndRespectsGuards(t *testing.T) {
 	ops := dirtyOps()
 	h := newLegacyHandler(ops)
 	engine := &Engine{Handlers: map[string]Handler{"legacy_cleanup": h}}
 
-	// Passe 1 : drift + Detail listant les artefacts supprimés (AC5).
+	// Passe 1 : drift + Detail listant les artefacts supprimés.
 	report := engine.RunPass(legacyItems(), AppliedState{})
 	if len(report) != 1 || report[0].Status != "drift" {
 		t.Fatalf("passe 1 : drift attendu, obtenu %+v", report)
@@ -488,8 +482,6 @@ func TestLegacyCleanupFullPassRemovesCatalogAndRespectsGuards(t *testing.T) {
 	}
 }
 
-// --- (b) Poste SAIN : compliant, SANS Detail, zéro écriture (AC5 / piège #6) ---
-
 func TestLegacyCleanupHealthyWorkstationIsSilent(t *testing.T) {
 	ops := newFakeLegacyOps()
 	// Un poste SE5 nominal : agent + vrai dossier install natif + wpkg.xml.
@@ -519,8 +511,6 @@ func TestLegacyCleanupHealthyWorkstationIsSilent(t *testing.T) {
 	}
 }
 
-// --- (c) Garde Winlogon : DefaultUserName ≠ se4install ⇒ INTOUCHÉ ---------------
-
 func TestLegacyCleanupWinlogonGuardLegitAutologonUntouched(t *testing.T) {
 	ops := newFakeLegacyOps()
 	ops.reg[regKey("HKLM", legacyWinlogonPath, "DefaultUserName")] = RegistryValue{Kind: "REG_SZ", Str: "borne-accueil"}
@@ -542,8 +532,6 @@ func TestLegacyCleanupWinlogonGuardLegitAutologonUntouched(t *testing.T) {
 		t.Fatalf("aucune suppression registre attendue, obtenu %d", ops.regDelCnt)
 	}
 }
-
-// --- (d) Échec partiel ⇒ error + acquis conservés (D4) --------------------------
 
 func TestLegacyCleanupPartialFailureKeepsAcquiredRemovals(t *testing.T) {
 	ops := newFakeLegacyOps()
@@ -582,8 +570,6 @@ func TestLegacyCleanupPartialFailureKeepsAcquiredRemovals(t *testing.T) {
 	}
 }
 
-// --- (e) Payload invalide ⇒ error pour le type ----------------------------------
-
 func TestLegacyCleanupInvalidPayloadIsError(t *testing.T) {
 	h := newLegacyHandler(newFakeLegacyOps())
 	cases := []struct {
@@ -608,8 +594,6 @@ func TestLegacyCleanupInvalidPayloadIsError(t *testing.T) {
 	}
 }
 
-// --- (f) AUCUN store (attesté structurellement, piège #8) ------------------------
-
 func TestLegacyCleanupHandlerHasNoStore(t *testing.T) {
 	typ := reflect.TypeOf(LegacyCleanupHandler{})
 	if _, ok := typ.FieldByName("StatePath"); ok {
@@ -623,8 +607,6 @@ func TestLegacyCleanupHandlerHasNoStore(t *testing.T) {
 		t.Fatalf("LegacyCleanupOps doit exposer exactement 11 ops, obtenu %d (tout ajout = décision consciente)", n)
 	}
 }
-
-// --- (g) Détail borné à 2000 runes (contrat §6) ----------------------------------
 
 func TestLegacyCleanupDetailIsBounded(t *testing.T) {
 	ops := newFakeLegacyOps()
@@ -642,8 +624,6 @@ func TestLegacyCleanupDetailIsBounded(t *testing.T) {
 		t.Fatalf("detail borné à 2000 runes (contrat §6), obtenu %d", got)
 	}
 }
-
-// --- (h) purgeScriptsIni : renumérotation + vidage --------------------------------
 
 func TestPurgeScriptsIniRenumbersAndDetectsEmpty(t *testing.T) {
 	content := "\r\n[Logon]\r\n0CmdLine=logon.cmd\r\n0Parameters=\r\n1CmdLine=autre.cmd\r\n1Parameters=x\r\n[Logoff]\r\n0CmdLine=logoff.cmd\r\n0Parameters=\r\n"
@@ -666,8 +646,6 @@ func TestPurgeScriptsIniRenumbersAndDetectsEmpty(t *testing.T) {
 		t.Fatalf("aucune entrée matchée ⇒ changed=false attendu")
 	}
 }
-
-// --- (i) UTF-16LE : round-trip du scripts.ini GPO ---------------------------------
 
 func TestLegacyCleanupScriptsIniUtf16RoundTrip(t *testing.T) {
 	plain := "\r\n[Logon]\r\n0CmdLine=logon.cmd\r\n0Parameters=\r\n1CmdLine=autre.cmd\r\n1Parameters=\r\n"
@@ -692,8 +670,6 @@ func TestLegacyCleanupScriptsIniUtf16RoundTrip(t *testing.T) {
 	}
 }
 
-// --- (j) referencesSambaeduProfile / is32Hex : bornes ------------------------------
-
 func TestLegacyCleanupContentGuards(t *testing.T) {
 	if !referencesSambaeduProfile("[Install308046B0AF4A39CB]\nDefault=sambaedu.default\n") {
 		t.Errorf("Default=sambaedu.default doit être reconnu")
@@ -716,7 +692,7 @@ func TestLegacyCleanupContentGuards(t *testing.T) {
 	}
 }
 
-// Review 38.3 #1 — garde Mozilla robuste : la valeur (pas la ligne entière)
+// Garde Mozilla robuste : la valeur (pas la ligne entière)
 // est testée, avec suffixe de chemin toléré (variantes historiques du
 // fragment) et frontière stricte (jamais un profil légitime approchant).
 func TestReferencesSambaeduProfileVariants(t *testing.T) {
@@ -746,7 +722,7 @@ func TestReferencesSambaeduProfileVariants(t *testing.T) {
 	}
 }
 
-// Review 38.3 #2 — %WINDIR%\Web\SE4 : forme conservatrice. Un contenu
+// %WINDIR%\Web\SE4 : forme conservatrice. Un contenu
 // inattendu dans le dossier est PRÉSERVÉ (fichier nommé seul supprimé,
 // dossier non vide conservé) — jamais de RemoveAll sous %WINDIR%\Web.
 func TestLegacyCleanupWebSE4ForeignContentPreserved(t *testing.T) {

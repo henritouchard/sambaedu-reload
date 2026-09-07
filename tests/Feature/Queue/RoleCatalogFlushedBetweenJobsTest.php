@@ -14,7 +14,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Review 62.1 #1 — le catalogue de rôles est relu au début de CHAQUE job.
+ * Le catalogue de rôles est relu au début de CHAQUE job.
  *
  * **Le défaut que ce test épingle.** `RoleCatalog` mémoïse dans une propriété
  * statique, et `flush()` n'est déclenchée que par les hooks d'écriture du modèle
@@ -34,7 +34,7 @@ use Tests\TestCase;
  * court-circuiter les hooks Eloquent : c'est la seule façon de reproduire, dans
  * un process unique, ce qu'un worker voit d'une écriture faite AILLEURS.
  *
- * Patron du déclenchement : `QueueTaskRunCreatedAtPreservationTest` (story 29.9)
+ * Patron du déclenchement : `QueueTaskRunCreatedAtPreservationTest`
  * — `Queue::before()` écoute `JobProcessing` sur l'event dispatcher, il suffit
  * donc de publier l'événement, sans dispatcher de vrai job.
  */

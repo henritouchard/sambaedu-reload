@@ -11,7 +11,6 @@ use App\Services\Filesystem\Plan\PlanSubject;
 /**
  * LE PLAN, TRADUIT UNE FOIS, DANS LE MODÈLE D'UN ESPACE DE PROJET.
  *
- * ---------------------------------------------------------------------------
  * **UN SEUL ÉTAGE, ET C'EST LA DIFFÉRENCE MAJEURE AVEC L'AUTRE PRODUIT.**
  *
  * Le dossier d'équipe de l'autre produit a deux étages — un plafond par groupe,
@@ -36,7 +35,6 @@ use App\Services\Filesystem\Plan\PlanSubject;
  * `non_exprimable` en nommant le rôle. C'est le résultat que le contrat a été
  * dessiné pour porter.
  *
- * ---------------------------------------------------------------------------
  * **TROIS ÉTATS D'OCTROI, ET LE DEUXIÈME N'EST PAS EXPRIMABLE ICI** :
  *
  *  | état du plan            | traduction                                        |
@@ -54,7 +52,7 @@ use App\Services\Filesystem\Plan\PlanSubject;
  * nœud rend `non_exprimable` en le disant.
  *
  * **Un sujet à la fois octroyé par un rôle et clos par un autre reste OCTROYÉ** :
- * l'union au plus permissif est la doctrine de l'epic, et la clôture n'a jamais
+ * l'union au plus permissif est la doctrine, et la clôture n'a jamais
  * été une interdiction — elle constate qu'un rôle n'a rien reçu.
  */
 final class OpenCloudPlanProjection
@@ -93,7 +91,6 @@ final class OpenCloudPlanProjection
         $unresolved = [];
         $notices = [];
 
-        // --- 1. Les principaux, une fois pour toutes -------------------------
         foreach ($projector->subjectsOf($plan) as $subject) {
             if ($subject->type === PlanSubject::TYPE_USER) {
                 $id = $projector->openCloudUserIdFor($subject);
@@ -146,7 +143,6 @@ final class OpenCloudPlanProjection
             }
         }
 
-        // --- 2. Les verbes voulus, nœud par nœud -----------------------------
         $desired = [];
         $closedSubjects = [];
         $suspended = [];

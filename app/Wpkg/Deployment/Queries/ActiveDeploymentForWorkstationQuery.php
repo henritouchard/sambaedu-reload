@@ -10,11 +10,11 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 15.5 / AC1.5 — Cherche le déploiement WPKG actif (status pending|running)
+ * Cherche le déploiement WPKG actif (status pending|running)
  * applicable à une workstation donnée, sur les 3 axes du `target_scope` :
  *
  *   - `workstation_ids` : corrélation directe.
- *   - `group_ids` (ou `workstation_group_ids` legacy 15.4) : un parc dont
+ *  - `group_ids` (ou `workstation_group_ids` legacy) : un parc dont
  *     le poste est membre.
  *   - `profile_ids` : un AppProfile auquel le poste est rattaché (héritage
  *     groupe ou direct).
@@ -25,10 +25,10 @@ use Illuminate\Support\Facades\Log;
  * Pas de match → retourne null (le rapport est ingéré « spontané » dans
  * `workstation_application_status` uniquement).
  *
- * Note compatibilité : le code 15.4 actuel insère `target_scope` avec la
- * clé `workstation_group_ids` (sans `s` initial), alors que la story 15.5
+ * Note compatibilité : le code actuel insère `target_scope` avec la
+ * clé `workstation_group_ids` (sans `s` initial), alors que la
  * spécifie `group_ids`. La query gère les deux pour rester robuste pendant
- * la transition (15.7 unifiera).
+ * la transition (à unifier).
  */
 final class ActiveDeploymentForWorkstationQuery
 {
@@ -109,7 +109,7 @@ final class ActiveDeploymentForWorkstationQuery
             return true;
         }
 
-        // Axe 2 : group_ids OU workstation_group_ids (compat 15.4)
+        // Axe 2 : group_ids OU workstation_group_ids (compat)
         $gIdsFromScope = $this->normalizeIds(
             $scope['group_ids'] ?? $scope['workstation_group_ids'] ?? []
         );

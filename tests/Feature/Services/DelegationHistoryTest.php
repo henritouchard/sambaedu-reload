@@ -18,7 +18,7 @@ use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
 /**
- * Tests Feature de l'historique des délégations (Story 7.1 — AC5, AC10).
+ * Tests Feature de l'historique des délégations.
  *
  * Invariants testés :
  *  - chaque `grant` / `revoke` / `negate` écrit une ligne d'audit complète
@@ -191,10 +191,6 @@ class DelegationHistoryTest extends TestCase
         ]);
     }
 
-    // ========================================================================
-    // Champs écrits
-    // ========================================================================
-
     public function test_grant_creates_history_entry_with_all_fields(): void
     {
         $actor = $this->makeUser('actor-hist');
@@ -251,10 +247,6 @@ class DelegationHistoryTest extends TestCase
         $this->assertTrue($entry->is_negative);
     }
 
-    // ========================================================================
-    // Append-only (AC5)
-    // ========================================================================
-
     public function test_history_is_append_only_via_save(): void
     {
         $actor = $this->makeUser('actor-ao');
@@ -285,10 +277,6 @@ class DelegationHistoryTest extends TestCase
         $this->expectException(LogicException::class);
         $entry->update(['action' => 'hack']);
     }
-
-    // ========================================================================
-    // Résolution acteur depuis auth()
-    // ========================================================================
 
     public function test_actor_is_resolved_from_auth_when_not_explicit(): void
     {

@@ -14,8 +14,6 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 3.6 — D7 / AC4.1, AC4.2 — Entry-point Livewire.
- *
  * Orchestre la soumission d'un nouveau téléchargement :
  *
  *  1. Valide l'URL (delegate à {@see WindowsIsoUrlValidator}).
@@ -28,8 +26,8 @@ use Illuminate\Support\Facades\Log;
  *  5. Log info `ipxe.iso.download.submitted` (channel `ipxe`).
  *
  * Le lock est **acquis** ici (côté orchestrator/Livewire) et **release**
- * dans le `finally` du Job (D15 — ceinture + bretelles via couche
- * `WithoutOverlapping` middleware aussi).
+ * dans le `finally` du Job (ceinture + bretelles avec le middleware
+ * `WithoutOverlapping`).
  */
 class WindowsIsoDownloadOrchestrator
 {
@@ -57,7 +55,7 @@ class WindowsIsoDownloadOrchestrator
         // 1) Validation 2e couche (defense in depth — la 1re est Livewire rules()).
         $validated = $this->urlValidator->validate($url);
 
-        // Opus-D — Validation host_ip via FILTER_VALIDATE_IP : si le header
+        // Validation host_ip via FILTER_VALIDATE_IP : si le header
         // X-Forwarded-For est forgé / contient une chaîne non-IP, on persiste
         // `null` plutôt que de stocker un payload arbitraire (log poisoning,
         // SQL injection mitigée par Eloquent mais defense in depth).
@@ -81,7 +79,7 @@ class WindowsIsoDownloadOrchestrator
             );
         }
 
-        // 3) Row pending + dispatch Job — Opus-E — encapsulés dans
+        // 3) Row pending + dispatch Job, encapsulés dans
         // `DB::transaction()` pour garantir l'atomicité « row créée ⇒ Job
         // dispatché ⇒ log audit ». Si une étape échoue (ex. worker queue
         // down + driver `database` qui throw, ou DB write KO), la transaction
@@ -239,7 +237,7 @@ class WindowsIsoDownloadOrchestrator
     }
 
     /**
-     * Story 3.10 — Ré-injecte les pilotes NIC dans une ISO **déjà déployée**,
+     * Ré-injecte les pilotes NIC dans une ISO **déjà déployée**,
      * sans re-télécharger. L'ISO source est conservée sur disque après un
      * déploiement réussi ; on relance simplement l'extraction, qui re-copie un
      * `boot.wim` frais (pristine) puis y ré-injecte le pack de pilotes courant

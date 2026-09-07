@@ -13,7 +13,7 @@ namespace App\Enums;
  * - `Exclusive` : un seul item fait foi pour la ressource (ex. `wallpaper`) —
  *   l'agent applique le dernier / l'unique, jamais une union.
  *
- * Identifiant figé (NFR12) : une valeur publiée ne se renomme jamais.
+ * Identifiant figé : une valeur publiée ne se renomme jamais.
  */
 enum ResourceSemantics: string
 {

@@ -7,12 +7,10 @@
  *
  * Usage: php legacy_create_salle_test.php [nom_salle] [description] [parent]
  *
- * =============================================================================
  * DOCUMENTATION: Écritures AD effectuées par legacy pour créer une salle
- * =============================================================================
  *
  * 1. CRÉATION DU GROUPE CN dans OU=Parcs
- *    Fonction: groupadd() - /includes/samba-tool.inc.php:562-611
+ *  Fonction: groupadd() - /includes/samba-tool.inc.php:562-611
  *
  *    ldap_add($config['bind'], "CN={nom},OU=Parcs,OU={etab},DC=...", [
  *        "cn" => "{nom}",
@@ -23,7 +21,7 @@
  *    ])
  *
  * 2. CRÉATION DE L'OU dans OU=Computers
- *    Fonction: ouadd() - /includes/samba-tool.inc.php:387-431
+ *  Fonction: ouadd() - /includes/samba-tool.inc.php:387-431
  *
  *    ldap_add($config['bind'], "OU={nom},OU=Computers,OU={etab},DC=...", [
  *        "ou" => "{nom}",
@@ -33,7 +31,6 @@
  *    Si parent spécifié:
  *    ldap_add($config['bind'], "OU={nom},OU={parent},OU=Computers,OU={etab},DC=...", [...])
  *
- * =============================================================================
  */
 
 // Paramètres du test (avant les includes pour éviter les conflits)

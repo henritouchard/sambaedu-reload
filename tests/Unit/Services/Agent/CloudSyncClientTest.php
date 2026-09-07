@@ -17,7 +17,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 63.5 — LA POSABILITÉ DU CLIENT DE SYNCHRONISATION.
+ * LA POSABILITÉ DU CLIENT DE SYNCHRONISATION.
  *
  * Le service ne pose rien et ne retire rien : il répond à « cette position
  * est-elle tenable, et quel `app_id` doit entrer dans l'ensemble cible ? ».
@@ -101,10 +101,6 @@ class CloudSyncClientTest extends TestCase
         FilePolicyService::patchGlobal(['cloud_access_path' => 'client_natif']);
     }
 
-    // =====================================================================
-    // AC1 — les deux clés de désignation
-    // =====================================================================
-
     #[Test]
     public function the_two_designation_keys_default_to_null(): void
     {
@@ -139,7 +135,7 @@ class CloudSyncClientTest extends TestCase
         $this->designate(ActiveCloud::Nextcloud, 'nc-client');
         $this->designate(ActiveCloud::OpenCloud, 'oc-client');
 
-        // Un appelant antérieur à cette story : il ne connaît pas les deux
+        // Un appelant d'avant l'élargissement : il ne connaît pas les deux
         // derniers paramètres, et ne doit rien effacer.
         FilePolicyService::setGlobal(true, true, true, 'https://cloud.etab.fr');
 
@@ -158,10 +154,6 @@ class CloudSyncClientTest extends TestCase
 
         self::assertNull(FilePolicyService::globalConfig()['nextcloud_client_app_id']);
     }
-
-    // =====================================================================
-    // AC2 — la matrice des refus, littéraux figés
-    // =====================================================================
 
     #[Test]
     public function without_an_active_cloud_the_position_is_refused(): void
@@ -240,10 +232,6 @@ class CloudSyncClientTest extends TestCase
 
         self::assertTrue(true, 'aucune exception : la position est tenable');
     }
-
-    // =====================================================================
-    // AC3 — la validation PRÉDICTIVE du `<remove>`
-    // =====================================================================
 
     #[Test]
     public function a_recipe_without_any_remove_is_refused(): void
@@ -329,10 +317,6 @@ class CloudSyncClientTest extends TestCase
         // du dépôt amont.
         Http::assertNothingSent();
     }
-
-    // =====================================================================
-    // AC4 — `appIdFor()` : les trois clouds × les deux chemins d'accès
-    // =====================================================================
 
     #[Test]
     public function nothing_is_designated_for_the_agent_while_the_access_path_is_the_browser(): void
@@ -463,10 +447,6 @@ class CloudSyncClientTest extends TestCase
         // désinstallation de CE paquet.
         self::assertNull($this->client->refusalFor(ActiveCloud::Nextcloud));
     }
-
-    // =====================================================================
-    // AC6 — la borne de version, NOMMÉE
-    // =====================================================================
 
     #[Test]
     public function the_minimum_agent_version_is_a_documented_public_constant(): void

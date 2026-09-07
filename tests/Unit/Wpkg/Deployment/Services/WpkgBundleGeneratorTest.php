@@ -17,20 +17,19 @@ use Tests\TestCase;
 use Tests\Traits\CreatesAppStoreSchema;
 
 /**
- * Story 27.6 (Bug A / SOURCE UNIQUE) — Tests du sourcing du catalogue du bundle.
+ * Tests du sourcing du catalogue du bundle.
  *
  * Couvre :
  *   - le bundle inclut une app présente dans le catalogue MODULE (source unique) ;
  *   - la substitution `SE4FS_NAME` reste appliquée sur le catalogue sourcé du module ;
  *   - la garde structurelle (≠ 1 <packages>) protège le nouveau sourcing
- *     (catalogue module malformé → RuntimeException, non-régression 27.5) ;
- *   - D5 : catalogue module absent → régénéré avant sourcing.
+ *  (catalogue module malformé → RuntimeException, non-régression) ;
+ *   - catalogue module absent → régénéré avant sourcing.
  *
  * Les chemins de prod (`sambaedu.wpkg.packages_xml_path`, `agent.wpkg_bundle_path`,
  * `sambaedu.wpkg.bundle_source_path`) sont surchargés vers des temp dans setUp.
  */
 #[Group('wpkg-deploy')]
-#[Group('story-27-6')]
 class WpkgBundleGeneratorTest extends TestCase
 {
     use CreatesAppStoreSchema;
@@ -88,7 +87,7 @@ class WpkgBundleGeneratorTest extends TestCase
     }
 
     /**
-     * AC2/AC5 — une app présente dans le catalogue MODULE apparaît dans le
+     * Une app présente dans le catalogue MODULE apparaît dans le
      * packages.xml du bundle après génération.
      */
     #[Test]
@@ -122,8 +121,8 @@ class WpkgBundleGeneratorTest extends TestCase
     }
 
     /**
-     * AC2/AC5 — la substitution SE4FS_NAME continue de s'appliquer sur le
-     * catalogue sourcé du module (non-régression 27.5).
+     * La substitution SE4FS_NAME continue de s'appliquer sur le
+     * catalogue sourcé du module (non-régression).
      */
     #[Test]
     public function se4fs_name_substitution_is_applied_on_module_sourced_catalog(): void
@@ -145,9 +144,9 @@ class WpkgBundleGeneratorTest extends TestCase
     }
 
     /**
-     * AC2/AC5 (M1 — angle mort relevé au second avis) — un catalogue module RÉEL
+     * Un catalogue module RÉEL
      * ne porte plus de `<variable source="sambaedu">` à la RACINE (le catalogue
-     * hand-curated supprimé en 27.6/D2 la portait là) : les recipes la portent
+     * hand-curated supprimé la portait là) : les recipes la portent
      * PAR <package>. Ce test prouve que la substitution SE4FS_NAME s'applique bien
      * à une variable IMBRIQUÉE dans un <package> (chemin réel), pas seulement au
      * niveau racine — `getElementsByTagName('variable')` étant récursif, le strip
@@ -181,7 +180,7 @@ class WpkgBundleGeneratorTest extends TestCase
     }
 
     /**
-     * AC2/AC5 — non-régression de la garde structurelle : un catalogue module
+     * Non-régression de la garde structurelle : un catalogue module
      * MALFORMÉ (double <packages> imbriqué) fait échouer fort la génération du
      * bundle (jamais de faux succès / catalogue inexploitable servi en silence).
      */
@@ -204,7 +203,7 @@ class WpkgBundleGeneratorTest extends TestCase
     }
 
     /**
-     * AC2/AC5 (D5) — catalogue module absent → régénéré via PackagesXmlService
+     * Catalogue module absent → régénéré via PackagesXmlService
      * avant sourcing. Une app installée en DB se retrouve donc dans le bundle.
      */
     #[Test]
@@ -223,7 +222,7 @@ class WpkgBundleGeneratorTest extends TestCase
 
         $this->generator()->generate();
 
-        // Le catalogue module a été régénéré (D5)...
+        // Le catalogue module a été régénéré...
         $this->assertFileExists($this->moduleCatalogPath);
 
         // ...et le bundle contient l'app installée.
@@ -238,7 +237,7 @@ class WpkgBundleGeneratorTest extends TestCase
     }
 
     /**
-     * Story 27.19 (AC3/AC4/AC5) — INTÉGRATION end-to-end : une app %SOFTWARE%
+     * INTÉGRATION end-to-end : une app %SOFTWARE%
      * installée en DB, catalogue module absent → régénéré (transformation HTTP) →
      * le bundle servi contient le <download> réécrit en HTTP (url SE5 + target
      * %TEMP%, sha retirés) et l'<install> %SOFTWARE%→%TEMP%. Prouve que la livraison

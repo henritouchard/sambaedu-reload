@@ -14,16 +14,16 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 5.1d — Importation idempotente des règles `quotas` du legacy.
+ * Importation idempotente des règles `quotas` du legacy.
  *
  * Lit la table MySQL legacy `quotas` (schéma confirmé via investigation
  * `sambaedu/includes/quotas.inc.php` : `nom string, quotasoft int (KB),
  * quotahard int (KB), partition string`) via la connexion `legacy_mysql`
- * configurée en 5.1d (cf. config/database.php + .env.example).
+ * configurée (cf. config/database.php +.env.example).
  *
- * Comportement (D1=A, AC 11-15) :
+ * Comportement :
  *  - Pour chaque row legacy :
- *    - discrimination user/group via `UserGroup::where('name')->exists()` (D12, AC 12) ;
+ *  - discrimination user/group via `UserGroup::where('name')->exists()` ;
  *    - conversion KB → MB (`round($x / 1024)`) ;
  *    - `firstOrCreate` (sans `--force`) ou `updateOrCreate` (avec `--force`) ;
  *    - audit `QuotaAuditLog` avec `performed_by='quota:seed-from-legacy'`.
@@ -31,10 +31,10 @@ use Illuminate\Support\Facades\Log;
  *    partition) — skip si déjà présent, sauf `--force`.
  *  - `--dry-run` : preview sans I/O ;
  *  - `--force` : `updateOrCreate` au lieu de `firstOrCreate` (réécrit) ;
- *  - Si la connexion `legacy_mysql` n'est pas configurée OU PDO échoue
- *    (AC 14) : `Log::error` + message stdout explicite + return FAILURE.
+ *  - Si la connexion `legacy_mysql` n'est pas configurée OU que PDO échoue :
+ *    `Log::error` + message stdout explicite + return FAILURE.
  *
- * Logs : préfixe historique `QuotaService:` conservé (décision SM 5.1a).
+ * Logs : préfixe historique `QuotaService:` conservé (décision SM).
  */
 class QuotaSeedFromLegacyCommand extends Command
 {
@@ -66,11 +66,10 @@ class QuotaSeedFromLegacyCommand extends Command
     /**
      * LE PLAFOND PAR DÉFAUT DE L'INSTANCE (Mo), une ligne par partition.
      *
-     * ---------------------------------------------------------------------------
      * **Il y en avait QUATRE** — un par « profil » (élève 500/600, enseignant
      * 1000/1200, administrateur 2000/2400, itinérant 200/240) — et le profil retenu
      * pour un compte se DEVINAIT par comparaison de sous-chaîne sur des noms de
-     * groupes. La story 63.4 les a remplacés par un défaut unique, d'instance ; un
+     * groupes. La les a remplacés par un défaut unique, d'instance ; un
      * budget plus large pour une population donnée se pose en RÈGLE DE GROUPE, qui
      * est explicite et se voit.
      *
@@ -84,7 +83,6 @@ class QuotaSeedFromLegacyCommand extends Command
      * il n'y a rien à rétrécir, et une valeur de départ raisonnable vaut mieux qu'une
      * valeur maximale que personne n'a demandée. Dans les deux cas, l'écran la change
      * en un geste.
-     * ---------------------------------------------------------------------------
      *
      * Mêmes valeurs sur les deux partitions (les partages classes/docs sont gros,
      * pas de raison de les diviser).
@@ -113,7 +111,6 @@ class QuotaSeedFromLegacyCommand extends Command
         // 1. Test connexion legacy_mysql.
         $hasLegacyConnection = $this->canConnectLegacy();
         if (!$hasLegacyConnection['ok']) {
-            // AC 14 — message stdout explicite + Log::error + FAILURE.
             Log::error('QuotaService: connexion legacy_mysql non configurée', [
                 'error' => $hasLegacyConnection['error'],
             ]);
@@ -220,14 +217,14 @@ class QuotaSeedFromLegacyCommand extends Command
 
         // Charset legacy attendu : `utf8mb4` (cf. config/database.php
         // connexion `legacy_mysql`). Convention métier : 0 = illimité, MAIS
-        // uniquement après validation explicite (review #M7) — un NULL
+        // uniquement après validation explicite — un NULL
         // silencieux ne doit PAS être interprété comme illimité car cela
         // masquerait une corruption de schéma legacy.
         foreach ($rows as $row) {
             $nom = isset($row['nom']) ? trim((string) $row['nom']) : '';
             $partition = isset($row['partition']) ? (string) $row['partition'] : '';
 
-            // Story 5.1d code review #M7 — détection NULL avant cast (int).
+            // Détection NULL avant cast (int) :
             // `(int) null === 0` ce qui ferait passer un NULL pour illimité.
             $softRaw = $row['quotasoft'] ?? null;
             $hardRaw = $row['quotahard'] ?? null;
@@ -269,7 +266,7 @@ class QuotaSeedFromLegacyCommand extends Command
                 continue;
             }
 
-            // Discrimination user/group (D12, AC 12) :
+            // Discrimination user/group :
             // - groupe en priorité (si nom apparaît à la fois en user et en group,
             //   c'est extrêmement rare en SE — on privilégie group pour l'effet
             //   maximal, l'admin ajustera manuellement post-seed si besoin).
@@ -366,21 +363,19 @@ class QuotaSeedFromLegacyCommand extends Command
     /**
      * Init du plafond par défaut de l'instance : UNE règle par partition.
      *
-     * Elles étaient huit (4 « profils » × 2 partitions) jusqu'à la story 63.4 —
+     * Elles étaient huit (4 « profils » × 2 partitions) jusqu'à la
      * voir {@see self::INSTANCE_DEFAULT}.
      *
-     * ---------------------------------------------------------------------------
-     * **L'ÉCRITURE PASSE PAR LE SERVICE** (correction de revue 63.4). Elle se faisait
+     * **L'ÉCRITURE PASSE PAR LE SERVICE** (correction de revue). Elle se faisait
      * ici en direct sur le modèle : le défaut d'instance avait donc DEUX chemins
      * d'écriture, dont un qui échappait à la garde de disponibilité de la partition —
      * et l'audit y était réécrit à la main, à côté de celui du service. Deux chemins
-     * pour une même décision, c'est la classe de défaut que cette story ferme.
+     * pour une même décision, c'est la classe de défaut que cette commande ferme.
      *
      * ⚠️ `applyImmediately: false`, et ce n'est pas un détail : cette commande est un
      * import de bascule. Appliquer d'un coup un plafond à tout un établissement au
      * moment d'une migration mettrait des comptes en dépassement sans que personne
      * n'ait cliqué. Le geste qui applique est celui de l'écran, et il s'annonce.
-     * ---------------------------------------------------------------------------
      *
      * @return array{defaults_created:int, defaults_skipped:int, defaults_updated:int, defaults_refused:int}
      */

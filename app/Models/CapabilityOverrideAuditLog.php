@@ -10,7 +10,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use LogicException;
 
 /**
- * Story 29.5 (NFR5) — Entrée d'audit append-only d'un override de capacité par
+ * Entrée d'audit append-only d'un override de capacité par
  * parc (`workstationGroup`).
  *
  * Consigne chaque pose / mise à jour / retrait d'un override sur la surface
@@ -27,8 +27,7 @@ use LogicException;
  * Patron MAISON (`QuotaAuditLog::log()` / `DelegationHistory`) — Spatie
  * activitylog n'est PAS une dépendance du projet.
  *
- * ⚠️ GARDE-FOU R3 : aucun mot « central ». Vocabulaire « amont » / `Upstream`.
- * [Source: prd-contrat-manage-se5.md#R3]
+ * ⚠️ Convention de nommage : aucun mot « central ». Vocabulaire « amont » / `Upstream`.
  *
  * @property int $id
  * @property int|null $actor_user_id
@@ -83,10 +82,6 @@ class CapabilityOverrideAuditLog extends Model
         'created_at' => 'datetime',
     ];
 
-    // ========================================================================
-    // APPEND-ONLY GUARD (calque DelegationHistory)
-    // ========================================================================
-
     /**
      * Bloque tout UPDATE : la table est append-only.
      *
@@ -104,10 +99,6 @@ class CapabilityOverrideAuditLog extends Model
 
         return parent::save($options);
     }
-
-    // ========================================================================
-    // FABRIQUE (calque QuotaAuditLog::log)
-    // ========================================================================
 
     /**
      * Consigne un événement d'audit d'override. Appelé DANS la transaction de la
@@ -142,10 +133,6 @@ class CapabilityOverrideAuditLog extends Model
         ]);
     }
 
-    // ========================================================================
-    // RELATIONS
-    // ========================================================================
-
     /** L'utilisateur qui a effectué l'override (peut être null si supprimé). */
     public function actor(): BelongsTo
     {
@@ -157,10 +144,6 @@ class CapabilityOverrideAuditLog extends Model
     {
         return $this->belongsTo(Capability::class, 'capability_id');
     }
-
-    // ========================================================================
-    // SCOPES
-    // ========================================================================
 
     public function scopeForAction(Builder $query, string $action): Builder
     {

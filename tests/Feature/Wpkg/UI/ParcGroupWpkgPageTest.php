@@ -18,7 +18,7 @@ use Tests\Support\WpkgSchemaBootstrapper;
 use Tests\TestCase;
 
 /**
- * Story 15.4 / AC1, AC7.1 — Onglet "Applications WPKG" sur la page parc
+ * Onglet "Applications WPKG" sur la page parc
  * (Décision A : onglet de premier niveau via ?tab=wpkg, pas de route séparée).
  *
  * NB : ces tests appellent directement les méthodes Livewire métier (attach/detach)
@@ -49,7 +49,7 @@ class ParcGroupWpkgPageTest extends TestCase
         // Stub Gate `wpkg.assign` à allow / deny selon les tests.
         Gate::define('wpkg.assign', fn ($user) => true);
         Gate::define('view', fn ($user, $model = null) => true);
-        // Story 29.1 — l'enforcement WPKG passe désormais par le Gate SCOPÉ
+        // L'enforcement WPKG passe désormais par le Gate SCOPÉ
         // (T4 : defense-in-depth dans AppProfileService). On le stube à allow
         // ici (le schéma Spatie permissions n'est pas bootstrappé ; cf.
         // WorkstationGroupPolicyWpkgTest / AppProfileServiceWpkgScopingTest pour
@@ -57,7 +57,7 @@ class ParcGroupWpkgPageTest extends TestCase
         Gate::define('assign-wpkg-workstationGroup', fn ($user, $model = null) => true);
 
         $this->admin = $this->makeAdmin();
-        // Story 29.1 — le Gate scopé est invoqué sous un user authentifié, ce qui
+        // Le Gate scopé est invoqué sous un user authentifié, ce qui
         // déclenche le before-hook Spatie (lecture de la table `permissions`).
         // On crée les tables Spatie minimales (vides) pour que le before-hook
         // n'échoue pas, puis le `Gate::define` stubé ci-dessus autorise l'action.
@@ -185,7 +185,7 @@ class ParcGroupWpkgPageTest extends TestCase
         });
     }
 
-    // NB (Story 29.1) : l'ex-test `gate_denies_when_user_lacks_wpkg_assign` testait
+    // NB : l'ex-test `gate_denies_when_user_lacks_wpkg_assign` testait
     // l'ANCIEN gate global `wpkg.assign` (tautologique, sans rapport avec le scoping).
     // L'enforcement scopé `assign-wpkg-workstationGroup` est désormais couvert par
     // tests/Unit/Policies/WorkstationGroupPolicyWpkgTest.php (7 cas : positif/négatif

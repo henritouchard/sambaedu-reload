@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// En-têtes du canal agent (middleware 23.2, FIGÉS).
+// En-têtes du canal agent (middleware, FIGÉS).
 const (
 	headerNewToken      = "X-Agent-New-Token"
 	headerAgentHostname = "X-Agent-Hostname"
@@ -27,21 +27,21 @@ type Response struct {
 
 // Client : couche HTTP unique de l'agent.
 //
-// Invariants gérés ICI (décisions 24.2/24.3 REPRISES, pas re-tranchées) :
+// Invariants gérés ICI (décisions REPRISES, pas re-tranchées) :
 //   - Bearer token : relu sur disque à chaque cycle par l'appelant
 //     (SetToken) ; X-Agent-Hostname (nom COURT) sur CHAQUE appel
-//     (anti-clonage 23.2) ; X-Agent-Mac volontairement NON envoyé
-//     (multi-NIC → faux positif quarantaine, décision 24.2) ;
-//   - rotation D5 : X-Agent-New-Token lu sur TOUTE réponse (GET 200 ET 304,
+//     (anti-clonage) ; X-Agent-Mac volontairement NON envoyé
+//     (multi-NIC → faux positif quarantaine, décision) ;
+//   - rotation du token : X-Agent-New-Token lu sur TOUTE réponse (GET 200 ET 304,
 //     POST même non-200) → écriture ATOMIQUE sur disque, ancien token gardé
 //     EN MÉMOIRE pour la fenêtre de grâce (jamais de token.previous sur
 //     disque — surface minimale) ;
 //   - 401 après rotation → UN réessai avec l'ancien token (grâce) ; puis
-//     durcissement deux-acteurs (24.3) : relecture du token sur DISQUE et
+//     durcissement deux-acteurs : relecture du token sur DISQUE et
 //     réessai UNIQUE s'il diffère des tokens déjà essayés ; 401 après tout
 //     ça = irrécupérable (l'appelant ARRÊTE — jamais de re-enrôlement auto) ;
 //   - TLS via le magasin système (la racine CA interne est déployée par
-//     iPXE 23.3) ; timeout explicite 30 s.
+//     iPXE) ; timeout explicite 30 s.
 type Client struct {
 	HTTP     *http.Client
 	Store    *Store
@@ -52,7 +52,7 @@ type Client struct {
 	previousToken string // fenêtre de grâce D5 (mémoire seulement)
 }
 
-// NewClient construit le client avec le timeout du contrat (30 s, iso-24.2).
+// NewClient construit le client avec le timeout du contrat (30 s).
 func NewClient(store *Store, log *Logger, hostname string) *Client {
 	return &Client{
 		HTTP:     &http.Client{Timeout: 30 * time.Second},
@@ -85,8 +85,8 @@ func (c *Client) Post(url string, body []byte) (*Response, error) {
 }
 
 // PostNoAuth appelle POST url avec un corps JSON SANS bearer token ni
-// rotation D5 — chemin d'amorçage de la demande d'enrôlement porte 2 (Story
-// 25.4, piège n° 3). Le poste n'a pas encore de token : la requête part sans
+// rotation de token — chemin d'amorçage de la demande d'enrôlement. Le poste
+// n'a pas encore de token : la requête part sans
 // en-tête Authorization, et la réponse ne porte jamais de X-Agent-New-Token (le
 // token d'enrôlement vit dans le CORPS JSON `{success, token}`, jamais dans
 // l'en-tête de rotation). X-Agent-Hostname reste posé (anti-clonage, inoffensif
@@ -118,7 +118,7 @@ func (c *Client) PostNoAuth(url string, body []byte) (*Response, error) {
 	return &Response{StatusCode: resp.StatusCode, Body: raw, Header: resp.Header}, nil
 }
 
-// request : appel + grâce 401 (mémoire puis disque) + rotation D5 sur la
+// request : appel + grâce 401 (mémoire puis disque) + rotation du token sur la
 // réponse FINALE retournée.
 func (c *Client) request(method, url string, headers map[string]string, body []byte) (*Response, error) {
 	tokenUsed := c.token
@@ -131,8 +131,8 @@ func (c *Client) request(method, url string, headers map[string]string, body []b
 
 	switch {
 	case resp.StatusCode == 401 && hasPrevious:
-		// Fenêtre de grâce D5 : UN réessai avec l'ancien token.
-		c.logWarning("401 avec le token courant juste après une rotation : nouvel essai avec l'ancien token (fenêtre de grâce D5).")
+		// Fenêtre de grâce : UN réessai avec l'ancien token.
+		c.logWarning("401 avec le token courant juste après une rotation : nouvel essai avec l'ancien token (fenêtre de grâce).")
 		resp, err = c.do(method, url, headers, body, c.previousToken)
 		if err != nil {
 			return nil, err
@@ -151,7 +151,7 @@ func (c *Client) request(method, url string, headers map[string]string, body []b
 		c.previousToken = ""
 	}
 
-	// Durcissement deux-acteurs (24.3) : la grâce mémoire n'a rien donné (ou
+	// Durcissement deux-acteurs : la grâce mémoire n'a rien donné (ou
 	// n'existait pas). Si le fichier token a changé entre-temps (rotation
 	// reçue par un AUTRE acteur SYSTEM), le 401 n'est PAS irrécupérable :
 	// un seul réessai avec le token du disque.
@@ -181,7 +181,7 @@ func (c *Client) request(method, url string, headers map[string]string, body []b
 	return resp, nil
 }
 
-// applyRotation : invariant D5 — X-Agent-New-Token lu sur TOUTE réponse
+// applyRotation : X-Agent-New-Token est lu sur TOUTE réponse
 // (GET 200/304, POST même non-200). Écriture atomique sur disque, ancien
 // token gardé en mémoire pour la fenêtre de grâce.
 func (c *Client) applyRotation(resp *Response, tokenUsed string) {

@@ -9,13 +9,12 @@ use Illuminate\Http\Response;
 
 /**
  * @legacy-port path="sambaedu/wpkg/hosts_xml_out.php"
- * @see _bmad-output/implementation-artifacts/15-2-generators-xml-ini-par-poste.md
  *
- * Story 15.2 / AC1.1 — Endpoint HTTP `hosts.xml?poste={hostname}`.
+ * Endpoint HTTP `hosts.xml?poste={hostname}`.
  *
  * Parité legacy stricte : le legacy ne consulte pas la BDD, il renvoie toujours
  * `<wpkg><host name=HOSTNAME profile-id=HOSTNAME/></wpkg>`. Pas d'auth (parité
- * confiance LAN, décision user #3). `profile-id == HOSTNAME`, bijectif.
+ * confiance LAN). `profile-id == HOSTNAME`, bijectif.
  */
 final class HostsXmlController
 {

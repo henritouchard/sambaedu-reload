@@ -7,26 +7,24 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 25.6 — AC1 (D2).
- *
  * Catalogue des OUTILS DE RENDU posés par l'agent au bootstrap. Table DÉDIÉE
- * simple (PAS de table polymorphe générique « tous assets » — D2) : Rainmeter
+ * simple (PAS de table polymorphe générique « tous assets ») : Rainmeter
  * en est la première et seule entrée envisagée en MVP. Généralise le couple
  * `RainmeterToolChecksum` / `RainmeterToolFilename` figé en dur dans le binaire
- * Go (27.1bis) vers une entrée de catalogue dont le SERVEUR est l'autorité.
+ * Go vers une entrée de catalogue dont le SERVEUR est l'autorité.
  *
  *  - `key`        — identifiant fonctionnel stable de l'outil (`rainmeter`),
  *    unique : un nouvel upload du même outil REMPLACE la version active
- *    (mono-version MVP — D5) ;
+ *    (un seul outil actif à la fois) ;
  *  - `name`       — libellé d'affichage (UI) ;
  *  - `filename`   — nom du `.zip` rangé sous `config('agent.tools_path')`,
  *    matchant la regex stricte de {@see \App\Http\Controllers\Api\V1\Agent\ToolController}
  *    (`sambaedu-rainmeter-<version>.zip`) — le serving aval réutilise ce nom ;
  *  - `sha256`     — SHA-256 hex CALCULÉ SERVEUR à l'upload (`hash_file`) ;
- *    l'agent le lit depuis le manifest et le vérifie AVANT extraction (D6) ;
+ *    l'agent le lit depuis le manifest et le vérifie AVANT extraction ;
  *  - `size`       — taille en octets (bigint) ;
- *  - `enabled`    — toggle GLOBAL (D3) : true → l'outil est exposé actif dans
- *    le manifest et déployé ; false → no-op côté agent, SANS désinstaller (D4) ;
+ *  - `enabled`    — toggle GLOBAL : true → l'outil est exposé actif dans
+ *    le manifest et déployé ; false → no-op côté agent, SANS désinstaller ;
  *  - `uploaded_at`/`uploaded_by` — traçabilité de l'upload (FK users nullable,
  *    `nullOnDelete` : la suppression d'un compte ne casse pas le catalogue).
  *

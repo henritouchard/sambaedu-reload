@@ -25,12 +25,12 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 36.1 — compilation BOUT-EN-BOUT capacité `fs_acl` → items de contrat via
- * le `StateCompiler` INCHANGÉ (D2). Prouve : (a) précédence broadcast/parc sur
- * identité ÉGALE (dans les DEUX sens) ; (b) deux ACE d'identités distinctes
- * (mêmes `path`, trustees différents) COEXISTENT (piège #2) ; (c) deux capacités
- * sur le même chemin coexistent ; (d) override UserGroup sans effet en compile
- * machine-only (piège #10). `exclusiveKey() = {path|trustee|ace_type}`.
+ * Compilation BOUT-EN-BOUT capacité `fs_acl` → items de contrat via
+ * le `StateCompiler`, qu'aucune capacité ne modifie. Prouve : (a) précédence
+ * broadcast/parc sur identité ÉGALE (dans les DEUX sens) ; (b) deux ACE
+ * d'identités distinctes (mêmes `path`, trustees différents) COEXISTENT ;
+ * (c) deux capacités sur le même chemin coexistent ; (d) override UserGroup sans
+ * effet en compile machine-only. `exclusiveKey() = {path|trustee|ace_type}`.
  */
 class CapabilityFsAclCompilationTest extends TestCase
 {
@@ -113,7 +113,7 @@ class CapabilityFsAclCompilationTest extends TestCase
         'ensure' => ['eleves' => 'present', 'off' => 'absent'],
     ]];
 
-    // ── (a) Précédence sur identité ÉGALE — deux sens ─────────────────────
+    // (a) Précédence sur identité ÉGALE — deux sens
 
     #[Test]
     public function parc_present_beats_broadcast_absent_on_equal_identity(): void
@@ -155,13 +155,13 @@ class CapabilityFsAclCompilationTest extends TestCase
         self::assertSame('absent', $items[0]['payload']['ensure'], 'override parc (absent) bat broadcast (present)');
     }
 
-    // ── (b) Identités distinctes (trustees différents) COEXISTENT ─────────
+    // (b) Identités distinctes (trustees différents) COEXISTENT
 
     #[Test]
     public function two_aces_with_distinct_trustees_coexist(): void
     {
         // Même path, deux trustees littéraux distincts → deux identités distinctes
-        // (piège #2 : cumul, pas remplacement).
+        // (cumul, pas remplacement).
         $this->makeCapability('pf_two', 'on', [
             ['path' => 'C:\\Program Files', 'ace_type' => 'deny', 'rights' => 'list_folder', 'applies_to' => 'folder_only', 'trustee' => 'Domain Users', 'ensure' => 'present'],
             ['path' => 'C:\\Program Files', 'ace_type' => 'deny', 'rights' => 'list_folder', 'applies_to' => 'folder_only', 'trustee' => 'Profs', 'ensure' => 'present'],
@@ -174,7 +174,7 @@ class CapabilityFsAclCompilationTest extends TestCase
         self::assertSame(['Domain Users', 'Profs'], $trustees);
     }
 
-    // ── (c) Deux capacités sur le même chemin coexistent ──────────────────
+    // (c) Deux capacités sur le même chemin coexistent
 
     #[Test]
     public function two_capabilities_on_the_same_path_coexist(): void
@@ -190,7 +190,7 @@ class CapabilityFsAclCompilationTest extends TestCase
         self::assertCount(2, $items, 'deux capacités (trustees distincts) sur le même chemin coexistent');
     }
 
-    // ── (d) Compile MACHINE-ONLY : override UserGroup sans effet ──────────
+    // (d) Compile MACHINE-ONLY : override UserGroup sans effet
 
     #[Test]
     public function user_group_override_has_no_effect_on_machine_only_compile(): void

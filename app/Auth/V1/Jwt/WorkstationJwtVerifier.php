@@ -15,7 +15,6 @@ use Throwable;
 use UnexpectedValueException;
 
 /**
- * Story 16.10 — AC2.2.
  *
  * Vérifie cryptographiquement et fonctionnellement un JWT poste.
  *
@@ -27,7 +26,7 @@ use UnexpectedValueException;
  *  1. Décode le JWT via `JWT::decode($jwt, $keyMap)`. La lib `firebase/php-jwt`
  *     prend en charge `kid` automatiquement (regarde le header, lookup la
  *     key dans `$keyMap`). Si `kid` absent ou inconnu → exception ressort en
- *     `jwt.signature_invalid` (refus strict — D9).
+ *     `jwt.signature_invalid` (refus strict).
  *  2. Vérifie le claim `tier` (= `expected_tier`, default `workstation`).
  *  3. Vérifie la révocation via `WorkstationJwtRevocationChecker` (cache + DB).
  *  4. Retourne un DTO `WorkstationJwtClaims` immuable.
@@ -72,7 +71,7 @@ class WorkstationJwtVerifier
         } catch (UnexpectedValueException $e) {
             // Couvre : kid inconnu (lib renvoie UnexpectedValueException),
             // header alg non supporté, JSON segments invalides.
-            // Pour le `kid` inconnu = on assimile à signature_invalid (D9).
+            // Pour le `kid` inconnu = on assimile à signature_invalid.
             $msg = $e->getMessage();
             if (stripos($msg, 'kid') !== false || stripos($msg, 'key') !== false) {
                 $this->logRejection('jwt.signature_invalid', $jwt, ['lib_error' => $msg]);
@@ -111,7 +110,7 @@ class WorkstationJwtVerifier
         }
 
         // Vérifie la révocation (cache APC + fallback DB).
-        // Q3 review 16.10 : check workstation-wide via `sub` + `iat` — un JWT
+        // Check workstation-wide via `sub` + `iat` — un JWT
         // émis avant un `workstation:revoke` est désormais effectivement invalidé.
         if ($this->revocationChecker->isRevoked($jti, $sub, $iat)) {
             $this->logRejection('jwt.revoked', $jwt, ['jti' => $jti, 'sub' => $sub]);

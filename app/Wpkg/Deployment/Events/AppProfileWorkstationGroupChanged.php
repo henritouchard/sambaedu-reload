@@ -7,8 +7,8 @@ namespace App\Wpkg\Deployment\Events;
 use Illuminate\Foundation\Events\Dispatchable;
 
 /**
- * Story 15.2 / AC4.1 — AppProfile attaché/détaché d'un parc.
- * Émetteurs : Story 15.4 (HORS scope ici).
+ * AppProfile attaché/détaché d'un parc.
+ * Émetteurs : (HORS scope ici).
  *
  * @phpstan-type Direction 'attached'|'detached'
  */

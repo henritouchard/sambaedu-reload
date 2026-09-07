@@ -7,7 +7,6 @@ namespace App\Services\Filesystem\Backend\OpenCloud;
 /**
  * UN OCTROI RELU, RÉDUIT À CE QUI FAIT FOI.
  *
- * ---------------------------------------------------------------------------
  * **L'ÉGALITÉ IGNORE LES CHAMPS QUE LE SERVEUR AJOUTE — et cette classe n'existe
  * que pour ça.**
  *

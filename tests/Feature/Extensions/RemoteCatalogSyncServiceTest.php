@@ -22,7 +22,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 56.1 (AC1/AC4/AC5/AC6/AC7) — Synchronisation d'une source distante.
+ * Synchronisation d'une source distante.
  *
  * Tout le réseau est simulé (`Http::fake()`), toutes les paires de clés sont
  * fabriquées en test (`sodium_crypto_sign_keypair()`) : aucune fixture binaire,
@@ -39,7 +39,7 @@ use Tests\TestCase;
  *  3. La clé pinnée n'est jamais renégociée, et `last_error` ne porte jamais
  *     l'URL du dépôt.
  *
- * Tests HÔTE (php 8.4 + pdo_sqlite + sodium natif), `RefreshDatabase`.
+ * Tests HÔTE (php + pdo_sqlite + sodium natif), `RefreshDatabase`.
  */
 class RemoteCatalogSyncServiceTest extends TestCase
 {
@@ -74,7 +74,7 @@ class RemoteCatalogSyncServiceTest extends TestCase
         Http::fake(fn (Request $request) => $this->serve($request));
     }
 
-    // ── Faux dépôt ────────────────────────────────────────────────────────
+    // Faux dépôt
 
     private function serve(Request $request): mixed
     {
@@ -114,7 +114,7 @@ class RemoteCatalogSyncServiceTest extends TestCase
         }
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────
+    // Helpers
 
     /** @return array{public: string, secret: string} */
     private static function keypair(): array
@@ -150,7 +150,7 @@ class RemoteCatalogSyncServiceTest extends TestCase
     /** @param array<string, mixed> $overrides */
     private function manifest(string $id, array $overrides = []): array
     {
-        // Story 56.2 (AR3) : une `app` DOIT déclarer `/ext/<id>` (chemin
+        // Une `app` DOIT déclarer `/ext/<id>` (chemin
         // provisionné par SE5) ; une `link` pointe où elle veut.
         $type = (string) ($overrides['type'] ?? 'link');
 
@@ -188,10 +188,6 @@ class RemoteCatalogSyncServiceTest extends TestCase
         $this->serveFile($base.'/index.json.sig', $signature ?? $this->sign($indexJson));
     }
 
-    // =====================================================================
-    // AC1 — chemin nominal
-    // =====================================================================
-
     #[Test]
     public function a_verified_catalog_is_loaded_and_the_source_becomes_ok(): void
     {
@@ -220,7 +216,7 @@ class RemoteCatalogSyncServiceTest extends TestCase
         self::assertSame('/agenda', $agenda->entryUrl());
 
         // Une extension `app` d'une source tierce est bien AU CATALOGUE : son
-        // installation relève de la 56.2, son affichage non.
+        // installation relève d'un autre chemin, son affichage non.
         self::assertSame(ExtensionType::App, Extension::where('key', 'reservation')->firstOrFail()->type);
     }
 
@@ -307,7 +303,7 @@ class RemoteCatalogSyncServiceTest extends TestCase
     {
         // Collision TOLÉRÉE au catalogue : la clé naturelle est
         // `(source, key)`, chaque carte affiche sa provenance. L'unicité
-        // GLOBALE ne devient une contrainte qu'à l'installation (Story 56.2).
+        // GLOBALE ne devient une contrainte qu'à l'installation.
         $first = $this->source();
         $secondKeys = self::keypair();
         $second = ExtensionSource::factory()
@@ -323,10 +319,6 @@ class RemoteCatalogSyncServiceTest extends TestCase
 
         self::assertSame(2, Extension::where('key', 'agenda')->count());
     }
-
-    // =====================================================================
-    // AC4 — signature invalide ⇒ fail-closed
-    // =====================================================================
 
     #[Test]
     public function an_invalid_signature_refuses_the_catalog_without_writing_anything(): void
@@ -447,7 +439,7 @@ class RemoteCatalogSyncServiceTest extends TestCase
     #[Test]
     public function an_index_announcing_a_huge_content_length_is_refused_without_reading_it(): void
     {
-        // Review 56.1 #2 — la borne doit mordre AVANT que le corps ne soit en
+        // La borne doit mordre AVANT que le corps ne soit en
         // mémoire. Ici le corps servi est minuscule et parfaitement signé :
         // seul l'en-tête `Content-Length` annonce l'énormité. Le refus prouve
         // que l'en-tête est consulté en premier, sans quoi ce catalogue
@@ -492,7 +484,7 @@ class RemoteCatalogSyncServiceTest extends TestCase
     #[Test]
     public function a_loosely_typed_index_version_is_not_version_one(): void
     {
-        // Mêmes règles de normalisation que `manifest_version` : « 1.0 » ou
+        // Mêmes règles de normalisation que `manifest_version` : « » ou
         // « v1 » ne sont PAS la version 1 (aucun repli tolérant).
         foreach (['1.0', 'v1', '', null, ['1'], true] as $declared) {
             $source = $this->source(['key' => 'src-'.md5(serialize($declared))]);
@@ -554,10 +546,6 @@ class RemoteCatalogSyncServiceTest extends TestCase
 
         self::assertSame(ExtensionSourceSyncStatus::Error->value, $result['status']);
     }
-
-    // =====================================================================
-    // AC5 — dépôt injoignable ⇒ dégradation propre (NFR7)
-    // =====================================================================
 
     #[Test]
     public function a_connection_failure_marks_the_source_unreachable_without_touching_the_catalog(): void
@@ -638,10 +626,6 @@ class RemoteCatalogSyncServiceTest extends TestCase
         );
     }
 
-    // =====================================================================
-    // Secrets : ce qui est persisté ne doit jamais porter d'URL
-    // =====================================================================
-
     #[Test]
     public function the_persisted_error_never_contains_the_repository_url(): void
     {
@@ -661,10 +645,6 @@ class RemoteCatalogSyncServiceTest extends TestCase
         self::assertStringNotContainsString('GLPAT', $lastError);
         self::assertStringNotContainsString('http', $lastError);
     }
-
-    // =====================================================================
-    // AC6 — la clé pinnée n'est JAMAIS renégociée
-    // =====================================================================
 
     #[Test]
     public function a_sync_never_downloads_the_public_key_again(): void
@@ -701,10 +681,6 @@ class RemoteCatalogSyncServiceTest extends TestCase
         Http::assertNotSent(fn ($request): bool => str_contains($request->url(), 'source.pub'));
         self::assertSame(1, Extension::query()->count(), 'le catalogue déjà vérifié est conservé');
     }
-
-    // =====================================================================
-    // AC7 — syncAll
-    // =====================================================================
 
     #[Test]
     public function sync_all_covers_active_remote_sources_only(): void
@@ -751,10 +727,6 @@ class RemoteCatalogSyncServiceTest extends TestCase
 
         $this->service()->sync($bundled);
     }
-
-    // =====================================================================
-    // TOFU — lecture unique de source.pub
-    // =====================================================================
 
     #[Test]
     public function fetching_a_public_key_validates_it(): void

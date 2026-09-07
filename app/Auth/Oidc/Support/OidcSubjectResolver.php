@@ -8,15 +8,13 @@ use App\Models\User;
 use RuntimeException;
 
 /**
- * Story 55.1 — **LE POINT DE BASCULE DU CLAIM `sub`.**
+ * **LE POINT DE BASCULE DU CLAIM `sub`.**
  *
- * ══════════════════════════════════════════════════════════════════════════
  *  Ce fichier est le SEUL endroit du projet qui décide de ce qu'est le sujet
  *  (`sub`) d'un id_token OIDC. Aucun émetteur, aucun contrôleur, aucun test ne
  *  doit lire `$user->login` (ni `ad_guid`, ni `id`) pour construire un `sub`.
  *  Changer d'identifiant canonique doit coûter UNE méthode, pas une chasse au
  *  trésor à travers le namespace.
- * ══════════════════════════════════════════════════════════════════════════
  *
  * **Décision en vigueur : `sub` = `users.login`.**
  *
@@ -25,9 +23,8 @@ use RuntimeException;
  * consomme lorsqu'il est CLIENT d'un IdP fédéré (`app/Auth/Federated/`). Un
  * `sub` lisible facilite en outre le diagnostic d'une intégration d'extension.
  *
- * **Cette valeur est en cours d'arbitrage** (question ouverte de la story, à
- * trancher AVANT 55.2 qui gèle le contrat de claims — NFR11). Les alternatives
- * et leurs conséquences :
+ * **Cette valeur est en cours d'arbitrage**, à trancher avant le gel du contrat
+ * de claims. Les alternatives et leurs conséquences :
  *
  *  - `login` (actuel) — lisible, déjà l'identité SE5. ⚠️ Un renommage de login
  *    casse la continuité des données côté extension (l'extension croira voir un
@@ -58,9 +55,8 @@ final class OidcSubjectResolver
      */
     public static function for(User $user): string
     {
-        // ───────────── POINT DE BASCULE — une seule ligne à changer ─────────────
+        // POINT DE BASCULE — une seule ligne à changer
         $subject = trim((string) $user->login);
-        // ───────────────────────────────────────────────────────────────────────
 
         if ($subject === '') {
             throw new RuntimeException(

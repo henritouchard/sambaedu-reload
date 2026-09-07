@@ -14,10 +14,10 @@ use Illuminate\Support\Facades\Log;
  * - Restauration depuis /home/trash/ lors de la réactivation
  * - Suppression définitive de l'archive
  *
- * Toutes les méthodes appliquent une validation de login (/^[a-zA-Z0-9._-]+$/)
+ * Toutes les méthodes appliquent une validation de login (^[a-zA-Z0-9._-]+$/)
  * avant tout appel exec/sudo — garde anti-injection de commande.
  *
- * Extrait de UserService (Story 5.1a) — iso-comportement garanti.
+ * Extrait de UserService — iso-comportement garanti.
  */
 class HomeDirService
 {
@@ -92,7 +92,7 @@ class HomeDirService
     /**
      * Archive le home directory : /home/{login} → /home/trash/{login}
      *
-     * Verrou (Story 5.1d Q3, 2026-04-29) : `Cache::lock('trash:action:'.$login, 60)`
+     * Verrou : `Cache::lock('trash:action:'.$login, 60)`
      * pour éviter la race avec `restoreHomeDirectory` et `trash:purge`. Si le
      * lock est indisponible, on retourne false + log warning.
      */
@@ -143,7 +143,7 @@ class HomeDirService
     /**
      * Restaure le home directory : /home/trash/{login} → /home/{login}
      *
-     * Verrou (Story 5.1d Q3, 2026-04-29) : `Cache::lock('trash:action:'.$login, 60)`
+     * Verrou : `Cache::lock('trash:action:'.$login, 60)`
      * pour éviter la race avec `trash:purge` (cron 02h00) et `archiveHomeDirectory`.
      * Si le lock est indisponible (autre opération en cours), retourne false +
      * log warning.

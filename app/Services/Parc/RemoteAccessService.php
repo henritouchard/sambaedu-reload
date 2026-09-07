@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\Session;
 /**
  * Service de gestion de l'accès distant aux machines (Guacamole).
  *
- * Story 38.4 (AC2) — **port natif** : ce service ne charge plus AUCUN fichier
+ * **port natif** : ce service ne charge plus AUCUN fichier
  * legacy `/var/www/sambaedu/includes/*` (les anciens `legacyRootPath()` /
  * `includeLegacyConfig()` / `includeLegacyRemoteStack()` pointaient un
  * `dirname(base_path())/includes` DÉJÀ MORT depuis le root-move,
@@ -104,7 +104,7 @@ class RemoteAccessService
     /**
      * Génère un token d'accès distant administrateur.
      *
-     * Story 38.4 : le legacy `create_remote_admin_token` n'a pas été porté
+     * Le legacy `create_remote_admin_token` n'a pas été porté
      * (aucun consommateur SE5 — `generateAdminRemoteToken` n'est appelé nulle
      * part). On délègue à `generateRemoteToken` (même token JSON chiffré) pour
      * conserver une signature stable si un appelant réapparaissait.
@@ -157,7 +157,7 @@ class RemoteAccessService
     /**
      * Vérifie si l'utilisateur a les droits pour l'accès distant.
      *
-     * Story 38.4 : permission Spatie native `computer.control` (aligne sur les
+     * Permission Spatie native `computer.control` (aligne sur les
      * gates parc de {@see \App\Services\Parc\WorkstationGroupService} et
      * {@see \App\Policies\WorkstationGroupPolicy}) — remplace l'ancien
      * `have_right($config, SE_COMPUTER_CONTROL)` legacy.

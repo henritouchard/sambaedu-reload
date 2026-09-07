@@ -50,7 +50,7 @@ return [
     'jwt' => [
         'algorithm' => 'RS256',
 
-        // Access TTL : 10h (révision review 16.10 — Henri 2026-05-16).
+        // Access TTL : 10 h.
         // Couvre une journée scolaire (8h + marge) avec 1 refresh entre 2 sessions.
         // Réduit la fenêtre d'exposition après compromission de 24h → 10h.
         'access_ttl' => (int) env('AUTH_V1_JWT_ACCESS_TTL', 36000),
@@ -58,12 +58,11 @@ return [
         // Refresh TTL : 30j (cf. Tech Spec §5.2).
         'refresh_ttl' => (int) env('AUTH_V1_JWT_REFRESH_TTL', 2592000),
 
-        // kid actif — date d'émission de la paire (D9 — rotation manuelle
-        // Phase 2 + extensible Phase 3+).
+        // kid actif — date d'émission de la paire. La rotation est manuelle.
         'active_kid' => env('AUTH_V1_JWT_KID', '2026-05-16'),
 
         // Map kid → chemins. Aujourd'hui une seule entrée ; Phase 3+ pourra en
-        // ajouter pour rotation avec période de grâce (D9).
+        // ajouter pour rotation avec période de grâce.
         'keys' => [
             env('AUTH_V1_JWT_KID', '2026-05-16') => [
                 'private' => env('AUTH_V1_JWT_PRIVATE_KEY_PATH', storage_path('keys/jwt/private.pem')),
@@ -142,7 +141,7 @@ return [
         'cache_store' => env('AUTH_V1_REVOCATION_CACHE_STORE', 'apc'),
 
         // Prefix des clés cache (évite collisions avec d'autres consommateurs
-        // APCu legacy `apps.<md5>` Story 16.7).
+        // APCu legacy `apps.<md5>`).
         'cache_prefix' => env('AUTH_V1_REVOCATION_CACHE_PREFIX', 'jwt:revoked:'),
 
         // TTL du flag cache poussé par la commande `workstation:revoke`.
@@ -168,7 +167,7 @@ return [
     */
 
     'bootstrap_token' => [
-        // Préfixe APCu legacy (cf. ApcuAppContextWriter::write — Story 16.7).
+        // Préfixe APCu legacy (cf. ApcuAppContextWriter::write —).
         'apcu_prefix' => env('AUTH_V1_BOOTSTRAP_APCU_PREFIX', 'apps.'),
 
         // Pattern de validation du token (md5 hex 32 chars, parité legacy).

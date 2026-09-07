@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * Story 20.4 — Journal d'audit DÉNORMALISÉ des actions externes (D-1/D-5/D-6).
+ * Journal d'audit DÉNORMALISÉ des actions externes (D-1/D-5/D-6).
  *
  * Calqué sur {@see QuotaAuditLog} (patron d'audit métier interrogeable du
  * projet) : table Eloquent, méthode-fabrique statique, casts, scopes,
@@ -19,7 +19,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * `actor_name`, `actor_role`) sont COPIÉES au moment de l'action par
  * {@see \App\Http\Middleware\Auth\AuditExternalAction}. Elles restent la
  * SOURCE DE LECTURE même après que l'`ExternalIdentity` corrélée a été
- * soft-deletée puis anonymisée (Story 20.2). Les FK
+ * soft-deletée puis anonymisée. Les FK
  * `external_identity_id`/`user_id` sont best-effort `set null` et ne servent
  * JAMAIS la lecture (corrélation forensique optionnelle uniquement — D-5).
  *

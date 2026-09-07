@@ -4,13 +4,13 @@ use Illuminate\Support\Facades\Gate;
 use Livewire\Component;
 
 /**
- * Story 27.17 — Onglet « Écran de verrouillage » de /admin/settings/parc-defaults.
+ * Onglet « Écran de verrouillage » de /admin/settings/parc-defaults.
  *
  * Idem onglet wallpaper, avec `type='lockscreen'` : même composant
  * `wallpaper-card` + même `WallpaperUploadService` (le service distingue le
  * type). Couche Broadcast (défaut établissement, overridable).
  *
- * Décision Henri : tout en `server.admin` — `gate="server.admin"` au composant.
+ * Tout est gardé par `server.admin` — `gate="server.admin"` au composant.
  */
 new class extends Component {
     public function mount(): void

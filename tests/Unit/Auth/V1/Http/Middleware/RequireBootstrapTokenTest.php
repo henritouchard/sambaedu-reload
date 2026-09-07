@@ -16,8 +16,8 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 16.10 — AC4.2 / T5.6.
- * Story 16.11 — AC3.1 (extraction uuid body + appel validator durci).
+ * T5.6.
+ * (extraction uuid body + appel validator durci).
  */
 class RequireBootstrapTokenTest extends TestCase
 {
@@ -28,7 +28,7 @@ class RequireBootstrapTokenTest extends TestCase
     }
 
     /**
-     * Recorder no-op pour Unit tests (pas de DB). Story 16.11 Q2.
+     * Recorder no-op : ces tests unitaires tournent sans base.
      */
     private function noopRecorder(): MigrationAttemptRecorder
     {
@@ -86,10 +86,6 @@ class RequireBootstrapTokenTest extends TestCase
         $this->assertSame(200, $res->getStatusCode());
         $this->assertSame('OK', $res->getContent());
     }
-
-    // ====================================================================
-    // Story 16.11 — couple token↔UUID (AC3.1)
-    // ====================================================================
 
     #[Test]
     public function valid_token_with_uuid_match_calls_next(): void
@@ -181,7 +177,7 @@ class RequireBootstrapTokenTest extends TestCase
     #[Test]
     public function malformed_uuid_falls_back_to_legacy_validation(): void
     {
-        // UUID format invalide dans le body → comportement legacy 16.10
+        // UUID format invalide dans le body → comportement legacy
         // (validation sans uuid). Le validator est appelé sans 2e arg.
         $validator = Mockery::mock(LegacyBootstrapTokenValidator::class);
         $validator->shouldReceive('isValid')
@@ -207,14 +203,6 @@ class RequireBootstrapTokenTest extends TestCase
 
         $this->assertSame(200, $res->getStatusCode());
     }
-
-    // ====================================================================
-    // Correction #3 + Opus-C — normalisation strtolower UUID extrait
-    // ====================================================================
-
-    // ====================================================================
-    // Q2 — MigrationAttemptRecorder est invoqué sur chaque path d'erreur
-    // ====================================================================
 
     #[Test]
     public function missing_header_records_failed_attempt(): void
@@ -308,15 +296,11 @@ class RequireBootstrapTokenTest extends TestCase
         $middleware->handle($req, fn () => new Response('OK', 200));
     }
 
-    // ====================================================================
-    // Correction #3 + Opus-C — normalisation strtolower UUID extrait
-    // ====================================================================
-
     #[Test]
     public function it_normalises_uppercase_uuid_to_lowercase(): void
     {
-        // Le middleware doit normaliser l'UUID extrait en lowercase
-        // avant de le passer au validator (correction #3).
+        // Le middleware doit normaliser l'UUID extrait en minuscules avant de le
+        // passer au validator.
         $uuidUpper = '11111111-AAAA-4111-8BBB-111111111111';
         $uuidLower = strtolower($uuidUpper);
 

@@ -9,7 +9,7 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Epic 34 — Tests PURS de {@see AclFormat} (aucune I/O, aucun conteneur).
+ * Tests PURS de {@see AclFormat} (aucune I/O, aucun conteneur).
  *
  * Cœur du point piégeux : le raccourci setfacl (`rx`) et la sortie getfacl
  * (`r-x`) doivent se comparer égaux après normalisation.

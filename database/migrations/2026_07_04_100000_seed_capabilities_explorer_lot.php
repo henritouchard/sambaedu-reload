@@ -5,41 +5,40 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 36.3 — lot « registre pures Explorateur » : TÉMOIN DE DOCTRINE de
- * l'Epic 36 (`_bmad-output/planning-artifacts/epics-mecanismes-hors-registre.md
- * #Story-36.3`). Le mécanisme `registry` étant payé (27.12 + Epic 35), une
- * capacité supplémentaire est de la DONNÉE PURE — coût marginal ≈ une
+ * Lot « registre pures Explorateur » : témoin de doctrine. Le mécanisme
+ * `registry` étant déjà payé, une capacité supplémentaire est de la DONNÉE
+ * PURE — coût marginal ≈ une
  * migration de seed + tests. Pattern EXACT du lot CD95
  * (`2026_07_02_100000_seed_capabilities_gpo_cd95_lot.php`) : `updateOrInsert`
  * par `key` puis par `(capability_id, os, mechanism)`, idempotent, garde
  * `Schema::hasTable`, `down()` par `whereIn('key')->delete()` (FK cascade →
  * projections/assignments). ZÉRO évolution moteur : ni agent, ni contrat, ni
- * providers, ni StateCompiler ne sont touchés par cette story.
+ * providers, ni StateCompiler n'est touché.
  *
- * ── ⚠️ STATUT DES CLÉS : CANDIDATES DÉCODAGE DOCUMENTAIRE — GATE LAB ────────
+ * **⚠️ STATUT DES CLÉS : CANDIDATES DÉCODAGE DOCUMENTAIRE — GATE LAB**
  * Les GUID/paths/valeurs ci-dessous proviennent du DÉCODAGE DOCUMENTAIRE
  * (patron `onedrive_hidden` + tweaks Windows documentés), PAS d'une
  * vérification sur poste. Le dev n'a aucun accès à un poste Windows lab
- * (SSH = serveurs seulement). Le « Protocole de vérification lab » de la
- * story 36.3 est un GATE DE REVIEW BLOQUANT à dérouler AVANT `php artisan
+ * (SSH = serveurs seulement). Le « Protocole de vérification lab » est un GATE
+ * DE REVIEW BLOQUANT à dérouler AVANT `php artisan
  * migrate` sur /vm : toute clé invalidée doit être retirée de cette migration
  * avant merge (jamais de clé « au cas où »). Cette migration N'EST PAS jouée
  * sur /vm par le dev.
  *
- * ── TOUT OPT-IN (default_value = 'unmanaged') ────────────────────────────────
+ * **TOUT OPT-IN (default_value = 'unmanaged')**
  * Les 4 capacités sont opt-in : sentinelle `unmanaged` hors map ⇒ RIEN n'est
  * émis en broadcast — golden files et `FROZEN_STATE_HASH`/`frozenStateHash`
  * restent STRICTEMENT intacts. L'épuration du volet Explorateur est un choix
  * pédagogique par parc (armement = override de parc via l'UI existante), pas
  * un défaut de flotte.
  *
- * ── MAPS SYMÉTRIQUES, ZÉRO $ensure ───────────────────────────────────────────
+ * **MAPS SYMÉTRIQUES, ZÉRO $ensure**
  * Toutes les maps sont symétriques à VALEURS RÉELLES (si l'UI propose « off »,
  * off écrit une vraie valeur qui restaure le comportement Windows par défaut,
- * invariant 27.12) — aucun marqueur `{"$ensure": "absent"}` n'est nécessaire
+ * invariant) — aucun marqueur `{"$ensure": "absent"}` n'est nécessaire
  * dans ce lot.
  *
- * ── ROUTAGE HKCR → HKCU\Software\Classes ────────────────────────────────────
+ * **ROUTAGE HKCR → HKCU\Software\Classes**
  * Les clés CLSID (« Accueil » Win11 dans `quick_access_hidden`, « Galerie »
  * dans `explorer_gallery_hidden`) sont des vues HKCR ; iso `onedrive_hidden`
  * (`2026_06_18_100300_seed_capabilities_iso_lot.php` l.212-215), elles sont
@@ -47,24 +46,24 @@ use Illuminate\Support\Facades\Schema;
  * compagnon de session, portée Session), `System.IsPinnedToNameSpaceTree`
  * REG_DWORD `{on: 0 (masqué), off: 1 (affiché)}`.
  *
- * ── ÉCART DE PORTÉE : capacité 1 seedée Machine (HKLM), PAS Session ─────────
- * L'epic annonce « portée Session » pour `explorer_sidebar_pins_hidden`
+ * **ÉCART DE PORTÉE : capacité 1 seedée Machine (HKLM), PAS Session**
+ * le cadrage annonçait « portée Session » pour `explorer_sidebar_pins_hidden`
  * (extrapolation du patron `onedrive_hidden`). Le décodage documentaire pointe
  * `ThisPCPolicy` sous HKLM (`FolderDescriptions\{GUID}\PropertyBag`) — les 6
  * dossiers utilisateur du volet n'ont pas de CLSID per-user documenté,
  * contrairement à OneDrive/Accueil/Galerie. La capacité est donc seedée
- * portée MACHINE (décision D3 de la story) ; l'écart vs le cadrage epic est
- * assumé et consigné ici + au Dev Agent Record. Si le protocole lab révèle
+ * portée MACHINE ; l'écart avec le cadrage est assumé et consigné ici. Si le
+ * protocole lab révèle
  * une variante per-user fonctionnelle, la correction se fait AVANT merge.
  *
- * ── CLSID ONEDRIVE INTERDIT DANS CE LOT ──────────────────────────────────────
+ * **CLSID ONEDRIVE INTERDIT DANS CE LOT**
  * Le CLSID `{018D5C66-4533-4307-9B53-224DE2ED1FE6}` appartient à
  * `onedrive_hidden` (seed ISO) — il n'apparaît dans AUCUNE clé de ce lot (deux
  * capacités écrivant la même clé `{hive|path|name}` seraient arbitrées
  * silencieusement par le compilateur, résultat imprévisible). Verrouillé par
  * un test structurel d'anti-collision (`CapabilitiesSchemaAndSeedTest`).
  *
- * ── RUCHES MIXTES DANS UNE MÊME PROJECTION (D4) ──────────────────────────────
+ * **RUCHES MIXTES DANS UNE MÊME PROJECTION**
  * `quick_access_hidden` porte 1 clé HKLM (HubMode, provider Machine/SYSTEM) +
  * 2 clés HKCU (LaunchTo + CLSID Accueil, provider Session/compagnon) — chaque
  * provider filtre par `hive`, rien à coder (précédent `numlock_on_logon`
@@ -91,7 +90,7 @@ return new class extends Migration
         ], JSON_UNESCAPED_UNICODE);
 
         $lot = [
-            // ── 1. explorer_sidebar_pins_hidden — portée Machine (HKLM, D3) ──
+            // 1. explorer_sidebar_pins_hidden — portée Machine (HKLM)
             [
                 'key' => 'explorer_sidebar_pins_hidden',
                 'label' => 'Dossiers épinglés du volet de navigation',
@@ -114,7 +113,7 @@ return new class extends Migration
                 ],
             ],
 
-            // ── 2. quick_access_hidden — portées mixtes HKLM+HKCU (D4) ───────
+            // 2. quick_access_hidden — portées mixtes HKLM+HKCU
             [
                 'key' => 'quick_access_hidden',
                 'label' => 'Accès rapide (volet de navigation)',
@@ -166,7 +165,7 @@ return new class extends Migration
                 'warning' => null,
                 // Candidates décodage documentaire — À VÉRIFIER SUR POSTE LAB
                 // AVANT migrate /vm. Tree CurrentVersion\Explorer user-writable
-                // standard, PAS Software\Policies (garde-fou epic).
+                // standard, PAS Software\Policies (garde-fou).
                 'keys' => [
                     ['hive' => 'HKCU', 'path' => 'Software\\Microsoft\\Windows\\CurrentVersion\\Explorer', 'name' => 'ShowRecent', 'type' => 'REG_DWORD', 'value' => ['on' => 0, 'off' => 1]],
                     ['hive' => 'HKCU', 'path' => 'Software\\Microsoft\\Windows\\CurrentVersion\\Explorer', 'name' => 'ShowFrequent', 'type' => 'REG_DWORD', 'value' => ['on' => 0, 'off' => 1]],
@@ -186,12 +185,12 @@ return new class extends Migration
                     'default_value' => $row['default_value'],
                     'warning' => $row['warning'],
                     'applies_to_os' => json_encode(['windows'], JSON_UNESCAPED_UNICODE),
-                    // is_active=true assumé (review 36.3 #2, décision orchestrateur) :
+                    // is_active=true assumé :
                     // patron DOMINANT du projet pour un seed opt-in (lot CD95,
                     // registry_list). La sûreté vient de default_value='unmanaged'
                     // (RIEN n'est émis à l'agent tant qu'un override de parc ne
-                    // l'arme pas délibérément) + du gate-migrate (36.3.1 AVANT
-                    // migrate /vm). Le is_active=false de 35.5 était l'exception
+                    // l'arme pas délibérément) + de la vérification faite AVANT
+                    // migrate /vm. Le is_active=false était l'exception
                     // d'une limitation de PARSEUR (name=""), pas de clés non
                     // vérifiées — non transposable ici. Aucune clé du lot n'est
                     // destructive une fois armée.

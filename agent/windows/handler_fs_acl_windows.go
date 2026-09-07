@@ -11,7 +11,7 @@ import (
 	"sambaedu/agent/shared"
 )
 
-// Câblage Windows du handler `fs_acl` (Story 36.1) — chirurgie DACL EN GO NATIF
+// Câblage Windows du handler `fs_acl` — chirurgie DACL EN GO NATIF
 // via golang.org/x/sys/windows (déjà dans go.mod). SERVICE SYSTEM seul (le
 // compagnon n'a pas les droits, et le type n'existe pas côté session).
 //
@@ -19,15 +19,15 @@ import (
 // d'orphelins, refus défense en profondeur, idempotence) vit dans
 // shared.FsAclHandler (testée hôte avec un fake) ; ce fichier n'apporte que
 // l'impl des 4 ops FsAclOps :
-//   - LookupSid   : windows.LookupSID("", name) → sid.String() (LSA locale du
-//     poste joint — noms de domaine ET well-known résolus, D5) ;
+//  - LookupSid : windows.LookupSID("", name) → sid.String() (LSA locale du
+//     poste joint — noms de domaine ET well-known résolus) ;
 //   - ListExplicitAces : GetNamedSecurityInfo(DACL) + itération GetAce (lazy
 //     proc advapi32), en NE gardant que les ACE NON héritées (flag INHERITED_ACE
 //     exclu), allow + deny ;
 //   - AddAce      : ACLFromEntries([1 EXPLICIT_ACCESS], oldDacl) = SetEntriesInAcl
 //     (merge + ordre canonique deny-first géré par Windows) →
-//     SetNamedSecurityInfo(DACL_SECURITY_INFORMATION SEUL, SANS PROTECTED_*) —
-//     owner/SACL/héritage JAMAIS touchés (D4, piège #5) ;
+//  SetNamedSecurityInfo(DACL_SECURITY_INFORMATION SEUL, SANS PROTECTED_*)
+//     owner/SACL/héritage JAMAIS touchés ;
 //   - RemoveAce   : reconstruit la DACL MOINS l'ACE exactement égale (itération
 //     GetAce + DeleteAce à l'index, lazy proc — DeleteAce n'est pas wrappé par
 //     x/sys) ; ACE déjà absente ⇒ nil (idempotent).
@@ -165,7 +165,7 @@ func (o *fsAclOps) AddAce(path string, ace shared.ExplicitAce) error {
 	}
 
 	// DACL_SECURITY_INFORMATION SEUL (SANS PROTECTED_DACL_SECURITY_INFORMATION) :
-	// owner, group, SACL et héritage INTACTS (D4).
+	// owner, group, SACL et héritage INTACTS.
 	if err := windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION, nil, nil, newDacl, nil); err != nil {
 		return fmt.Errorf("écriture de la DACL de %s : %w", path, err)
 	}

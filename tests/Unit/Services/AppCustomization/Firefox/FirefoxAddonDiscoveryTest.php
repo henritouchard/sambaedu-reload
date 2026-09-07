@@ -13,7 +13,7 @@ use Tests\TestCase;
 /**
  * Tests unit — dispatcher qui route URL AMO → API vs XPI → download.
  *
- * Story 4.8 — rétrocompat addons custom (hors AMO).
+ * Rétrocompat addons custom (hors AMO).
  */
 class FirefoxAddonDiscoveryTest extends TestCase
 {

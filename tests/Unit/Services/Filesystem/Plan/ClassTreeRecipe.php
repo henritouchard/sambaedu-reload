@@ -12,12 +12,12 @@ use App\Services\Filesystem\Plan\PlanResolutionContext;
 use App\Services\Filesystem\Plan\PlanSubject;
 
 /**
- * Story 60.1 — LE cas d'épreuve : le partage classe, dit en vocabulaire de plan.
+ * LE cas d'épreuve : le partage classe, dit en vocabulaire de plan.
  *
- * Cette recette n'est PAS seedée (aucune recette n'est modifiée par la story
- * 60.1) : elle existe uniquement pour prouver que le langage est assez expressif
- * pour porter le partage classe historique — c'est ce qui débloquera la story
- * **Story 62.4 — les PARAMÈTRES de cette fixture disent désormais des VERBES**
+ * Cette recette n'est PAS seedée : elle existe uniquement pour prouver que le
+ * langage est assez expressif pour porter le partage classe historique.
+ *
+ * **Les PARAMÈTRES de cette fixture disent des VERBES**
  * (`'verbs' => PlanGrant::VERBS` là où elle écrivait `'access' => 'rw'`,
  * `[PlanGrant::VERB_LIRE]` là où elle écrivait `'ro'`). C'est le mappage de
  * migration, appliqué à une recette de test comme il l'a été aux recettes en base.
@@ -109,7 +109,7 @@ trait ClassTreeRecipe
                     ],
                 ],
                 [
-                    // LE nœud de l'AC9 : la classe n'a AUCUN octroi ici.
+                    // La classe n'a AUCUN octroi ici.
                     'path' => '_profs',
                     'label' => 'Espace des enseignants',
                     'nature' => 'partagee',
@@ -119,7 +119,7 @@ trait ClassTreeRecipe
                     ],
                 ],
                 [
-                    // LE nœud de l'AC3 : suspendre n'est pas supprimer.
+                    // Suspendre n'est pas supprimer.
                     'path' => '_echange',
                     'label' => 'Espace d\'échange',
                     'nature' => 'activable',
@@ -130,7 +130,7 @@ trait ClassTreeRecipe
                     ],
                 ],
                 [
-                    // LE nœud de l'AC4 : un dossier par membre, octroi nominatif.
+                    // Un dossier par membre, octroi nominatif.
                     'path' => '{member.login}',
                     'label' => 'Dossier personnel',
                     'nature' => 'par_membre',
@@ -154,19 +154,16 @@ trait ClassTreeRecipe
     }
 
     /**
-     * Story 60.2 → 60.5 — LA MÊME recette, rendue AUTO-RÉSOLVABLE et accrochée au
-     * type `classe`.
+     * LA MÊME recette, rendue AUTO-RÉSOLVABLE et accrochée au type `classe`.
      *
-     * **C'est le SEED, écrit en décor.** Un test d'équivalence
-     * ({@see \Tests\Unit\Database\Seeders\ClassTreeRecipeEquivalenceTest}) épingle
-     * que ce décor et la 5ᵉ recette seedée disent exactement la même chose. Deux
+     * **C'est le SEED, écrit en décor.** {@see \Tests\Unit\Database\DirectoryTemplateSeederTest}
+     * épingle que ce décor et la 5ᵉ recette seedée disent exactement la même chose. Deux
      * descriptions du partage de classe qui divergeraient rendraient tous les tests
      * qui s'appuient sur ce décor faussement rassurants.
      *
-     * **Trois corrections apportées par la story 60.5** — chacune était un piège
-     * nommé :
+     * **Trois corrections, chacune sur un piège nommé :**
      *
-     *  1. **La RACINE existe.** Le décor 60.2 n'avait pas de nœud « . » : la racine
+     *  1. **La RACINE existe.** Le décor n'avait pas de nœud «. » : la racine
      *     n'avait donc aucun octroi exprimé, alors que la racine historique porte
      *     la traversée de l'équipe ET de la classe. Sans elle, la comparaison des
      *     deux arbres était tout simplement infaisable.
@@ -300,7 +297,7 @@ trait ClassTreeRecipe
      * Contexte de résolution : un groupe au nom DÉJÀ préfixé, quatre membres
      * couvrant les trois rôles d'arête, et les cibles des rôles de la recette —
      * dont une audience qualifiée par un rôle d'arête (la forme dictée par la
-     * mesure d'ouverture d'epic).
+     * mesure d'ouverture).
      *
      * @param  array<string,bool>  $nodeActivation
      */

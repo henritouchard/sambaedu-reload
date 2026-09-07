@@ -7,13 +7,13 @@
      par héritage de scope Blade (@include partage get_defined_vars()) — il
      gate l'option « Prof principal » (D3). --}}
 @php($withHeadTeacher = $withHeadTeacher ?? false)
-{{-- Story 60.2 → 62.3 — libellés du rôle d'arête par TYPE de groupe, depuis les
+{{-- → — libellés du rôle d'arête par TYPE de groupe, depuis les
      DÉCLARATIONS administrables : « Enseignant » en classe, « Porteur » en projet,
      « Référent » en équipe, repli sur le catalogue ailleurs. Les VALEURS envoyées
      au serveur restent des clés de rôle (`member|manager|owner`, et tout rôle du
      catalogue depuis 62.1). --}}
 @php($edgeRoleOptions = \App\Support\RoleCatalog::options($type ?? null))
-{{-- Story 62.3 — l'INVENTAIRE du select est de la donnée, plus trois `<option>`
+{{-- L'INVENTAIRE du select est de la donnée, plus trois `<option>`
      figées. Pour un type déclaré (`classe`, `projet`, `equipe` seedés), le rendu
      est IDENTIQUE à celui d'avant. Pour un type SANS déclaration, tout le
      catalogue devient proposable : c'est l'aboutissement assumé de 62.1 — un rôle
@@ -54,7 +54,7 @@
                                 wire:change="updateMemberRole({{ $member['id'] }}, $event.target.value)"
                                 class="select select-bordered select-sm">
                                 @foreach ($assignableEdgeRoles as $assignableRole)
-                                    {{-- D3 en LITTÉRAL, conservée : « Professeur
+                                    {{-- Règle en LITTÉRAL, conservée : « Professeur
                                          principal » n'est proposé que sur une classe.
                                          Elle survit à la contrainte de déclaration
                                          parce qu'un type SANS déclaration retombe sur

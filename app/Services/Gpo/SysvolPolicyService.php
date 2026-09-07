@@ -13,7 +13,7 @@ use RuntimeException;
 /**
  * Lecture / écriture des `Registry.pol` d'une GPO dans SYSVOL, en natif.
  *
- * Story 38.4 (AC2) — port des fonctions legacy `read_gpo_sysvol` /
+ * Port des fonctions legacy `read_gpo_sysvol` /
  * `update_gpo_sysvol` / `increment_gpo_sysvol` (`gpo.inc.php`) consommées par
  * {@see \App\Services\RoamingProfileService}. Remplace la chaîne
  * `smbclient get/put` + `read_pol/write_pol` legacy par

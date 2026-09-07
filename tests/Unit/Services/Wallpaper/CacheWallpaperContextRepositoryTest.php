@@ -11,19 +11,18 @@ use Tests\TestCase;
 /**
  * Tests unit parsing cache payload → WallpaperContext.
  *
- * Story 4.7 — AC 3, correction post-review #1 : la structure réelle en prod
- * est `'user' => [...]` / `'machine' => [...]` arrays LDAP, pas des strings.
+ * La structure réelle en prod est `'user' => [...]` / `'machine' => [...]`,
+ * des tableaux LDAP et non des chaînes.
  *
- * Story 16.15 — AC7.4 : renommage de classe (CacheWallpaperContextRepositoryTest).
- * Le DTO `WallpaperContext::fromApcuArray` est conservé tel quel (nom historique
- * lié à la structure du payload, pas au mécanisme de stockage — cf. D10).
+ * Le DTO `WallpaperContext::fromApcuArray` garde son nom : il désigne la
+ * structure du payload, pas le mécanisme de stockage.
  */
 class CacheWallpaperContextRepositoryTest extends TestCase
 {
     #[Test]
     public function parses_real_cache_structure_user_and_machine_as_arrays(): void
     {
-        // Structure réelle posée par CacheAppContextWriter (Story 16.15) :
+        // Structure réelle posée par CacheAppContextWriter :
         //   $info['user'] = search_user(...)  (array LDAP avec cn, fullname, …)
         //   $info['machine'] = search_machine(...)  (array LDAP avec cn, …)
         //   $info['salle'] = ldap_dn2cn(...)  (string)

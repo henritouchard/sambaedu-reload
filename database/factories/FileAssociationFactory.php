@@ -10,7 +10,7 @@ use Illuminate\Database\Eloquent\Factories\Factory;
 /**
  * @extends Factory<FileAssociation>
  *
- * Story 27.3bis — associations de catalogue de test. Par défaut une extension
+ * Associations de catalogue de test. Par défaut une extension
  * (`file`) ; `protocol()` bascule en protocole.
  */
 class FileAssociationFactory extends Factory

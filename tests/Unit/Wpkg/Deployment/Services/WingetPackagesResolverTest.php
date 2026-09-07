@@ -14,7 +14,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 17.6 / AC2.3 / AC6.3 / D5 — Tests Unit du mapping winget.
+ * Tests unitaires du mapping winget.
  *
  * On isole la logique métier (merge add/remove, priorité /etc/ vs /usr/share/,
  * comparaison de version pinnée, décisions install/upgrade/uninstall) en mockant

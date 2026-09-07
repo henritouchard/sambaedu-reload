@@ -15,35 +15,32 @@ import (
 	"sambaedu/agent/shared"
 )
 
-// Câblage Windows de l'échelle de rafraîchissement du compagnon (Story 43.1,
+// Câblage Windows de l'échelle de rafraîchissement du compagnon (
 // shared.RefreshOps). TROIS gestes, tous en FFI Win32 SANS cgo
 // (NewLazySystemDLL — patron wallpaper/registry), tous exécutés DANS LA
 // SESSION du compagnon avec les droits du user connecté — JAMAIS SYSTEM,
-// jamais d'élévation (NFR-A1). L'injection ne se fait QUE dans
+// jamais d'élévation. L'injection ne se fait QUE dans
 // companion_windows.go : le MachineEngine SYSTEM (main_windows.go) ne reçoit
-// AUCUNE ops de refresh (piège n° 2 — aucun geste en session 0, fan-out HKU
-// compris).
+// AUCUNE ops de refresh — aucun geste en session 0, fan-out HKU compris.
 //
-// Chaque geste est BEST-EFFORT (D4) : l'échec est loggé en warning par le
+// Chaque geste est BEST-EFFORT : l'échec est loggé en warning par le
 // compagnon, jamais converti en erreur de passe — les clés sont déjà écrites,
 // au pire l'effet attend le relogon.
 
-// --- shell_notify : SHChangeNotify (shell32) ---------------------------------
 // Signale au shell un changement global : l'Explorer DÉJÀ ouvert relit ses
 // réglages de vue (Hidden, HideFileExt) sans relogon. Migré de
 // handler_registry_windows.go (ex-registryNotifier.NotifyShellChanged) : UNE
-// seule voie d'émission désormais (piège n° 5), pilotée par le compagnon en
+// seule voie d'émission désormais, pilotée par le compagnon en
 // fin de passe.
 const (
 	shcneAssocChanged = 0x08000000 // SHCNE_ASSOCCHANGED : force le shell à relire ses réglages
 	shcnfIDList       = 0x0000     // SHCNF_IDLIST
 )
 
-// --- policy_broadcast : SendMessageTimeoutW (user32) -------------------------
 // WM_SETTINGCHANGE diffusé à toutes les fenêtres top-level avec la section
 // "Policy" : les applis à l'écoute (Explorer compris) relisent leurs policies.
 // SMTO_ABORTIFHUNG + timeout borné : une fenêtre pendue ne bloque jamais le
-// compagnon (piège n° 4).
+// compagnon.
 const (
 	hwndBroadcast          = 0xFFFF // HWND_BROADCAST
 	wmSettingChange        = 0x001A // WM_SETTINGCHANGE
@@ -52,7 +49,7 @@ const (
 )
 
 // explorerRelaunchGrace : délai supplémentaire AVANT l'ultime vérification qui
-// précède la relance d'explorer.exe (review 43.1 #4) — laisse à Windows une
+// précède la relance d'explorer.exe — laisse à Windows une
 // dernière chance de relancer le shell APRÈS la borne de poll de 3 s, sans
 // quoi le compagnon lancerait un 2e explorer (fenêtre parasite).
 const explorerRelaunchGrace = time.Second
@@ -76,7 +73,7 @@ func (o *refreshOps) ShellNotify() {
 
 // PolicyBroadcast émet SendMessageTimeout(HWND_BROADCAST, WM_SETTINGCHANGE, 0,
 // "Policy", SMTO_ABORTIFHUNG, timeout). Le buffer UTF-16 de "Policy" doit
-// rester VIVANT pendant l'appel (piège n° 4 — GC classique des FFI) :
+// rester VIVANT pendant l'appel (GC classique des FFI) :
 // runtime.KeepAlive après le Call. Retour 0 = échec/timeout (ERROR_TIMEOUT si
 // une fenêtre a pendu) → erreur remontée, traitée en warning par le compagnon.
 func (o *refreshOps) PolicyBroadcast() error {
@@ -105,7 +102,7 @@ func (o *refreshOps) PolicyBroadcast() error {
 
 // RestartExplorer termine puis relance explorer.exe de la SESSION du compagnon
 // (droits user — TerminateProcess ne porte que sur ses propres processus,
-// jamais d'élévation). Séquence robuste (piège n° 3) :
+// jamais d'élévation). Séquence robuste :
 //  1. énumérer les explorer.exe de SA session (Toolhelp32 + ProcessIdToSessionId) ;
 //  2. TerminateProcess sur chacun ;
 //  3. poll borné (~3 s) : Windows relance parfois le shell TOUT SEUL — s'il
@@ -113,7 +110,7 @@ func (o *refreshOps) PolicyBroadcast() error {
 //     que le shell tourne OUVRE UNE FENÊTRE, ce n'est pas un no-op) ;
 //  4. sinon lancer %WINDIR%\explorer.exe (droits du compagnon).
 //
-// NFR-A1 assumé : les applis restent intactes, seules les fenêtres de
+// Limite assumée : les applis restent intactes, seules les fenêtres de
 // l'Explorateur sont perdues.
 func (o *refreshOps) RestartExplorer() error {
 	session, err := currentSessionID()
@@ -161,13 +158,13 @@ func (o *refreshOps) RestartExplorer() error {
 		}
 	}
 
-	// Dernier état des lieux (review 43.1 #4) : Windows peut relancer le shell
+	// Dernier état des lieux : Windows peut relancer le shell
 	// APRÈS la borne de poll — court délai supplémentaire puis ULTIME
 	// vérification juste avant la relance : s'il reste ou revient UN
 	// explorer.exe (ancien PID résistant à TerminateProcess, relance tardive),
 	// ne pas en rajouter (fenêtre parasite sinon). La course RÉSIDUELLE (une
 	// relance Windows entre CE check et le Start) est incompressible et
-	// assumée — non testable hôte, documentée au runbook 43.1.3.
+	// assumée — non testable hôte.
 	time.Sleep(explorerRelaunchGrace)
 	if current, err := explorerPidsInSession(session); err == nil && len(current) > 0 {
 		return nil

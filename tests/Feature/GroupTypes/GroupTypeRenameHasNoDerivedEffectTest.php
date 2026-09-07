@@ -22,7 +22,7 @@ use Tests\TestCase;
 use Tests\Unit\Services\Filesystem\Plan\ClassTreeRecipe;
 
 /**
- * Story 62.2 — AC8 : un renommage de libellé ou d'icône ne touche AUCUNE donnée
+ * Un renommage de libellé ou d'icône ne touche AUCUNE donnée
  * dérivée.
  *
  * C'est la matérialisation exécutable de « la clé est immuable, et seule elle est

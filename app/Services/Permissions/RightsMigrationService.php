@@ -24,16 +24,17 @@ use Throwable;
 
 /**
  * Service d'orchestration de la migration one-shot des droits bitmask legacy
- * vers les rôles et délégations Spatie (Story 7.3).
+ * vers les rôles et délégations Spatie.
  *
  * Pipeline :
  *  1. `migrateRightsGroupAssignments()` — scan de la branche `rights_rdn`
  *     (groupes legacy `<profile>`). Pour chaque membre du groupe, on résout
- *     le User Eloquent et on pose `$user->assignRole($role)` selon matrice
- *     §5.3 (5 profils seedés) ou via `SambaRole::fromBitmask($info)` sur les
- *     profils custom créés en 7.2 par `importCustomProfilesFromAd`.
+ *     le User Eloquent et on pose `$user->assignRole($role)` d'après
+ *     `SEEDED_PROFILE_TO_ROLE` (5 profils seedés) ou via
+ *     `SambaRole::fromBitmask($info)` sur les profils custom créés par
+ *     `importCustomProfilesFromAd`.
  *
- *     Bug `Annu_is_admin` (matrice §8 #6) : si le groupe existe sans `info`,
+ *     Bug `Annu_is_admin` : si le groupe existe sans `info`,
  *     on NE reproduit PAS le fallback buggé `annu/profiles.php:58` (qui
  *     remappait à tort vers `SE_COMPUTER_ADMIN`). On loggue un warning et
  *     on force `SambaRole::UserAdmin` (seed d'origine `SE_USER_ADMIN = 0xFF`,
@@ -44,39 +45,37 @@ use Throwable;
  *     `<level>_<parc>` ou `no_<level>_<parc>` avec `level` ∈ {manage, view, rdp},
  *     membres = `[user DN, parc DN]`). Le mapping `level → SambaPermission` est
  *     codé en dur (cf. `LEGACY_DELEGATION_LEVELS`) : `manage→computer.elevate`,
- *     `view→computer.view`, `rdp→computer.remote.rdp` (perm Spatie créée en
- *     7.3, décision Henri 2026-04-25 option C). Persistance via
- *     `Delegation::firstOrCreate` (review #11) + entrée d'historique avec
- *     `context.source = 'migration-7.3'` (review #8). Filtrage du parc DN via
- *     `WorkstationGroup::findByAdDn` plutôt qu'heuristiques (review #4).
+ *     `view→computer.view`, `rdp→computer.remote.rdp` (permission Spatie créée
+ *     pour cette migration). Persistance via `Delegation::firstOrCreate` +
+ *     entrée d'historique avec `context.source = 'migration-7.3'`. Filtrage du
+ *     parc DN via `WorkstationGroup::findByAdDn` plutôt qu'heuristiques.
  *
  * Idempotence :
  *  - `assignRole` Spatie est idempotent (pas de doublon dans `model_has_roles`).
  *  - Délégations : clé unique `(user_id, workstation_group_id, permission_id,
  *    is_negative)` via `firstOrCreate`. Au re-run, `granted_by` n'est PAS
- *    écrasé (review #11) — les délégations posées manuellement entre deux
+ *    écrasé : les délégations posées manuellement entre deux
  *    runs conservent leur acteur initial.
  *
  * Mode dry-run : toutes les écritures sont gardées sous `if (!$dryRun)`. Le
  * rapport est identique en sortie.
  *
- * Décision kickoff (1) : 7.3 pose les assignations user→rôle en complément
- * de 7.2 qui a créé les rôles en DB. Les 5 seedés suivent matrice §5.3.
+ * Décision kickoff (1) : pose les assignations user→rôle en complément
+ * de qui a créé les rôles en DB.
  * Décision kickoff (2) : si le format `delegations_rdn` ne correspond pas
  * à la VM cible (aucun groupe), no-op documenté avec warning.
  */
 class RightsMigrationService
 {
     /**
-     * Mapping des profils seedés vers leur rôle Spatie (matrice §5.3).
+     * Mapping des profils seedés vers leur rôle Spatie.
      * Source : `sambaedu/includes/ldap.inc.php:739-743`.
      *
-     * NOTE Story 7.3 (correction post-review #1, décision Henri 2026-04-25) :
-     *  `password_is_admin` (0x01) est volontairement absent. Ce profil legacy
+     * ⚠️ `password_is_admin` (0x01) est volontairement absent. Ce profil legacy
      *  ne doit PAS être mappé sur `SambaRole::UserAdmin` (0xFF), ce qui
      *  constituerait une **escalade de privilèges** (8 droits au lieu d'un).
-     *  Conformément à la matrice §5.3, on lui pose la permission directe
-     *  `user.password.init` via `givePermissionTo` (pas de rôle dédié).
+     *  On lui pose la permission directe `user.password.init` via
+     *  `givePermissionTo`, sans rôle dédié.
      *  Cf. `migrateRightsGroupAssignments()` cas spécial.
      */
     private const SEEDED_PROFILE_TO_ROLE = [
@@ -88,7 +87,7 @@ class RightsMigrationService
 
     /**
      * Profils legacy migrés vers une **permission directe Spatie** au lieu d'un
-     * rôle (matrice §5.3 — délégations ciblées). Ajouté Story 7.3 post-review.
+     * rôle : ces profils correspondent à des délégations ciblées.
      */
     private const SEEDED_PROFILE_TO_DIRECT_PERMISSION = [
         'password_is_admin' => 'user.password.init',
@@ -101,12 +100,12 @@ class RightsMigrationService
      *  - `<level>_<parc>` (positif) ou `no_<level>_<parc>` (négatif)
      *  - `level` ∈ { `manage`, `view`, `rdp` }
      *
-     * Story 7.3 (correction post-review #10 — décision Henri 2026-04-25) :
+     * Mapping :
      *  - `manage` → `computer.elevate` (admin de poste, équivalent
      *    `SE_COMPUTER_ELEVATE` legacy 0x400).
      *  - `view`   → `computer.view` (consultation parc, `SE_COMPUTER_VIEW` 0x100).
      *  - `rdp`    → `computer.remote.rdp` (NOUVELLE permission Spatie créée
-     *    pour cette migration, option C — sécurité fine RDP).
+     *    pour cette migration, pour une sécurité fine sur RDP).
      */
     private const LEGACY_DELEGATION_LEVELS = [
         'manage' => SambaPermission::ComputerElevate,
@@ -118,7 +117,7 @@ class RightsMigrationService
      * Tag « source » à attacher au champ `context` JSONB des entrées
      * `delegation_history` créées par la migration one-shot. Permet de
      * distinguer en audit les délégations posées par la commande des
-     * délégations posées par un acteur humain via l'UI (review #8).
+     * délégations posées par un acteur humain via l'UI.
      */
     private const MIGRATION_CONTEXT_SOURCE = 'migration-7.3';
 
@@ -126,7 +125,7 @@ class RightsMigrationService
         // Conservé pour compat des appelants existants (commande artisan +
         // mocks de test). La migration des délégations bypass désormais
         // `PermissionService::grantDelegation` au profit d'un `firstOrCreate`
-        // direct sur `Delegation` (review #11) — `permissionService` reste
+        // direct sur `Delegation` — `permissionService` reste
         // disponible pour les futures évolutions (ex. invocation de la
         // logique métier complète si un acteur humain est défini).
         private readonly PermissionService $permissionService,
@@ -143,7 +142,7 @@ class RightsMigrationService
      * Exécute la migration complète (rôles + délégations scopées).
      *
      * @param  bool  $dryRun  Si true, aucune écriture effective.
-     * @param  callable|null  $rightsFetcher  Optionnel : fetcher de groupes legacy (cn => info bitmask). Par défaut = `LdapRightGroup::getAllRightsValues()`.
+     * @param callable|null $rightsFetcher Optionnel : fetcher de groupes legacy (cn => info bitmask). Par défaut = `LdapRightGroup::getAllRightsValues()`.
      * @param  callable|null  $rightsMembersFetcher  Optionnel : fetcher des membres d'un groupe legacy (cn → [user DN, ...]). Par défaut = lecture LDAP.
      * @param  callable|null  $delegationsFetcher  Optionnel : fetcher des groupes de délégations scopées (cn → [members]). Par défaut = lecture LDAP `delegations_rdn`.
      * @return array{
@@ -197,7 +196,7 @@ class RightsMigrationService
      *       Bug `Annu_is_admin` sans `info` → warning + fallback `UserAdmin`
      *       (PAS `ComputerAdmin` comme le faisait `annu/profiles.php:58`).
      *     - Profil custom → `Role::findByName($cn)` si existant en DB
-     *       (créé par `importCustomProfilesFromAd` en 7.2). Sinon `unmappable`.
+     *  (créé par `importCustomProfilesFromAd`). Sinon `unmappable`.
      *  2. Pour chaque member DN du groupe LDAP → résoudre User Eloquent
      *     (via `dn` exact, fallback sur `login` extrait du DN).
      *  3. `$user->assignRole($role)` si `!$dryRun`.
@@ -225,11 +224,9 @@ class RightsMigrationService
             $infoInt = (int) $info;
             $cnString = (string) $cn;
 
-            // --- Cas spécial Story 7.3 — password_is_admin → permission directe ---
-            // Décision Henri 2026-04-25 (correction review #1) : ce profil
-            // legacy ne doit PAS être mappé sur un rôle (UserAdmin = escalade).
-            // On pose la permission `user.password.init` directement via
-            // `givePermissionTo`, conformément à la matrice §5.3.
+            // Ce profil legacy ne doit PAS être mappé sur un rôle (UserAdmin =
+            // escalade de privilèges). On pose la permission
+            // `user.password.init` directement via `givePermissionTo`.
             if (isset(self::SEEDED_PROFILE_TO_DIRECT_PERMISSION[$cnString])) {
                 $this->migrateProfileAsDirectPermission(
                     cn: $cnString,
@@ -241,7 +238,6 @@ class RightsMigrationService
                 continue;
             }
 
-            // --- 1. Résolution du nom de rôle cible ---
             $roleName = $this->resolveRoleNameForProfile($cnString, $infoInt, $report);
 
             if ($roleName === null) {
@@ -253,7 +249,6 @@ class RightsMigrationService
                 continue;
             }
 
-            // --- 2. Lecture des membres du groupe LDAP ---
             $members = $this->fetchMembersForGroup($cnString, $rightsMembersFetcher);
 
             foreach ($members as $memberDn) {
@@ -270,7 +265,6 @@ class RightsMigrationService
                     continue;
                 }
 
-                // --- 3. Assignation idempotente ---
                 if (! $dryRun) {
                     try {
                         // `assignRole` Spatie est idempotent : n'ajoute pas de doublon
@@ -297,10 +291,10 @@ class RightsMigrationService
      * Migre un profil legacy en posant une **permission directe Spatie** sur
      * chaque user membre, sans passer par un rôle.
      *
-     * Cas d'usage (Story 7.3) : `password_is_admin` (0x01) doit donner
+     * Cas d'usage : `password_is_admin` (0x01) doit donner
      * `user.password.init` aux 32 occurrences de `SE_USER_PASSWORD_INIT`
      * legacy, sans introduire les 7 droits supplémentaires de `UserAdmin`
-     * (matrice §5.3, décision Henri 2026-04-25 post-review #1).
+     * — introduire ces droits serait une escalade de privilèges.
      *
      * Idempotent : `givePermissionTo` Spatie n'ajoute pas de doublon dans
      * `model_has_permissions` si l'user a déjà la permission directe.
@@ -354,16 +348,16 @@ class RightsMigrationService
      *
      * Retourne le nom du rôle (string) à utiliser avec `$user->assignRole($name)`,
      * qu'il s'agisse d'un enum seedé (`SambaRole::*->value`) ou d'un rôle
-     * custom créé en 7.2 avec son nom brut (ex. `Animateur_CDI`).
+     * custom créé avec son nom brut (ex. `Animateur_CDI`).
      *
      * Ordre de résolution :
-     *  1. Bug `Annu_is_admin` sans `info` → warning + `user-admin` (matrice §8 #6).
+     *  1. Bug `Annu_is_admin` sans `info` → warning + `user-admin`.
      *  2. Profil seedé listé dans `SEEDED_PROFILE_TO_ROLE` → mapping direct.
-     *  3. Profil custom rapatrié en 7.2 : on privilégie un `Role` de même nom
+     *  3. Profil custom rapatrié : on privilégie un `Role` de même nom
      *     créé par `importCustomProfilesFromAd`. On retourne son nom brut.
      *  4. Fallback matrice : `SambaRole::fromBitmask($info)->value` pour
      *     reconstituer un rôle seedé depuis le bitmask (profils custom non
-     *     rapatriés en 7.2).
+     *  rapatriés).
      */
     private function resolveRoleNameForProfile(string $cn, int $info, array &$report): ?string
     {
@@ -376,12 +370,12 @@ class RightsMigrationService
             return SambaRole::UserAdmin->value;
         }
 
-        // Cas 2 — profil seedé (matrice §5.3).
+        // Cas 2 — profil seedé.
         if (isset(self::SEEDED_PROFILE_TO_ROLE[$cn])) {
             return self::SEEDED_PROFILE_TO_ROLE[$cn]->value;
         }
 
-        // Cas 3 — profil custom rapatrié en 7.2 : on vérifie que le Role
+        // Cas 3 — profil custom rapatrié : on vérifie que le Role
         // existe déjà en DB (créé par `importCustomProfilesFromAd`). On pose
         // l'assignation au nom brut du role custom.
         try {
@@ -441,20 +435,19 @@ class RightsMigrationService
      *  - `no_<level>_<parc>` (négatif)
      *  - `member` = `[user DN, parc DN]`
      *
-     * Story 7.3 — corrections post-review #2 / #4 / #10 / #11 (décision Henri
-     * 2026-04-25) :
+     * Règles de migration :
      *  - Parsing strict via regex `/^(no_)?(manage|view|rdp)_(.+)$/` qui élimine
      *    l'ambiguïté underscore (les parcs `salle_info_bat_A` sont gérés).
      *  - Mapping `level → SambaPermission` via `LEGACY_DELEGATION_LEVELS` (et
-     *    non plus la lecture `OU=rights/<level>/info` — décision option C pour
-     *    RDP : permission Spatie dédiée `computer.remote.rdp`).
+     *    non plus la lecture `OU=rights/<level>/info` : RDP a sa permission
+     *    Spatie dédiée `computer.remote.rdp`).
      *  - Résolution parc : `WorkstationGroup::findByAdDn($memberDn)` pour
      *    filtrer le DN de parc des `member` (au lieu d'heuristiques fragiles).
      *  - Persistance : `Delegation::firstOrCreate` au lieu de `updateOrCreate`
      *    pour ne PAS écraser `granted_by` au re-run sur une délégation
-     *    posée manuellement entre deux runs (review #11).
+     *    posée manuellement entre deux runs.
      *  - Audit : entrées `delegation_history` taguées `source = 'migration-7.3'`
-     *    avec `actor = null` explicite (review #8).
+     *    avec `actor = null` explicite.
      */
     private function migrateScopedDelegations(
         bool $dryRun,
@@ -502,7 +495,6 @@ class RightsMigrationService
 
             ['negate' => $isNegative, 'level' => $level, 'parc' => $parcName] = $parsed;
 
-            // --- Résolution de la permission Spatie via mapping level → perm ---
             $sambaPermission = self::LEGACY_DELEGATION_LEVELS[$level] ?? null;
             if ($sambaPermission === null) {
                 // Sécurité : ne devrait pas arriver, le regex contraint déjà
@@ -525,7 +517,6 @@ class RightsMigrationService
                 continue;
             }
 
-            // --- Résolution du WorkstationGroup par nom canonique ---
             $workstationGroup = WorkstationGroup::findByName($parcName);
             if ($workstationGroup === null) {
                 $report['unmappable'][] = [
@@ -536,13 +527,12 @@ class RightsMigrationService
                 continue;
             }
 
-            // --- Itération des membres : user DN à migrer, parc DN à ignorer ---
             foreach ($members as $memberDn) {
                 $memberStr = (string) $memberDn;
 
                 $user = $this->resolveUserFromDn($memberStr);
                 if ($user === null) {
-                    // Filtrage explicite du DN de parc (review #4) — on consulte
+                    // Filtrage explicite du DN de parc — on consulte
                     // la table `workstation_groups` plutôt qu'une heuristique
                     // sur l'OU. Source de vérité = DB SER.
                     if ($this->isKnownWorkstationGroupDn($memberStr, $workstationGroup)) {
@@ -594,8 +584,7 @@ class RightsMigrationService
      *
      * Format strict : `(no_)?(manage|view|rdp)_<parc>` où `<parc>` peut
      * contenir des underscores (le regex consomme tout ce qui suit le `_`
-     * post-level, ce qui élimine simultanément les ambiguïtés review #2
-     * et #10).
+     * post-level, ce qui lève toute ambiguïté sur le découpage).
      *
      * @return array{negate: bool, level: string, parc: string}|null
      */
@@ -628,7 +617,7 @@ class RightsMigrationService
 
     /**
      * Indique si le DN passé en paramètre désigne un `WorkstationGroup` connu
-     * (review #4). Utilisé pour filtrer le « parc DN » présent dans les
+     * Utilisé pour filtrer le « parc DN » présent dans les
      * `member` d'un groupe de délégation legacy.
      *
      * Stratégies (ordre de coût croissant) :
@@ -656,9 +645,9 @@ class RightsMigrationService
     }
 
     /**
-     * Persiste une délégation migrée via `firstOrCreate` (preserve `granted_by`
-     * sur re-run — review #11), et trace l'historique avec un contexte
-     * explicite « migration-7.3 » (review #8).
+     * Persiste une délégation migrée via `firstOrCreate` (préserve `granted_by`
+     * sur re-run), et trace l'historique avec un contexte explicite
+     * « migration-7.3 ».
      */
     private function persistMigratedDelegation(
         User $user,
@@ -677,8 +666,7 @@ class RightsMigrationService
             [
                 // Migration legacy : aucun acteur humain. Les délégations
                 // posées manuellement entre deux runs ne sont PAS écrasées
-                // (decision Henri 2026-04-25 — review #11) car `firstOrCreate`
-                // n'applique ces valeurs qu'à la création.
+                // car `firstOrCreate` n'applique ces valeurs qu'à la création.
                 'granted_by' => null,
                 'expires_at' => null,
             ]

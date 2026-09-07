@@ -15,7 +15,7 @@ use ReflectionMethod;
 use Tests\TestCase;
 
 /**
- * Story 61.3 — LE CANAL DES DOSSIERS D'ÉQUIPE, sur ses réponses MESURÉES.
+ * LE CANAL DES DOSSIERS D'ÉQUIPE, sur ses réponses MESURÉES.
  *
  * Deux pièges y sont épinglés, et ce sont les deux qui coûtent le plus cher :
  * **le code de transport ment** (un refus d'administration peut se cacher derrière
@@ -41,10 +41,6 @@ class NextcloudTeamFolderClientTest extends TestCase
     {
         return ['ocs' => ['meta' => ['status' => $code < 300 ? 'ok' : 'failure', 'statuscode' => $code, 'message' => $message], 'data' => $data]];
     }
-
-    // =========================================================================
-    // Le code HTTP ment
-    // =========================================================================
 
     /**
      * **MESURÉ : une opération d'administration refusée rend `200` avec un refus
@@ -78,12 +74,8 @@ class NextcloudTeamFolderClientTest extends TestCase
         self::assertTrue($result->alreadyConforming);
     }
 
-    // =========================================================================
-    // Le relu n'est pas l'envoyé
-    // =========================================================================
-
     /**
-     * **DEUXIÈME OCCURRENCE DU MÊME PIÈGE DANS L'EPIC** : le point de montage revient
+     * **DEUXIÈME OCCURRENCE DU MÊME PIÈGE** : le point de montage revient
      * avec une barre oblique de tête. Comparer sur l'envoyé ferait recréer un dossier
      * à chaque passage, ou déclarer absent un dossier parfaitement en place.
      */
@@ -111,10 +103,6 @@ class NextcloudTeamFolderClientTest extends TestCase
         self::assertSame(1, $folders[0]['id']);
     }
 
-    // =========================================================================
-    // La forme des écritures
-    // =========================================================================
-
     /** Corps en FORMULAIRE, en-tête d'API posé, jamais de JSON (mesuré). */
     #[Test]
     public function writes_go_out_as_a_form_never_as_json(): void
@@ -136,7 +124,7 @@ class NextcloudTeamFolderClientTest extends TestCase
     /**
      * L'INTERRUPTEUR des permissions avancées prend un entier, et rien d'autre — la
      * route ne pose AUCUNE règle. Un booléen dans un corps de formulaire est le
-     * piège mesuré de la story 61.1.
+     * piège mesuré.
      */
     #[Test]
     public function the_advanced_permissions_toggle_sends_an_integer_never_a_boolean(): void
@@ -172,14 +160,10 @@ class NextcloudTeamFolderClientTest extends TestCase
         self::assertSame(['alice', 'bruno', 'zoe'], $this->client()->groupMembers('se5_3a_member')->value('members'));
     }
 
-    // =========================================================================
-    // La surface
-    // =========================================================================
-
     /**
      * **LA SURFACE EST FERMÉE.** Aucun partage (il ment, mesuré au spike), aucun
-     * quota de COMPTE (frontière D8 : budgéter une personne appartient au
-     * provisionnement des comptes). Une méthode absente ne s'appelle pas par
+     * quota de COMPTE (budgéter une personne appartient au provisionnement des
+     * comptes, pas au dossier d'équipe). Une méthode absente ne s'appelle pas par
      * distraction.
      */
     #[Test]
@@ -211,12 +195,12 @@ class NextcloudTeamFolderClientTest extends TestCase
     }
 
     /**
-     * **AUCUN CHEMIN DE PRODUCTION NE SUPPRIME UN DOSSIER D'ÉQUIPE** (D9).
+     * **AUCUN CHEMIN DE PRODUCTION NE SUPPRIME UN DOSSIER D'ÉQUIPE.**
      *
      * La méthode existe pour la seule obligation du test d'intégration : laisser
      * l'instance dans l'état où il l'a trouvée. Qu'elle existe et qu'elle ne soit
      * jamais appelée en production sont deux faits différents ; le second se
-     * vérifie — précédent exact de la suppression de montage en 61.1.
+     * vérifie.
      */
     #[Test]
     public function the_folder_deletion_is_never_called_by_production_code(): void

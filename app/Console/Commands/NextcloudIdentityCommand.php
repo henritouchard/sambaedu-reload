@@ -8,7 +8,7 @@ use App\Services\Nextcloud\NextcloudIdentityLinker;
 use Illuminate\Console\Command;
 
 /**
- * Story 61.2 — LE RATTACHEMENT D'IDENTITÉ, EN COMMANDE.
+ * LE RATTACHEMENT D'IDENTITÉ, EN COMMANDE.
  *
  * Doctrine du dépôt : les opérations d'exploitation sont des COMMANDES, jamais des
  * procédures manuelles à rejouer. La modale de `/admin/settings/files` et cette
@@ -17,10 +17,9 @@ use Illuminate\Console\Command;
  * **Trois gestes, et un seul écrit :**
  *  - sans option — dit l'identité actuellement mise en cache (lecture pure) ;
  *  - `--set=<id>` — rattache, **après vérification à distance** : une identité que
- *    l'instance ne confirme pas n'est jamais écrite (règle de sécurité de la
- *    correction #2 de la revue 61.1) ;
+ *    l'instance ne confirme pas n'est jamais écrite ;
  *  - `--clear` — détache. Le cache redevient nul ; **rien n'est supprimé côté
- *    Nextcloud** (D9 : jamais de suppression implicite).
+ *    Nextcloud** : jamais de suppression implicite.
  *
  * **Codes de sortie :** `0` rattaché ou déjà conforme, `1` refusé (identité non
  * confirmée, utilisateur inconnu, instance injoignable), `2` usage invalide.

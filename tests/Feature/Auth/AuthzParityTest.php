@@ -19,7 +19,7 @@ use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
 
 /**
- * Story 49.2 — NFR-R5 : PARITÉ D'AUTHZ.
+ * NFR-R5 : PARITÉ D'AUTHZ.
  *
  * Le cut-over Postgres ne doit changer AUCUN droit effectif. Ce test fige, pour
  * cinq profils représentatifs, la table des décisions de Gate — celle-là même
@@ -30,9 +30,9 @@ use Tests\TestCase;
  *
  * Les cinq profils sont montés comme le produit les monte réellement :
  *  - élève et prof reçoivent leur rôle par APPARTENANCE à un groupe porteur
- *    (mécanisme livré par 49.1 : le groupe porte le profil de droits), pas par
+ *  (mécanisme livré par : le groupe porte le profil de droits), pas par
  *    un `assignRole` de complaisance ;
- *  - le délégué `user-admin` cumule (49.1 : permissions cumulatives, aucune
+ *  - le délégué `user-admin` cumule (permissions cumulatives, aucune
  *    précédence) ;
  *  - le compte protégé `admin` passe par `Gate::before` ;
  *  - le technicien fédéré est `source='federated'`, rôle `technicien`.
@@ -75,7 +75,7 @@ class AuthzParityTest extends TestCase
 
     /**
      * Attache `$user` à un groupe porteur du profil `$role` — le chemin réel
-     * d'attribution depuis 49.1 (l'appartenance EST l'attribution).
+     * d'attribution depuis (l'appartenance EST l'attribution).
      */
     private function joinGroupCarrying(User $user, SambaRole $role, string $groupName): void
     {
@@ -121,10 +121,6 @@ class AuthzParityTest extends TestCase
         );
     }
 
-    // ========================================================================
-    // Profil 1 — élève : membre d'un groupe porteur du profil `eleve`
-    // ========================================================================
-
     #[Test]
     public function an_eleve_holds_no_permission(): void
     {
@@ -142,10 +138,6 @@ class AuthzParityTest extends TestCase
         ], $eleve, 'élève');
     }
 
-    // ========================================================================
-    // Profil 2 — prof : `user.read` + `user.password.init`, rien d'autre
-    // ========================================================================
-
     #[Test]
     public function a_prof_holds_exactly_read_and_password_init(): void
     {
@@ -162,10 +154,6 @@ class AuthzParityTest extends TestCase
             'server.admin' => false,
         ], $prof, 'prof');
     }
-
-    // ========================================================================
-    // Profil 3 — prof + délégation `user-admin` : les droits SE CUMULENT
-    // ========================================================================
 
     #[Test]
     public function a_prof_delegated_user_admin_cumulates_both_sets(): void
@@ -189,10 +177,6 @@ class AuthzParityTest extends TestCase
             'server.admin' => false,
         ], $delegue, 'prof + délégation user-admin');
     }
-
-    // ========================================================================
-    // Profil 4 — compte protégé `admin` : tout, et rien de retirable
-    // ========================================================================
 
     #[Test]
     public function the_protected_admin_holds_everything(): void
@@ -237,10 +221,6 @@ class AuthzParityTest extends TestCase
         ], $admin, 'admin protégé après syncRoles retranchant');
     }
 
-    // ========================================================================
-    // Profil 5 — technicien fédéré externe : inchangé par la bascule
-    // ========================================================================
-
     #[Test]
     public function an_external_technician_keeps_its_role_and_permissions(): void
     {
@@ -270,10 +250,6 @@ class AuthzParityTest extends TestCase
         $this->assertTrue(Gate::forUser($tech->fresh())->allows('computer.control'));
     }
 
-    // ========================================================================
-    // Verrou transverse
-    // ========================================================================
-
     #[Test]
     public function a_user_without_anything_is_refused_everywhere(): void
     {
@@ -291,7 +267,7 @@ class AuthzParityTest extends TestCase
     #[Test]
     public function leaving_the_carrier_group_revokes_the_profile(): void
     {
-        // Le corollaire de 49.1 sur lequel s'appuie tout le cut-over : si
+        // Le corollaire sur lequel s'appuie tout le cut-over : si
         // l'appartenance n'était pas un miroir fidèle, supprimer les prédicats
         // scolaires aurait laissé des droits fantômes.
         $prof = User::create(['login' => 'prof.partant', 'role' => 'prof', 'is_active' => true]);

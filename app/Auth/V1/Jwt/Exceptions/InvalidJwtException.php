@@ -9,8 +9,6 @@ use RuntimeException;
 use Throwable;
 
 /**
- * Story 16.10 — AC2.2 / D8.
- *
  * Exception levée par `WorkstationJwtVerifier` (et services connexes) avec
  * un code stable du catalogue {@see JwtErrorCodes}. Le middleware
  * `EnsureWorkstationJwt` la capture et formate la réponse `{error, message,

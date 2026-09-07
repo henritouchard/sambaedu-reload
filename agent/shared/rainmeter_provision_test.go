@@ -14,16 +14,16 @@ import (
 	"testing"
 )
 
-// Story 25.6 — provisioning Rainmeter PILOTÉ PAR LE MANIFEST servi (embed
+// Provisioning Rainmeter PILOTÉ PAR LE MANIFEST servi (embed
 // retiré, checksum lu de l'état). On valide :
 //   - manifest → download portable + vérif SHA-256 AVANT extraction ;
 //   - skin téléchargée (vérif SHA-256 AVANT écriture) + conversion UTF-16 LE+BOM ;
 //   - tool absent/désactivé (tool: null) → no-op gracieux, JAMAIS d'erreur ni
-//     de désinstallation (D4) ;
+//     de désinstallation ;
 //   - hash divergent (portable ou skin) → rejet, rien n'est posé/extrait.
 //
 // Serveur de test DÉDIÉ : il route les trois endpoints token'd du canal
-// Rainmeter (/tools-manifest, /tools/<filename>, /overlay-skin). Le token n'est
+// Rainmeter (tools-manifest, /tools/<filename>, /overlay-skin). Le token n'est
 // pas vérifié (writeToken suffit à faire passer ReadToken côté agent).
 
 type fakeRainmeterServer struct {
@@ -123,7 +123,7 @@ func portableFixture(t *testing.T, version string) (filename, checksum string, a
 		"Skins/readme.txt": "skins",
 		// Le portable Rainmeter RÉEL embarque un Rainmeter.ini à la racine (aux
 		// côtés de l'exe) → forcerait le MODE PORTABLE. La fixture le reproduit
-		// pour que les tests d'extraction PROUVENT sa suppression (Story 27.1ter,
+		// pour que les tests d'extraction PROUVENT sa suppression (
 		// F2/F3) : après SyncRainmeterTool, store.SettingsPath() doit être absent.
 		"Rainmeter.ini": "[Rainmeter]\r\nportable=default\r\n",
 	} {
@@ -205,7 +205,7 @@ func TestSyncRainmeterTool_ActiveDownloadsVerifiesExtractsAndPosesSkin(t *testin
 	if bytes.Equal(raw, skinBody) {
 		t.Fatal("la skin posée doit être convertie (UTF-16), pas l'UTF-8 brut servi")
 	}
-	// MODE INSTALLÉ (Story 27.1ter) : AUCUN Rainmeter.ini ne doit subsister sous
+	// MODE INSTALLÉ : AUCUN Rainmeter.ini ne doit subsister sous
 	// ProgramData (sa présence forcerait le mode portable → modales). Les settings
 	// partent en %APPDATA%, posés par le compagnon.
 	if _, err := os.Stat(store.SettingsPath()); err == nil {
@@ -316,8 +316,8 @@ func TestSyncRainmeterTool_NilSkinSkippedConfigStillPosed(t *testing.T) {
 }
 
 // TestSyncRainmeterTool_ResidualProgramDataIniRemoved : un Rainmeter.ini résiduel
-// dans l'arbre ProgramData (embarqué par le zip portable OU ancien durci 27.1bis)
-// est SUPPRIMÉ de façon idempotente (Story 27.1ter — sa présence forcerait le
+// dans l'arbre ProgramData (embarqué par le zip portable OU ancien durci)
+// Est SUPPRIMÉ de façon idempotente (sa présence forcerait le
 // mode portable et ramènerait les modales). Re-passage = idempotent (no-op).
 func TestSyncRainmeterTool_ResidualProgramDataIniRemoved(t *testing.T) {
 	f := newFakeRainmeterServer(t)
@@ -391,8 +391,6 @@ func TestSyncRainmeterTool_QuarantineSkips(t *testing.T) {
 		t.Error("provisioning sauté en quarantaine")
 	}
 }
-
-// --- ParseRainmeterManifest : validation stricte des entrées ----------------
 
 func TestParseRainmeterManifest_RejectsBadFilenameAndHash(t *testing.T) {
 	// Filename hors pattern → tool traité comme absent (nil), jamais une URL
@@ -548,7 +546,7 @@ func TestSyncRainmeterTool_CorruptMarkerTriggersReprovision(t *testing.T) {
 	}
 }
 
-// D4 préservé : outil désactivé/absent du manifest, on ne désinstalle JAMAIS —
+// Outil désactivé/absent du manifest : on ne désinstalle JAMAIS —
 // même si le marqueur porte une version qui ne correspond à rien de servi.
 func TestSyncRainmeterTool_ToolDisabledNeverUninstalls(t *testing.T) {
 	f := newFakeRainmeterServer(t)

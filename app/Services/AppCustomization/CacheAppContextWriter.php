@@ -9,9 +9,9 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Pendant écriture de `CacheAppContextRepository` (Story 16.15).
+ * Pendant écriture de `CacheAppContextRepository`.
  *
- * Story 16.7 — AC2.2 (origine). Story 16.15 — AC3 (migration Cache).
+ * (origine)..
  *
  * Écrit la clé `apps.$id` via `Cache::store('app_context')` — store dédié
  * avec `prefix => ''` (interop legacy : le shim `LegacyBootstrapTokenValidator`
@@ -19,14 +19,14 @@ use Illuminate\Support\Facades\Log;
  * D11, et accède donc à la même donnée). Clé consommée par les endpoints
  * natifs runtime déjà portés :
  *
- *  - `wallpaper_out.php`  → Story 4.7 (`WallpaperController::legacyOut`)
- *  - `firefox_out.php`    → Story 4.8 (`AppPolicyController::legacyFirefoxOut`)
- *  - `thunderbird_out.php`→ Story 4.8 (`AppPolicyController::legacyThunderbirdOut`)
- *  - `network_out.php`    → Story 16.3b (`NetworkOutController`)
- *  - `veyon_out.php`      → Story 16.3b (`VeyonOutController`)
- *  - `associations_out.php` → Story 16.3c (`AssociationsOutController`)
+ * - `wallpaper_out.php` → (`WallpaperController::legacyOut`)
+ * - `firefox_out.php` → (`AppPolicyController::legacyFirefoxOut`)
+ * - `thunderbird_out.php`→ (`AppPolicyController::legacyThunderbirdOut`)
+ * - `network_out.php` → (`NetworkOutController`)
+ * - `veyon_out.php` → (`VeyonOutController`)
+ * - `associations_out.php` → (`AssociationsOutController`)
  *
- * **Structure attendue par `AppContext::fromApcuArray` (Story 4.8)** :
+ * **Structure attendue par `AppContext::fromApcuArray`** :
  *
  *  - `user`   : `array{cn: string, …}`   (ou string fallback)
  *  - `machine`: `array{cn: string, …}`   (ou string fallback)
@@ -40,18 +40,15 @@ use Illuminate\Support\Facades\Log;
  * `admin`, `cloud`, `id`) sont **passthrough** : conservées telles quelles
  * dans `raw` (cf. `AppContext::raw`).
  *
- * **Story 16.11 Q1.a — `uuid` désormais TOUJOURS posé** : la clé `uuid` était
- * historiquement listée comme passthrough (Story 16.7) mais en pratique
- * jamais posée par `ApplicationScriptsGenerator` avant le `write()`. Depuis
- * Q1.a (2026-05-18), `ApplicationScriptsGenerator::resolveInfo()` injecte
- * systématiquement `uuid` (lowercase normalisé) dans `$info` AVANT l'appel
- * à `write()`. Conséquence : tous les nouveaux payloads `apps.$id` portent
- * la clé `uuid`. Les anciens payloads (cache hit pré-Q1.a) sont migrés
- * automatiquement par `ApplicationScriptsGenerator::fetchCached()` qui
- * ré-écrit le payload avec l'uuid courant si absent.
+ * **La clé `uuid` est toujours posée** : `ApplicationScriptsGenerator::resolveInfo()`
+ * injecte systématiquement `uuid` (normalisé en minuscules) dans `$info` avant
+ * l'appel à `write()`, si bien que tout nouveau payload `apps.$id` la porte. Les
+ * payloads plus anciens, écrits quand `uuid` n'était qu'un passthrough facultatif,
+ * sont migrés à la lecture par `ApplicationScriptsGenerator::fetchCached()`, qui
+ * ré-écrit le payload avec l'uuid courant lorsque la clé manque.
  *
  * @legacy-port path="sambaedu/includes/applications.inc.php:998 (cache write — historiquement apcu)"
- * @see \App\Services\AppCustomization\CacheAppContextRepository Lecteur (Story 16.15).
+ * @see \App\Services\AppCustomization\CacheAppContextRepository Lecteur.
  */
 final class CacheAppContextWriter implements AppContextWriter
 {

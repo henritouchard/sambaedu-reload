@@ -7,17 +7,15 @@ namespace App\Ipxe\Services;
 use App\Models\Workstation;
 
 /**
- * Story 3.4 — D6 / AC3.1.
- *
  * Service stateless qui construit le payload de variables Blade rendu par
  * {@see IpxeMenuRenderer::renderInstallationLinuxMenu()} pour le template
  * `resources/views/ipxe/menu/installation-linux.blade.php`.
  *
- * **Architecture** : pattern iso 3.3 `IpxeEnrollmentMenuBuilder` — séparation
+ * **Architecture** : pattern iso `IpxeEnrollmentMenuBuilder` — séparation
  * stricte construction-variables / rendu-Blade pour permettre le test unit
  * isolé du payload sans rendu Blade.
  *
- * **Source de vérité items** : `config('ipxe.linux.menu_items')` (D11 — 9
+ * **Source de vérité items** : `config('ipxe.linux.menu_items')` (9
  * entrées par défaut). L'ordre est préservé dans le menu rendu.
  */
 final class LinuxInstallMenuBuilder
@@ -26,7 +24,7 @@ final class LinuxInstallMenuBuilder
      * Construit le payload de variables Blade pour le menu
      * `/ipxe/installation-linux`.
      *
-     * @param  Workstation|null  $workstation   Poste résolu (null = inconnu D7).
+     * @param  Workstation|null  $workstation   Poste résolu (null = inconnu).
      * @param  string  $serverBaseUrl           URL de base du SE4FS (ex:
      *                                          `http://192.168.122.50`).
      * @param  string  $ip                      IP du poste appelant.
@@ -37,7 +35,7 @@ final class LinuxInstallMenuBuilder
         $isKnown = $workstation !== null;
         $base = rtrim($serverBaseUrl, '/');
 
-        // Sanitization defense-in-depth du nom du poste (iso 3.3 — un nom AD
+        // Sanitization defense-in-depth du nom du poste (iso — un nom AD
         // avec caractères iPXE-special casserait le rendu).
         $workstationName = $isKnown
             ? IpxeHostnameSanitizer::sanitizeForIpxeOutput((string) ($workstation->name ?? 'unknown'))

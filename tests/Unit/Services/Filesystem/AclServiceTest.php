@@ -12,13 +12,13 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 5.2 — Tests Unit AclService.
+ * Tests Unit AclService.
  *
- * Stratégie (D12=A) : `Process::fake()` mocks `setfacl`/`getfacl`. Pas de
+ * Stratégie : `Process::fake()` mocks `setfacl`/`getfacl`. Pas de
  * vraie commande shell exécutée — robuste CI / dev macOS / e5-partages
  * worktree non syncé VM.
  *
- * Couvre AC 12 (anti-injection path) via DataProvider 8 patterns malicieux.
+ * Couvre l'anti-injection de chemin via un DataProvider de 8 patterns malicieux.
  */
 class AclServiceTest extends TestCase
 {
@@ -40,10 +40,6 @@ class AclServiceTest extends TestCase
         AclService::$classesRoot = $this->previousRoot;
         parent::tearDown();
     }
-
-    // =========================================================================
-    // setAcls — wipe + batch
-    // =========================================================================
 
     #[Test]
     public function it_sets_acls_with_recurse_flag(): void
@@ -68,7 +64,7 @@ class AclServiceTest extends TestCase
     }
 
     /**
-     * Story 5.2 review #3 — anti-régression sécurité : toute commande `setfacl`
+     * Anti-régression sécurité : toute commande `setfacl`
      * récursive DOIT être préfixée `-P` pour refuser de suivre les symlinks
      * plantés par un attaquant dans un dossier élève (`Classe_X/eleve/evil` →
      * `/etc/`).
@@ -173,10 +169,6 @@ class AclServiceTest extends TestCase
         $this->assertFalse($ok);
     }
 
-    // =========================================================================
-    // addAcl / removeAcl
-    // =========================================================================
-
     #[Test]
     public function it_adds_single_acl_with_setfacl_m(): void
     {
@@ -204,10 +196,6 @@ class AclServiceTest extends TestCase
         Process::assertRan(fn ($p) => str_contains($p->command, 'setfacl  -x')
             && str_contains($p->command, 'user:alice:rwx'));
     }
-
-    // =========================================================================
-    // getFacl — parsing
-    // =========================================================================
 
     #[Test]
     public function it_gets_facl_and_parses_named_groups(): void
@@ -249,10 +237,6 @@ TXT;
         $this->assertFalse($this->service->getFacl('/var/sambaedu/Classes/Classe_NoExist'));
     }
 
-    // =========================================================================
-    // checkAcls
-    // =========================================================================
-
     #[Test]
     public function check_acls_returns_false_when_path_not_dir(): void
     {
@@ -265,10 +249,6 @@ TXT;
             ['user::rwx']
         ));
     }
-
-    // =========================================================================
-    // validatePath — anti-injection (AC 12)
-    // =========================================================================
 
     #[Test]
     public function it_validates_legitimate_paths_inside_classes_root(): void
@@ -327,10 +307,6 @@ TXT;
         // Aucune commande shell n'a été exécutée — la garde regex prime sur tout.
         Process::assertNothingRan();
     }
-
-    // =========================================================================
-    // Override classesRoot en tests (D13)
-    // =========================================================================
 
     #[Test]
     public function it_supports_classes_root_override_via_static_property(): void

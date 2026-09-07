@@ -30,7 +30,6 @@ use Tests\TestCase;
 /**
  * **LE BACKEND OPENCLOUD, CONTRE L'INSTANCE RÉELLE.**
  *
- * ---------------------------------------------------------------------------
  * **CE QUE CE FICHIER PROUVE, ET QU'AUCUN DOUBLE NE PEUT PROUVER.**
  *
  *  1. **le CATALOGUE DE RÔLES de l'instance est bien celui que la table épingle.**
@@ -48,12 +47,11 @@ use Tests\TestCase;
  *  4. **LA CLÔTURE EST EFFECTIVE — ou elle est CONSTATÉE.** Un compte jetable
  *     membre du rôle refermé obtient un refus sur le nœud clos. Ce n'est pas une
  *     règle relue, c'est une PERCEPTION : le seul fait que ni le serveur ni un
- *     double ne savent affirmer. Et si l'accès survivait, le test le CONSTATERAIT —
- *     ce qui vaudrait verdict, pas échec de la story ;
+ *  double ne savent affirmer. Et si l'accès survivait, le test le CONSTATERAIT
+ *     ce qui vaudrait verdict, pas échec du test ;
  *  5. `deprovision()` révoque **sans détruire** : l'espace et son arborescence
- *     survivent (D9).
+ *     survivent.
  *
- * ---------------------------------------------------------------------------
  * **SKIPPÉ PAR DÉFAUT**, avant même l'amorçage de l'application : il exige
  * `OC_TEST_URL`, `OC_TEST_ADMIN` et `OC_TEST_PASSWORD`. Exécution par
  * l'orchestrateur, depuis le checkout principal, jamais depuis un worktree.
@@ -62,7 +60,7 @@ use Tests\TestCase;
  * `tearDown`), et **IL NE TOUCHE AUCUN OBJET PRÉEXISTANT** : sa zone porte un nom
  * horodaté qu'il fabrique lui-même, et une assertion défensive vérifie qu'il n'a
  * écrit que dedans. L'espace jetable n'est PAS détruit à la fin — le client n'a
- * aucune méthode pour cela, par conception (D9) : il est laissé vide et sans
+ * aucune méthode pour cela, par conception : il est laissé vide et sans
  * octroi, ce qui est inoffensif, et son nom horodaté le rend reconnaissable.
  */
 class OpenCloudFileBackendConvergenceTest extends TestCase
@@ -136,7 +134,7 @@ class OpenCloudFileBackendConvergenceTest extends TestCase
         $this->classe->users()->attach($this->prof->id, ['role' => 'manager']);
 
         // Les comptes jetables, créés SUR L'INSTANCE — hors du backend, qui n'a
-        // aucun chemin vers les comptes (frontière D8). C'est le test qui les crée,
+        // aucun chemin vers les comptes. C'est le test qui les crée,
         // avec le client HTTP nu.
         $this->eleve->opencloud_user_id = $this->createAccount((string) $this->eleve->login);
         $this->eleve->saveQuietly();
@@ -163,10 +161,6 @@ class OpenCloudFileBackendConvergenceTest extends TestCase
         parent::tearDown();
     }
 
-    // =========================================================================
-    // LE SCÉNARIO
-    // =========================================================================
-
     /**
      * **UN SEUL CAS, PARCE QUE LA SÉQUENCE EST LE SUJET.** Découper en dix
      * méthodes ferait dix fois le décor sur une instance réelle, et surtout ferait
@@ -178,16 +172,13 @@ class OpenCloudFileBackendConvergenceTest extends TestCase
         $backend = app(FileBackendRegistry::class)->get(FileBackendName::OpenCloud);
         self::assertInstanceOf(OpenCloudFileBackend::class, $backend);
 
-        // --- 0. LE CATALOGUE DE RÔLES épinglé est-il celui de l'instance ? ----
         $this->assertRoleCatalogueMatches();
 
-        // --- 1. Premier passage : tout est appliqué --------------------------
         $first = $backend->provision($this->plan());
         $this->log[] = 'provision #1 : ' . json_encode($first->toArray(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
         self::assertSame([], $first->failures(), 'la première convergence a échoué');
 
-        // --- 2. Second passage : conforme PARTOUT ----------------------------
         $second = $backend->provision($this->plan());
         $this->log[] = 'provision #2 : ' . json_encode($second->toArray(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
@@ -204,7 +195,6 @@ class OpenCloudFileBackendConvergenceTest extends TestCase
             );
         }
 
-        // --- 3. La relecture reprojette en vocabulaire de plan ---------------
         $inspection = $backend->inspect($this->plan());
         $this->log[] = 'inspect : ' . json_encode($inspection->toArray(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
@@ -214,18 +204,14 @@ class OpenCloudFileBackendConvergenceTest extends TestCase
         self::assertNotNull($profs->closure, 'la clôture DOIT être observée sur ce modèle');
         self::assertNotSame([], $profs->closure, 'la classe DOIT figurer dans la clôture observée');
 
-        // --- 4. LE PLAFOND ---------------------------------------------------
         $quota = $backend->quota($this->plan(capped: true));
         $this->log[] = 'quota : ' . json_encode($quota->toArray(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         self::assertSame(FileBackendOutcome::Applique, $quota->entries[0]->outcome);
 
-        // --- 5. LA PREUVE DE CLÔTURE : la PERCEPTION d'un compte jetable -----
         $this->assertEffectiveClosure();
 
-        // --- 6. LA GARDE DÉFENSIVE : rien n'a été écrit hors de notre zone ----
         $this->assertNothingWrittenOutsideOurSpace();
 
-        // --- 7. RÉVOQUER SANS DÉTRUIRE --------------------------------------
         $treeBefore = $this->childrenOfRoot();
         $revoked = $backend->deprovision($this->plan());
         $this->log[] = 'deprovision : ' . json_encode($revoked->toArray(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
@@ -238,10 +224,6 @@ class OpenCloudFileBackendConvergenceTest extends TestCase
         );
         self::assertNotNull($this->spaceId(), 'l\'espace DOIT survivre à la révocation');
     }
-
-    // =========================================================================
-    // Les mesures
-    // =========================================================================
 
     /**
      * Le catalogue épinglé côté SE5 est-il celui que l'instance publie ?
@@ -367,10 +349,6 @@ class OpenCloudFileBackendConvergenceTest extends TestCase
         self::assertSame(1, $ours, 'exactement UN espace doit porter le plan (aucun doublon créé)');
     }
 
-    // =========================================================================
-    // Le plan et le décor
-    // =========================================================================
-
     private function plan(bool $capped = false): FilePlan
     {
         $members = PlanSubject::group((int) $this->classe->id, 'member');
@@ -451,7 +429,7 @@ class OpenCloudFileBackendConvergenceTest extends TestCase
 
     /**
      * Retire tout ce que ce test a créé — SAUF l'espace, que le client de
-     * production ne sait pas détruire (D9). L'espace jetable reste, vide et sans
+     * production ne sait pas détruire. L'espace jetable reste, vide et sans
      * octroi, avec son nom horodaté.
      */
     private function cleanUp(): void
@@ -480,10 +458,6 @@ class OpenCloudFileBackendConvergenceTest extends TestCase
 
         unset($projector);
     }
-
-    // =========================================================================
-    // Le client HTTP NU du test — jamais celui du backend
-    // =========================================================================
 
     /**
      * @param  array<string, mixed>|null  $body

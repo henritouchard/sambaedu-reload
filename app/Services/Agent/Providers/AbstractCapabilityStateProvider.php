@@ -22,45 +22,44 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Story 27.12 — base COMMUNE des deux providers `registry` CAPABILITY-FIRST (D1/D2).
+ * Base COMMUNE des deux providers `registry` capability-first.
  *
- * Rewrite « capability-first » du registre (décision 2026-06-17) : la table
- * centrale d'authoring devient {@see Capability} (intention métier OS-agnostique),
- * le registre devient UNE PROJECTION ({@see CapabilityProjection}, mécanisme
- * `registry`). Ce provider EXPANSE une capacité → items de contrat CONCRETS
- * `{hive, path, name, type, value}` exactement comme l'ancien
- * l'ancien `AbstractRegistryStateProvider` (qu'il SUPERSEDE) — `StateCompiler`, contrat et
- * agent restent INCHANGÉS (D3).
+ * Modèle « capability-first » du registre : la table centrale d'authoring est
+ * {@see Capability} (intention métier OS-agnostique) et le registre n'est qu'UNE
+ * PROJECTION ({@see CapabilityProjection}, mécanisme `registry`). Ce provider
+ * EXPANSE une capacité → items de contrat CONCRETS
+ * `{hive, path, name, type, value}` : `StateCompiler`, contrat et agent restent
+ * INCHANGÉS.
  *
- * UN type `registry` (contrat §7, figé NFR12), UNE table d'authoring `capabilities`
- * × ses projections, MAIS deux providers serveur (D-Q2 27.3, conservé) :
- *   - {@see RegistryMachineCapabilityProvider} : ruche HKLM → `scope()=Machine` ;
- *   - {@see RegistryUserCapabilityProvider}    : ruche HKCU → `scope()=Session`.
+ * UN type `registry` (contrat §7, identifiant figé), UNE table d'authoring
+ * `capabilities` × ses projections, MAIS deux providers serveur :
+ *  - {@see RegistryMachineCapabilityProvider} : ruche HKLM → `scope()=Machine` ;
+ *  - {@see RegistryUserCapabilityProvider} : ruche HKCU → `scope()=Session`.
  * Un `StateProvider` déclare UNE portée → un casier ; donc une ruche par provider.
  * Côté agent, c'est UN SEUL handler Go `registry` : la séparation est purement
  * serveur.
  *
- * **Lecture Postgres PURE** (NFR7, critère Keycloak) : le provider lit
+ * **Lecture Postgres PURE** (critère Keycloak) : le provider lit
  * `capabilities` actives (OS windows, projection registry) × le pivot polymorphe
  * `capability_assignments` (WorkstationGroup + Workstation + UserGroup + User),
  * restreint aux ids déjà résolus du {@see TargetContext}. JAMAIS l'AD /
  * LdapRecord / APCu / `samba-tool` (ciblage = relations Postgres uniquement).
  *
- * **Invariant central (piège n°1).** Ni `id`/`key` de capacité, ni de projection,
- * ne fuit au payload — l'item registry reste CONCRET : `{hive, path, name, type,
+ * **Invariant central.** Ni `id`/`key` de capacité, ni de projection, ne fuit
+ * au payload — l'item registry reste CONCRET : `{hive, path, name, type,
  * value}` (5 clés, **+ `refresh` OU `writer` OPTIONNELS** — mutuellement
- * exclusifs, Stories 43.2/35.7, {@see withRefreshHint()}/{@see withWriterMarker()})
- * pour une ÉCRITURE, `{hive, path, name, ensure: "absent"}` (4 clés, Story 35.1,
+ * exclusifs, cf. {@see withRefreshHint()}/{@see withWriterMarker()}) pour une
+ * ÉCRITURE, `{hive, path, name, ensure: "absent"}` (4 clés,
  * **+ `refresh` OU `writer` OPTIONNELS** idem) pour une SUPPRESSION. Ni le hint
  * `refresh` ni le marqueur `writer` ne sont JAMAIS recopiés sur un item émis par
  * un provider de portée Machine (jamais sur une clé HKLM/HKU) — seuls
  * Session/MachineUser les portent. C'est CE qui garde « éditeur de clés brutes »
  * (v2) gratuit ET garantit que l'agent ne change pas.
  *
- * **Trois régimes par clé de `spec`** (Story 35.1) :
+ * **Trois régimes par clé de `spec`** :
  *   1. **écrire** — valeur résolue scalaire/liste → item 5 clés (le provider
  *      n'émet JAMAIS `ensure: "present"` explicite : byte-identité des payloads
- *      existants, contrat additif D1) ;
+ *      existants — l'ajout de clés au contrat reste additif) ;
  *   2. **supprimer** — marqueur réservé {@see self::SPEC_ENSURE}
  *      (`'off' => ['$ensure' => 'absent']` dans une map valeur-capacité) →
  *      item 4 clés `ensure: "absent"` (l'agent supprime la valeur nommée) ;
@@ -70,10 +69,10 @@ use Illuminate\Support\Facades\DB;
  * **Sémantique `exclusive` PAR IDENTITÉ DE CLÉ** ({@see KeyedExclusiveProvider}) :
  * une clé de registre = UNE valeur ; la maille la plus spécifique gagne pour CETTE
  * clé `{hive, path, name}`, les clés distinctes s'accumulent. Le provider rend des
- * candidats BRUTS par maille (discipline D2) : aucune précédence/tri/dédup ici — la
+ * candidats BRUTS par maille : aucune précédence/tri/dédup ici — la
  * sélection vit dans le `StateCompiler` SEUL (qui consulte `exclusiveKey()`).
  *
- * **Broadcast (défaut diffusé) + OVERRIDE par maille** (D4) — remonté de 27.3ter au
+ * **Broadcast (défaut diffusé) + OVERRIDE par maille**, remonté au
  * niveau CAPACITÉ. Le provider émet DEUX sources de candidats BRUTS :
  *   1. **Broadcast** — pour chaque capacité applicable, valeur effective =
  *      `default_value` ; la `spec` est expansée filtrée par la ruche du provider →
@@ -86,7 +85,7 @@ use Illuminate\Support\Facades\DB;
  * « Retirer » un override = supprimer la ligne d'assignation = le poste re-converge
  * vers le défaut Broadcast au cycle suivant (PAS « cesser de gérer »).
  *
- * **Bundle = une capacité → PLUSIEURS candidats** (piège n°3). Une capacité dont
+ * **Bundle = une capacité → PLUSIEURS candidats.** Une capacité dont
  * la projection a N clés produit N candidats (un par clé), tous au même `sourceId`
  * (= `capability.id`). Deux capacités définissant la même clé → collision arbitrée
  * par la récence au compilateur (cas réel, testé).
@@ -95,10 +94,10 @@ abstract class AbstractCapabilityStateProvider implements KeyedExclusiveProvider
 {
     /**
      * Marqueur d'authoring RÉSERVÉ dans une map valeur-capacité de `spec`
-     * (Story 35.1) : `'off' => ['$ensure' => 'absent']` (forme JSON seed :
+     * `'off' => ['$ensure' => 'absent']` (forme JSON seed :
      * `{"$ensure": "absent"}`) fait émettre un item de SUPPRESSION 4 clés
      * `{hive, path, name, ensure: "absent"}` au lieu d'une écriture. PUBLIC :
-     * réutilisé par les seeds/retrofits (35.1) et les stories 35.2 / 35.5.
+     * réutilisé par les seeds et les retrofits.
      */
     public const SPEC_ENSURE = '$ensure';
 
@@ -106,11 +105,10 @@ abstract class AbstractCapabilityStateProvider implements KeyedExclusiveProvider
     public const ENSURE_ABSENT = 'absent';
 
     /**
-     * Mécanisme de projection expansé par CE provider (Story 35.2 —
-     * généralisation MINIMALE : le provider abstrait devient la base des
-     * mécanismes de capacité, `registry` reste le DÉFAUT historique pour la
-     * byte-identité des providers existants). Le mécanisme EST le `type()` du
-     * contrat (identifiants alignés, NFR12) et filtre `itemsFor()`.
+     * Mécanisme de projection expansé par CE provider. Cette classe est la base
+     * de tous les mécanismes de capacité ; `registry` reste le défaut, ce qui
+     * garde les providers existants byte-identiques. Le mécanisme EST le
+     * `type()` du contrat (identifiants alignés) et filtre `itemsFor()`.
      */
     protected function mechanism(): string
     {
@@ -133,7 +131,7 @@ abstract class AbstractCapabilityStateProvider implements KeyedExclusiveProvider
     abstract protected function hive(): string;
 
     /**
-     * Ce provider émet-il les clés de cette ruche de `spec` ? (Story 35.3)
+     * Ce provider émet-il les clés de cette ruche de `spec` ?
      *
      * Défaut = comportement HISTORIQUE : égalité stricte (insensible à la
      * casse) avec {@see hive()} — les providers non surchargés restent
@@ -143,7 +141,7 @@ abstract class AbstractCapabilityStateProvider implements KeyedExclusiveProvider
      *   - `HKU`  → provider MACHINE UNIQUEMENT ({@see RegistryMachineCapabilityProvider}
      *     surcharge ce prédicat) : le service SYSTEM fan-out l'item vers
      *     `HKU\.DEFAULT` + chaque ruche utilisateur chargée. JAMAIS émise en
-     *     Session, ni par les providers `registry_list` (dont l'`expand()`
+     *  Session, ni par les providers `registry_list` (dont l'`expand()`
      *     garde son filtre direct — HKU hors scope list, contrat §7.6).
      */
     protected function handlesHive(string $hive): bool
@@ -154,7 +152,7 @@ abstract class AbstractCapabilityStateProvider implements KeyedExclusiveProvider
     /**
      * Identité d'une clé de registre exclusive : `{hive, path, name}`. Insensible
      * à la casse (Windows l'est sur les clés/valeurs) → normalisée en minuscules
-     * pour la STABILITÉ de la sélection. Déterministe (ETag 23.5). Iso 27.3.
+     * pour la STABILITÉ de la sélection. Déterministe (ETag). Iso 27.3.
      */
     public function exclusiveKey(array $payload): string
     {
@@ -166,14 +164,14 @@ abstract class AbstractCapabilityStateProvider implements KeyedExclusiveProvider
     }
 
     /**
-     * Candidats BRUTS (D2) du provider — DEUX sources (D4) :
+     * Candidats BRUTS du provider — DEUX sources :
      *   (1) un lot de candidats **Broadcast** par capacité applicable (valeur
      *       effective = `default_value`), une clé de la `spec` filtrée par ruche
      *       → un candidat ;
      *   (2) un lot par maille par **assignation applicable** au contexte (valeur
      *       effective = `assignment.value ?? default_value`).
      * Chaque capacité EXPANSÉE en items concrets via l'interpréteur de `spec`
-     * (D5). La précédence par clé est au compilateur — le provider ne
+     * La précédence par clé est au compilateur — le provider ne
      * trie/filtre/dédup RIEN.
      *
      * @return Collection<int, StateCandidate>
@@ -182,8 +180,9 @@ abstract class AbstractCapabilityStateProvider implements KeyedExclusiveProvider
     {
         // Capacités actives qui ont une projection du MÉCANISME de ce provider
         // pour Windows. Eager-load cette projection uniquement (filtre
-        // os/mécanisme) : en bi-projection D5 (Story 35.2), chaque provider ne
-        // voit QUE la sienne (`projections->first()` est déjà filtré).
+        // os/mécanisme) : une capacité peut porter plusieurs projections, et
+        // chaque provider ne voit QUE la sienne (`projections->first()` est
+        // déjà filtré).
         $capabilities = Capability::query()
             ->where('capabilities.is_active', true)
             ->whereHas('projections', function ($q): void {
@@ -214,13 +213,13 @@ abstract class AbstractCapabilityStateProvider implements KeyedExclusiveProvider
                 continue;
             }
 
-            // ── Source 1 : DÉFAUT diffusé (Broadcast) ─────────────────────────
+            // Source 1 : DÉFAUT diffusé (Broadcast)
             // Valeur effective = default_value de la capacité. Ne passe PAS par
-            // une maille d'assignable. Émis à TOUTE la flotte (D4).
+            // une maille d'assignable. Émis à TOUTE la flotte.
             foreach ($this->expand($projection, (string) $capability->default_value) as $payload) {
                 $candidates->push(new StateCandidate(
                     maille: StateMaille::Broadcast,
-                    // Story 43.2 (D3) — recopie le hint refresh de spec.refresh
+                    // Recopie le hint refresh de spec.refresh
                     // (foyer UNIQUE, double gate mécanisme + portée dans le helper).
                     payload: $this->withRefreshHint($projection, $payload),
                     updatedAt: $capability->updated_at,
@@ -228,15 +227,15 @@ abstract class AbstractCapabilityStateProvider implements KeyedExclusiveProvider
                 ));
             }
 
-            // ── Source 2 : OVERRIDES par maille (pivot × contexte) ────────────
-            // Valeur effective = assignment.value ?? default_value (D4). Une ligne
+            // Source 2 : OVERRIDES par maille (pivot × contexte)
+            // Valeur effective = assignment.value ?? default_value. Une ligne
             // d'override par maille applicable → un lot de candidats à cette maille.
             foreach ($overrides[$capability->id] ?? [] as $override) {
                 $effective = $override['value'] ?? (string) $capability->default_value;
                 foreach ($this->expand($projection, (string) $effective) as $payload) {
                     $candidates->push(new StateCandidate(
                         maille: $override['maille'],
-                        // Story 43.2 (D3) — même foyer que la source Broadcast ci-dessus.
+                        // Même foyer que la source Broadcast ci-dessus.
                         payload: $this->withRefreshHint($projection, $payload),
                         // Récence portée par l'assignation (override le plus récent
                         // gagne au sein d'une maille, iso compilateur).
@@ -255,17 +254,17 @@ abstract class AbstractCapabilityStateProvider implements KeyedExclusiveProvider
     }
 
     /**
-     * Story 43.2 (D3) — recopie le hint `refresh` de la RACINE de `spec` au
+     * Recopie le hint `refresh` de la RACINE de `spec` au
      * payload émis, SSI les trois conditions suivantes sont réunies (double
      * gate mécanisme + portée) :
-     *   1. le MÉCANISME de CE provider ({@see mechanism()}) ∈
-     *      {registry, registry_list} — `legacy_cleanup` hérite d'`itemsFor()`
+     *  1. le MÉCANISME de CE provider ({@see mechanism()}) ∈
+     *  {registry, registry_list} — `legacy_cleanup` hérite d'`itemsFor()`
      *      mais est EXCLU explicitement même s'il est Machine (son mécanisme
      *      diffère) ;
-     *   2. la PORTÉE de CE provider ({@see scope()}) ∈
+     *  2. la PORTÉE de CE provider ({@see scope()}) ∈
      *      {@see StateScope::Session}/{@see StateScope::MachineUser}
      *      — JAMAIS {@see StateScope::Machine} (un item HKLM/HKU ne
-     *      porte JAMAIS `refresh`, même si le spec mixte le déclare — piège n°4) ;
+     *      porte JAMAIS `refresh`, même si le spec mixte le déclare) ;
      *   3. `spec.refresh` est une STRING du vocabulaire fermé
      *      ({@see CapabilityProjection::REFRESH_HINTS}) — absent,
      *      non-string ou hors vocabulaire (donnée corrompue hypothétique, déjà
@@ -278,7 +277,7 @@ abstract class AbstractCapabilityStateProvider implements KeyedExclusiveProvider
      * régime stable). Clé `refresh` en DERNIÈRE position (lisibilité fixtures
      * — le hash canonicalise en triant les clés, la position est indifférente).
      *
-     * GARDE STRUCTURELLE 35.7 (piège n°6 — exclusion mutuelle refresh/writer) :
+     * GARDE STRUCTURELLE, exclusion mutuelle refresh/writer :
      * JAMAIS de `refresh` sur un item marqué `writer: "system"` — même si la
      * projection porte un hint résiduel (donnée incohérente hypothétique, le
      * retrofit `2026_07_13_100000` retire le hint des projections re-routées).
@@ -294,7 +293,7 @@ abstract class AbstractCapabilityStateProvider implements KeyedExclusiveProvider
      */
     protected function withRefreshHint(CapabilityProjection $projection, array $payload): array
     {
-        // Story 35.7 (piège n°6) — item délégué au service SYSTEM : le
+        // Item délégué au service SYSTEM : le
         // compagnon ne l'applique pas, aucun geste de rafraîchissement n'a de
         // sens → `refresh` n'est JAMAIS posé (exclusion mutuelle structurelle).
         if (array_key_exists('writer', $payload)) {
@@ -324,29 +323,29 @@ abstract class AbstractCapabilityStateProvider implements KeyedExclusiveProvider
     }
 
     /**
-     * Interpréteur de `spec` (D5 — le cœur du modèle). La projection registry porte
+     * Interpréteur de `spec` — le cœur du modèle. La projection registry porte
      * `spec = { "keys": [ {hive, path, name, type, value}, … ] }`. Pour CHAQUE clé
      * dont la ruche correspond à CE provider, résout `value` pour la valeur
      * effective de capacité `$capabilityValue` :
      *   - **littéral** (scalaire OU liste = `array_is_list`) → toujours émis ;
      *   - **map** valeur-capacité → donnée (objet assoc, ex. `{"on":0,"off":1}`) →
      *     on cherche `$capabilityValue` ; **clé de map absente ⇒ clé NON émise**
-     *     (= cesser de gérer cette clé pour cette valeur, piège n°5).
+     *     (= cesser de gérer cette clé pour cette valeur).
      * La valeur résolue peut porter le marqueur réservé {@see self::SPEC_ENSURE}
-     * (`['$ensure' => 'absent']`, Story 35.1) → item de SUPPRESSION 4 clés
+     * (`['$ensure' => 'absent']`) → item de SUPPRESSION 4 clés
      * `{hive, path, name, ensure}` (ni `type` ni `value`) ; toute AUTRE forme
      * assoc inattendue ⇒ clé NON émise (défensif, jamais d'exception au render —
      * iso discipline UNMANAGED). Détection APRÈS `resolveKeyValue()` et AVANT
-     * `typedValue()` (piège n°4 : la coercition écraserait le marqueur en 0/'').
+     * `typedValue()`, car la coercition écraserait le marqueur en 0/''.
      * Sinon, coercition finale par `type` (DWORD/QWORD→int, MULTI_SZ→liste de
      * chaînes, SZ/EXPAND_SZ→chaîne — zéro float §4.1). Le payload est CONCRET :
      * EXACTEMENT 5 clés pour une écriture, EXACTEMENT 4 pour une suppression
-     * (invariant central) — **+ `refresh` OPTIONNEL** (Story 43.2), recopié
+     * (invariant central) — **+ `refresh` OPTIONNEL**, recopié
      * APRÈS `expand()` par {@see withRefreshHint()} au foyer unique d'`itemsFor()`,
      * jamais ICI (deux foyers → dérive) ; portée Session/MachineUser uniquement,
      * jamais sur un item Machine/HKU.
      *
-     * PROTECTED (Story 35.2) : surchargée par les mécanismes dérivés
+     * PROTECTED : surchargée par les mécanismes dérivés
      * ({@see AbstractRegistryListCapabilityProvider}) — le corps registry
      * ci-dessous reste BYTE-IDENTIQUE pour les providers registry.
      *
@@ -367,7 +366,7 @@ abstract class AbstractCapabilityStateProvider implements KeyedExclusiveProvider
             }
 
             $hive = (string) ($key['hive'] ?? '');
-            // Filtre par ruche du provider (prédicat surchargeable, Story 35.3) :
+            // Filtre par ruche du provider (prédicat surchargeable) :
             // HKLM + HKU → provider machine, HKCU → provider session.
             if (! $this->handlesHive($hive)) {
                 continue;
@@ -375,7 +374,7 @@ abstract class AbstractCapabilityStateProvider implements KeyedExclusiveProvider
 
             $type = (string) ($key['type'] ?? 'REG_SZ');
 
-            // Résolution map/littéral (D5).
+            // Résolution map/littéral.
             $resolved = $this->resolveKeyValue($key['value'] ?? null, $capabilityValue);
             if ($resolved === self::UNMANAGED) {
                 // Clé de map absente pour la valeur effective : cesser de gérer
@@ -383,13 +382,13 @@ abstract class AbstractCapabilityStateProvider implements KeyedExclusiveProvider
                 continue;
             }
 
-            // Marqueur de SUPPRESSION (Story 35.1) — détecté APRÈS la résolution
-            // et AVANT la coercition typedValue() (piège n°4). Une forme assoc
+            // Marqueur de SUPPRESSION — détecté APRÈS la résolution
+            // et AVANT la coercition typedValue(). Une forme assoc
             // NON reconnue ⇒ clé non émise (défensif, pas d'exception au render).
             if (is_array($resolved) && ! array_is_list($resolved)) {
                 if (($resolved[self::SPEC_ENSURE] ?? null) === self::ENSURE_ABSENT) {
                     // Item de suppression : EXACTEMENT 4 clés, ni type ni value
-                    // (+ `writer` OPTIONNEL, Story 35.7 — 5 clés).
+                    // (+ `writer` OPTIONNEL — 5 clés).
                     $payloads[] = $this->withWriterMarker($key, $hive, [
                         'hive' => $hive,
                         'path' => (string) ($key['path'] ?? ''),
@@ -414,7 +413,7 @@ abstract class AbstractCapabilityStateProvider implements KeyedExclusiveProvider
     }
 
     /**
-     * Story 35.7 (D2) — recopie l'attribut `writer` de la CLÉ de `spec` sur le
+     * Recopie l'attribut `writer` de la CLÉ de `spec` sur le
      * payload émis (écriture 6 clés / suppression 5 clés / conteneur list
      * 5 clés — le marqueur voyage AVEC la clé, l'identité `exclusiveKey()` est
      * INCHANGÉE : la précédence de compilation existante arbitre normalement).
@@ -427,7 +426,7 @@ abstract class AbstractCapabilityStateProvider implements KeyedExclusiveProvider
      * HKLM/HKU — le marqueur n'y a pas de sens et le guard le refuse). Comme
      * seuls les providers de portée Session émettent les clés HKCU (filtre
      * {@see handlesHive()}), le champ n'atteint structurellement JAMAIS un
-     * item machine/HKU (AC2).
+     * item machine/HKU.
      *
      * @param  array<string,mixed>  $key  la clé de `spec` source
      * @param  array<string,mixed>  $payload
@@ -445,19 +444,19 @@ abstract class AbstractCapabilityStateProvider implements KeyedExclusiveProvider
 
     /**
      * Sentinelle « clé non émise » (distincte de toute valeur de registre
-     * réelle). PROTECTED (Story 35.2) : consommée par les mécanismes dérivés
+     * réelle). PROTECTED : consommée par les mécanismes dérivés
      * qui réutilisent {@see resolveKeyValue()}.
      */
     protected const UNMANAGED = "\0__capability_unmanaged__\0";
 
     /**
-     * Résout la `value` brute d'une clé de `spec` (D5) :
+     * Résout la `value` brute d'une clé de `spec` :
      *   - liste (`array_is_list`) ⇒ littéral MULTI_SZ → renvoyée telle quelle ;
      *   - scalaire ⇒ littéral → renvoyé tel quel ;
      *   - objet assoc ⇒ MAP valeur-capacité → donnée : on cherche
      *     `$capabilityValue` (clé string) ; absente ⇒ {@see self::UNMANAGED}.
      *
-     * PROTECTED (Story 35.2) : réutilisée telle quelle par les mécanismes
+     * PROTECTED : réutilisée telle quelle par les mécanismes
      * dérivés (la résolution map/littéral est commune à tous les mécanismes).
      *
      * @param  mixed  $raw  la `value` de la clé telle qu'issue de la `spec`
@@ -466,7 +465,7 @@ abstract class AbstractCapabilityStateProvider implements KeyedExclusiveProvider
     protected function resolveKeyValue(mixed $raw, string $capabilityValue): mixed
     {
         // Littéral liste (MULTI_SZ) — disambiguïsation map vs littéral via
-        // array_is_list (piège n°5).
+        // array_is_list.
         if (is_array($raw)) {
             if (array_is_list($raw)) {
                 return $raw; // littéral MULTI_SZ, toujours émis.
@@ -490,7 +489,7 @@ abstract class AbstractCapabilityStateProvider implements KeyedExclusiveProvider
      * Convertit la valeur résolue vers le type JSON du contrat (zéro float §4.1).
      * DWORD/QWORD → entier ; MULTI_SZ → liste de chaînes ; SZ/EXPAND_SZ et
      * inconnus → chaîne. Accepte une valeur DÉJÀ typée (issue d'une map JSON :
-     * `{"on": 0}` donne un int) ET une valeur texte (littéral de seed). Iso 27.3.
+     * `{"on": 0}` donne un int) ET une valeur texte (littéral de seed).
      *
      * @param  mixed  $raw  scalaire ou liste (jamais self::UNMANAGED ici)
      */
@@ -529,7 +528,7 @@ abstract class AbstractCapabilityStateProvider implements KeyedExclusiveProvider
     /**
      * Overrides applicables au contexte, groupés par `capability_id` (lecture
      * Postgres pure restreinte aux ids résolus). Chaque entrée porte la maille
-     * étiquetée (D2 = compilateur applique la précédence) + la valeur d'override
+     * étiquetée (le compilateur applique la précédence) + la valeur d'override
      * (null = repli sur le défaut) + l'updated_at du pivot (récence intra-maille)
      * + la profondeur physique (hérédité — `null` hors chaîne physique).
      *
@@ -611,11 +610,11 @@ abstract class AbstractCapabilityStateProvider implements KeyedExclusiveProvider
     }
 
     /**
-     * Étiquetage assignable → maille (D2 = compilateur applique la précédence).
+     * Étiquetage assignable → maille ; la précédence reste au compilateur.
      * La distinction physique/logique d'un WorkstationGroup se fait via la chaîne
      * physique du contexte ({@see TargetContext::$physicalGroupDepths}, salle
      * directe + ancêtres) : un ancêtre n'est PAS dans `physicalGroupIds` (salles
-     * directes) mais reste un groupe physique. Étiquetage, pas précédence. Iso 27.3.
+     * directes) mais reste un groupe physique. Étiquetage, pas précédence.
      */
     private function mailleFor(string $assignableType, int $assignableId, TargetContext $ctx): StateMaille
     {

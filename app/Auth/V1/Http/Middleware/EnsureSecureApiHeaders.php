@@ -9,7 +9,7 @@ use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * Story 16.10 — Review finding #A.
+ * Review finding #A.
  *
  * Pose les headers HTTP de sécurité sur les réponses `/api/v1/agent/*` :
  *

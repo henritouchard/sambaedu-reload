@@ -106,8 +106,6 @@ func applicationsItem(appID, name string) StateItem {
 	}
 }
 
-// --- Test : désiré ⊆ installé → compliant (pas de re-déclenchement) ----------
-
 func TestApplicationsTestCompliantWhenAllInstalled(t *testing.T) {
 	ops := newFakeApplicationsOps()
 	// `extra` = logiciel installé HORS-SE5 (jamais dans notre profil déposé) :
@@ -132,7 +130,7 @@ func TestApplicationsTestCompliantWhenAllInstalled(t *testing.T) {
 	if ops.triggerCnt != 0 {
 		t.Errorf("compliant ne doit PAS déclencher WPKG, obtenu %d déclenchement(s)", ops.triggerCnt)
 	}
-	// Inventaire renseigné (AC4) : toutes installées.
+	// Inventaire renseigné : toutes installées.
 	inv := h.Inventory()
 	if len(inv) != 2 {
 		t.Fatalf("inventaire : 2 apps attendues, obtenu %d", len(inv))
@@ -170,8 +168,6 @@ func TestApplicationsTestNotCompliantWhenAnyMissing(t *testing.T) {
 	}
 }
 
-// --- RETRAIT : une app quittant le profil → non conforme → désinstallation ---
-//
 // Régression terrain 2026-06-19 : retirer adnarn/ganttProject d'un profil ne les
 // désinstallait pas. Cause : `Test = désiré ⊆ installé` restait vert (les apps
 // RESTANTES sont installées) → `Apply` jamais déclenché → `profiles.xml` jamais
@@ -213,8 +209,6 @@ func TestApplicationsTestErrorWhenDeployedProfileUnreadable(t *testing.T) {
 	}
 }
 
-// --- Apply : déclenche WPKG, qui installe ce qui manque ----------------------
-
 func TestApplicationsApplyTriggersWpkgAndConverges(t *testing.T) {
 	ops := newFakeApplicationsOps()
 	// Le run WPKG installe firefox + vlc (résolution par WPKG).
@@ -231,7 +225,7 @@ func TestApplicationsApplyTriggersWpkgAndConverges(t *testing.T) {
 	if ops.triggerCnt != 1 {
 		t.Fatalf("apply doit déclencher WPKG exactement 1 fois, obtenu %d", ops.triggerCnt)
 	}
-	// Le profil par-hôte (specs) a bien été passé au déclencheur (D9).
+	// Le profil par-hôte (specs) a bien été passé au déclencheur.
 	if len(ops.lastSpecs) != 2 {
 		t.Errorf("le déclencheur doit recevoir l'ensemble cible (2 specs), obtenu %d", len(ops.lastSpecs))
 	}
@@ -243,9 +237,7 @@ func TestApplicationsApplyTriggersWpkgAndConverges(t *testing.T) {
 	}
 }
 
-// --- Effort maximal : WPKG déclenché mais une app reste manquante → error ----
-//
-// Leçon 🟠 27.4 #7 : jamais un faux `compliant`. Un installeur en échec laisse
+// Jamais un faux `compliant`. Un installeur en échec laisse
 // l'app absente après le run → error + detail, jamais un compliant optimiste.
 func TestApplicationsApplyErrorWhenAppStillMissingAfterRun(t *testing.T) {
 	ops := newFakeApplicationsOps()
@@ -287,8 +279,6 @@ func TestApplicationsApplyErrorWhenTriggerFails(t *testing.T) {
 	}
 }
 
-// --- wpkg.xml illisible → Test remonte une erreur (le moteur rend error) -----
-
 func TestApplicationsTestErrorWhenWpkgXmlUnreadable(t *testing.T) {
 	ops := newFakeApplicationsOps()
 	ops.listErr = fmt.Errorf("wpkg.xml corrompu")
@@ -299,8 +289,6 @@ func TestApplicationsTestErrorWhenWpkgXmlUnreadable(t *testing.T) {
 		t.Errorf("Test doit remonter l'erreur de lecture de wpkg.xml (le moteur rend error)")
 	}
 }
-
-// --- Enveloppe invalide : payload non conforme → erreur ----------------------
 
 func TestApplicationsInvalidPayloadIsError(t *testing.T) {
 	h := &ApplicationsHandler{Ops: newFakeApplicationsOps()}
@@ -326,8 +314,6 @@ func TestApplicationsInvalidPayloadIsError(t *testing.T) {
 		})
 	}
 }
-
-// --- Machine d'états §5 STRICT (table-driven, via le moteur) ------------------
 
 func TestApplicationsEngineStrictStateMachine(t *testing.T) {
 	type setup struct {
@@ -495,8 +481,6 @@ func TestApplicationsEngineErrorDoesNotKillOtherTypes(t *testing.T) {
 	}
 }
 
-// --- Inventaire par app joint au rapport via le moteur (AC4) -----------------
-
 func TestApplicationsReportCarriesPerAppInventory(t *testing.T) {
 	ops := newFakeApplicationsOps()
 	ops.installed = map[string]bool{"firefox": true} // vlc manquant
@@ -518,7 +502,7 @@ func TestApplicationsReportCarriesPerAppInventory(t *testing.T) {
 	if report[0].Status != "drift" {
 		t.Errorf("statut du type : got %q want drift", report[0].Status)
 	}
-	// L'inventaire PAR APP est joint (AC4) — donnée additive, jamais un verdict.
+	// L'inventaire PAR APP est joint — donnée additive, jamais un verdict.
 	inv := map[string]string{}
 	for _, r := range report[0].Inventory {
 		inv[r.AppID] = r.Status
@@ -587,8 +571,6 @@ func TestApplicationsReportInventorySerialization(t *testing.T) {
 		t.Errorf("inventory ne doit apparaître QUE sur applications (omitempty) : %s", s)
 	}
 }
-
-// --- NFC : un package-id en NFD ne produit pas un faux « non installé » -------
 
 func TestApplicationsNFCNormalizationAvoidsFalseDrift(t *testing.T) {
 	ops := newFakeApplicationsOps()

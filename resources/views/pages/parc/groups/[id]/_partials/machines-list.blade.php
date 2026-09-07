@@ -114,7 +114,7 @@
                 </div>
             @else
                 @php
-                    // Pré-calcul côté PHP pour éviter N+1 dans la boucle Blade (story 4-3).
+                    // Pré-calcul côté PHP pour éviter N+1 dans la boucle Blade (-3).
                     $machineActiveTasksById = $this->machineActiveTasksById;
                 @endphp
                 <div class="overflow-visible">
@@ -136,7 +136,7 @@
                             @foreach ($group->members as $machine)
                                 @php
                                     $activeTask = $machineActiveTasksById[$machine->id] ?? null;
-                                    // Source unique de vérité : méthode helper côté composant (review #13).
+                                    // Source unique de vérité : méthode helper côté composant.
                                     $isTaskActive = $this->isMachineActionActive($machine->id);
                                     $isTaskFailed = $activeTask && $activeTask->status === \App\Models\MachinePowerActionTask::STATUS_FAILED;
                                     $isTaskCompleted = $activeTask && $activeTask->status === \App\Models\MachinePowerActionTask::STATUS_COMPLETED;
@@ -196,7 +196,7 @@
                                         @endif
                                     </td>
                                     <td>
-                                        {{-- Badge d'état de la task associée (story 4-3, AC3). --}}
+                                        {{-- Badge d'état de la task associée (-3). --}}
                                         @if ($activeTask)
                                             @switch($activeTask->status)
                                                 @case(\App\Models\MachinePowerActionTask::STATUS_QUEUED)
@@ -301,7 +301,7 @@
                                         </label>
                                         <ul tabindex="0"
                                             class="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-60 border border-base-300 mb-2">
-                                            {{-- batchMachineActions exclut `remote` (AC6 story 4-3). --}}
+                                            {{-- BatchMachineActions exclut `remote` (-3). --}}
                                             @foreach ($this->batchMachineActions as $action)
                                                 @php
                                                     $confirmMessage = match ($action->key) {

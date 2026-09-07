@@ -7,12 +7,12 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 8.3 — Création de la table `dhcp_subnets` (sous-réseaux / VLAN DHCP).
+ * Création de la table `dhcp_subnets` (sous-réseaux / VLAN DHCP).
  *
- * Modèle de données dédié (décision D1) : SQL = source de vérité, l'export
+ * Modèle de données dédié : SQL = source de vérité, l'export
  * `/etc/sambaedu/sambaedu.conf.d/dhcp-subnets.conf` en est dérivé et consommé
  * par `make_dhcpd_conf.sh`. Le sous-réseau PAR DÉFAUT (VLAN 0) n'est PAS stocké
- * ici — il vit dans `dhcp.conf` (lecture seule côté SER, décision D3).
+ * ici — il vit dans `dhcp.conf` (lecture seule côté SER).
  *
  * Choix `string` pour `network` / `gateway` (vs `inet`/`cidr` PostgreSQL) :
  *  - portabilité driver test (SQLite) ;
@@ -25,7 +25,8 @@ use Illuminate\Support\Facades\Schema;
  * générateur legacy sait déjà consommer mais que l'UI legacy n'exposait pas.
  *
  * Contraintes :
- *  - `vlan_id` UNIQUE, borné 1..999 (D4 — générateur `i < 1024`, legacy 3 chiffres) ;
+ *  - `vlan_id` UNIQUE, borné 1..999 (le générateur boucle sur `i < 1024` et le
+ *    format legacy tient sur 3 chiffres) ;
  *  - `network` string/45 (CIDR complet, IPv6 future) ;
  *  - `gateway` string/45.
  */

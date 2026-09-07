@@ -15,7 +15,7 @@ use Tests\TestCase;
 use App\Models\User;
 
 /**
- * Tests Feature — Permissions `server.admin` requises (Story 16.2, AC4.1).
+ * Tests Feature — Permissions `server.admin` requises.
  *
  * Vérifie le comportement 200/403 pour les deux pages GPO selon la présence
  * ou l'absence de la permission `server.admin`.
@@ -70,10 +70,6 @@ class GpoPagePermissionTest extends TestCase
             ->withContainersFor(self::VALID_GUID, [])
             ->bind($this->app);
     }
-
-    // =========================================================================
-    // AC4.1 — Permission server.admin
-    // =========================================================================
 
     // Le listing `pages::admin.settings.gpo.index` a été remplacé par l'onglet
     // « GPO » de /admin/settings/migration (effectivité réelle au lieu du badge

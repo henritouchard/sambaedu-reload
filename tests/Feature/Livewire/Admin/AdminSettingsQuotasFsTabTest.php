@@ -24,16 +24,15 @@ use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
 /**
- * Story 63.4 — **LES DEUX CARTES DANS LEUR NOUVEL HÔTE.**
+ * **LES DEUX CARTES DANS LEUR NOUVEL HÔTE.**
  *
- * ---------------------------------------------------------------------------
  * Ce fichier était la suite de l'onglet « Quotas & FS », retiré le 2026-08-05. Il
  * n'a PAS été supprimé avec lui : ses assertions — plancher de l'espace personnel,
  * double garde, soumission forgée, purge de corbeille — sont la seule couverture qui
  * ait jamais existé sur ces réglages. Elles sont ici REPORTÉES sur les deux cartes du
  * bloc « Réglages » de l'onglet des emplacements.
  *
- * **ET IL PORTE MAINTENANT LE TEST QUI DÉFINIT LA STORY** : après enregistrement
+ * **Et il porte le test pivot** : après enregistrement
  * depuis l'écran, la résolution rend la valeur saisie. Il échouait avant, parce que
  * l'écran écrivait dans un magasin que la résolution ne lisait pas.
  *
@@ -41,7 +40,6 @@ use Tests\TestCase;
  * qui porte la couture d'état de partition et neutralise la pose de la période de
  * grâce. C'est ce qui permet d'exercer les trois issues de disponibilité sur un hôte
  * où l'outil n'existe pas.
- * ---------------------------------------------------------------------------
  */
 class AdminSettingsQuotasFsTabTest extends TestCase
 {
@@ -271,13 +269,9 @@ class AdminSettingsQuotasFsTabTest extends TestCase
         return $service;
     }
 
-    // =========================================================================
-    // LE TEST QUI DÉFINIT LA STORY
-    // =========================================================================
-
     /**
      * **Après enregistrement depuis l'écran, la résolution rend la valeur saisie.**
-     * Ce test échouait avant la story : l'écran écrivait une clé de réglage que la
+     * ce test échouait auparavant : l'écran écrivait une clé de réglage que la
      * résolution ne lisait pas, et répondait pourtant « Réglages enregistrés ».
      */
     public function test_the_saved_ceiling_is_the_one_the_resolution_returns(): void
@@ -326,10 +320,6 @@ class AdminSettingsQuotasFsTabTest extends TestCase
         $this->assertNull($rules->first()->target);
         $this->assertSame(500, $rules->first()->quota_soft_mb);
     }
-
-    // =========================================================================
-    // ENREGISTRER N'EST PAS APPLIQUER — et le second geste est EXPLICITE
-    // =========================================================================
 
     /**
      * ⚠️ **ENREGISTRER NE MET RIEN EN FILE.** Ce n'est pas un oubli : appliquer un
@@ -504,10 +494,6 @@ class AdminSettingsQuotasFsTabTest extends TestCase
         ]);
     }
 
-    // =========================================================================
-    // Le REGROUPEMENT des anciens plafonds — annoncé jusqu'au premier geste
-    // =========================================================================
-
     /**
      * ⚠️ **ÉLARGIR N'EST PAS ANODIN, ET ÇA SE DIT FORT.** La migration de bascule ne
      * rétrécit jamais un plafond : elle retient la valeur la plus large. Personne ne
@@ -539,10 +525,6 @@ class AdminSettingsQuotasFsTabTest extends TestCase
         $this->assertNull(SystemSetting::get('quota.profils_regroupes'));
         $this->assertStringNotContainsString('quota-collapse-notice', $component->html());
     }
-
-    // =========================================================================
-    // Les validations, conservées à l'identique
-    // =========================================================================
 
     public function test_it_rejects_a_ceiling_below_the_floor_on_the_personal_space(): void
     {
@@ -630,10 +612,6 @@ class AdminSettingsQuotasFsTabTest extends TestCase
         $this->assertSame(0, QuotaRule::query()->count());
     }
 
-    // =========================================================================
-    // La période de grâce — elle échoue MOLLEMENT, et l'écran le dit
-    // =========================================================================
-
     public function test_it_persists_the_grace_period_and_applies_it(): void
     {
         Bus::fake();
@@ -669,10 +647,6 @@ class AdminSettingsQuotasFsTabTest extends TestCase
 
         $this->assertSame(21, (int) QuotaSetting::forPartition(QuotaRule::PARTITION_HOME)->grace_period_days);
     }
-
-    // =========================================================================
-    // Un plafond non posable : CHAMP FERMÉ AVEC SON MOTIF
-    // =========================================================================
 
     public function test_an_unavailable_partition_closes_its_fields_and_shows_the_reason(): void
     {
@@ -741,10 +715,6 @@ class AdminSettingsQuotasFsTabTest extends TestCase
         $this->assertSame(0, QuotaRule::query()->count());
     }
 
-    // =========================================================================
-    // Les gardes
-    // =========================================================================
-
     public function test_it_blocks_the_cards_without_server_admin(): void
     {
         $this->fakeQuotaService();
@@ -782,10 +752,6 @@ class AdminSettingsQuotasFsTabTest extends TestCase
             $mounted->call($method, ...$args)->assertStatus(403);
         }
     }
-
-    // =========================================================================
-    // La corbeille — un REBRANCHEMENT, et un libellé qui ne ment pas
-    // =========================================================================
 
     public function test_it_persists_the_trash_retention_and_the_automatic_purge(): void
     {
@@ -874,10 +840,6 @@ class AdminSettingsQuotasFsTabTest extends TestCase
             $html,
         );
     }
-
-    // =========================================================================
-    // « Purger maintenant » — à l'air libre, avec sa confirmation
-    // =========================================================================
 
     public function test_it_purges_now_when_the_retention_is_configured(): void
     {

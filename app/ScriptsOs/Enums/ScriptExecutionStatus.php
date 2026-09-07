@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace App\ScriptsOs\Enums;
 
 /**
- * Story 16.12 — D1 / D2.
- *
  * Résultat applicatif de l'exécution.
  *
  *  - `success` — exit_code 0

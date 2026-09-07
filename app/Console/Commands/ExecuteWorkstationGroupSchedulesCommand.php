@@ -9,7 +9,7 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 4-4 — Tick scheduler (everyMinute) qui exécute les programmations dues.
+ * -4 — Tick scheduler (everyMinute) qui exécute les programmations dues.
  *
  * Architecture :
  *  - Tick (léger : 1 SELECT + N enqueue) : cette commande.

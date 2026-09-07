@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 15.5 / AC3 — Encapsule les requêtes SQL agrégées du dashboard
+ * Encapsule les requêtes SQL agrégées du dashboard
  * `/app/wpkg/deployments`. Permet de :
  *
  *   - Tester unitairement les requêtes (sans Livewire).
@@ -18,9 +18,9 @@ use Illuminate\Support\Facades\Log;
  *
  * Portabilité : `DISTINCT ON (workstation_id)` est PostgreSQL-only. En SQLite
  * (testing) on bascule sur `ROW_NUMBER() OVER (PARTITION BY ...)` qui est
- * supporté depuis SQLite 3.25 et la plupart des SGBD modernes.
+ * supporté depuis SQLite et la plupart des SGBD modernes.
  *
- * Performance : conçu pour atteindre NFR1 < 2s sur 500 postes via :
+ * Performance : conçu pour rester sous 2 s sur 500 postes via :
  *   - Une seule requête SQL pour les KPIs globaux (pas N+1).
  *   - Indices DB en place (cf. migration 2026_05_06_100300).
  *   - Filtre `WHERE` discriminant (pas de scan full table).
@@ -177,9 +177,9 @@ final class WpkgDashboardQueryService
     {
         $latestSubquery = $this->latestStatusPerWorkstationSubquery();
 
-        // Story 15.5 / Fix #12 — restructuration en UNION ALL de 2 sous-jointures
-        // pour éviter l'ambiguïté sémantique du précédent `orOn` + `where` sur
-        // la condition status/archived_at. Chaque sous-jointure ne ramène que
+        // UNION ALL de 2 sous-jointures : un `orOn` + `where` sur la condition
+        // status/archived_at serait sémantiquement ambigu. Chaque sous-jointure
+        // ne ramène que
         // des workstations actives non-archivées (filtrées en amont via WHERE),
         // puis on dédoublonne par DISTINCT au niveau du COUNT.
         //
@@ -241,7 +241,7 @@ final class WpkgDashboardQueryService
     }
 
     /**
-     * Story 15.5 / Fix #11 — Liste paginée des incidents 24h, dédupliquée
+     * Liste paginée des incidents 24h, dédupliquée
      * par `workstation_id` (un poste = une seule ligne, le dernier statut).
      *
      * Sans dédup, un poste qui rapporte 3 fois `failed` en 24h produit 3
@@ -249,7 +249,7 @@ final class WpkgDashboardQueryService
      *
      * Driver-aware :
      *   - PG : `DISTINCT ON (workstation_id) ... ORDER BY workstation_id, client_reported_at DESC`
-     *   - SQLite + autres : `ROW_NUMBER() OVER (PARTITION BY workstation_id)
+     *  - SQLite + autres : `ROW_NUMBER() OVER (PARTITION BY workstation_id)
      *     WHERE rn = 1` (réutilise le pattern `latestStatusPerWorkstationSubquery`).
      *
      * @param  list<string>|null  $statusFilter  Liste de statuts à inclure.
@@ -325,7 +325,7 @@ final class WpkgDashboardQueryService
      * Construit la sous-requête « dernier statut par workstation » selon
      * le driver DB :
      *   - PG : `SELECT DISTINCT ON (workstation_id) ... ORDER BY workstation_id, client_reported_at DESC`
-     *   - SQLite + autres : `SELECT ... FROM (... ROW_NUMBER() OVER ...)
+     *  - SQLite + autres : `SELECT ... FROM (... ROW_NUMBER() OVER ...)
      *     WHERE rn = 1`
      *
      * @return array{sql: string, bindings: list<mixed>}
@@ -355,7 +355,7 @@ final class WpkgDashboardQueryService
     }
 
     /**
-     * Logs la durée d'une requête lente pour audit perf NFR1.
+     * Logs la durée d'une requête lente pour audit de performance.
      */
     public function withSlowQueryAudit(string $name, callable $callback): mixed
     {

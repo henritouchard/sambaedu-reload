@@ -17,7 +17,7 @@ use Tests\TestCase;
 use Tests\Traits\CreatesPermissionSchema;
 
 /**
- * Story 5.2 (D5=D, AC 11) — Tests Feature de la commande `shares:resync-class`.
+ * Tests Feature de la commande `shares:resync-class`.
  *
  * Couvre :
  *  - `--dry-run` (preview tabulaire, aucune modif FS).
@@ -95,10 +95,6 @@ class SharesResyncClassCommandTest extends TestCase
         ]);
     }
 
-    // =========================================================================
-    // AC 11 — itération toutes classes / ciblée / dry-run
-    // =========================================================================
-
     #[Test]
     public function it_resyncs_all_classes_when_no_filter(): void
     {
@@ -153,10 +149,6 @@ class SharesResyncClassCommandTest extends TestCase
         Process::assertNotRan(fn ($p) => str_contains($p->command, 'mkdir'));
     }
 
-    // =========================================================================
-    // Validations input
-    // =========================================================================
-
     #[Test]
     public function it_returns_failure_when_class_filter_not_found(): void
     {
@@ -193,10 +185,6 @@ class SharesResyncClassCommandTest extends TestCase
             ->expectsOutputToContain('Aucune classe')
             ->assertSuccessful();
     }
-
-    // =========================================================================
-    // Audit
-    // =========================================================================
 
     #[Test]
     public function it_returns_exit_code_2_when_all_classes_locked(): void

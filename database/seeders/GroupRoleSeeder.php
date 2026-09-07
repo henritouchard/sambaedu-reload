@@ -9,7 +9,7 @@ use App\Support\RoleCatalog;
 use Illuminate\Database\Seeder;
 
 /**
- * Story 62.1 — peuplement du CATALOGUE DE RÔLES avec ses trois lignes
+ * Peuplement du CATALOGUE DE RÔLES avec ses trois lignes
  * HISTORIQUES.
  *
  * Idempotent / non-destructif (patron {@see DirectoryTemplateSeeder}) :
@@ -18,7 +18,7 @@ use Illuminate\Database\Seeder;
  *
  * **Les libellés sont EXACTEMENT ceux du repli générique qui meurt avec
  * la table de libellés supprimée** : « Membre », « Gestionnaire », « Propriétaire ». C'est la
- * condition de la parité d'affichage exigée par la story — la suppression de la
+ * condition de la parité d'affichage — la suppression de la
  * classe ne doit rien changer à l'écran.
  *
  * Les rôles seedés ici ne sont PAS supprimables, même sans usage : leurs clés sont

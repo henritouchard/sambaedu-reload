@@ -8,7 +8,7 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Story 8.4 / AC1 — Garde-fous architecturaux des routes DDNS.
+ * Garde-fous architecturaux des routes DDNS.
  *
  * Lecture textuelle de `routes/web.php` (patron `LegacyTombstoneRoutesTest`) :
  *   1. Les deux chemins (`/dhcp/dnsupdate` et le legacy `.php`) sont déclarés.

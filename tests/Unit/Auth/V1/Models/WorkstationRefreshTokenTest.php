@@ -11,7 +11,6 @@ use Tests\Concerns\IssuesWorkstationJwt;
 use Tests\TestCase;
 
 /**
- * Story 16.10 — AC3.1 / AC7.1.
  *
  * Tests modèle `WorkstationRefreshToken` — scopes + casts.
  */

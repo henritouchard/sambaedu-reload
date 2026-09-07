@@ -18,7 +18,7 @@ use Tests\TestCase;
 use Tests\Traits\CreatesDhcpSchema;
 
 /**
- * Story 8.3 — Tests Unit du service `DhcpSubnetService`.
+ * Tests Unit du service `DhcpSubnetService`.
  *
  * Couvre :
  *  - matrice de validations (CIDR, vlan_id bornes/unicité, gateway/plages
@@ -83,10 +83,6 @@ class DhcpSubnetServiceTest extends TestCase
         return new DhcpSubnetService(new DhcpService($this->runner), $config);
     }
 
-    // ========================================================================
-    // CIDR
-    // ========================================================================
-
     #[Test]
     public function validate_cidr_normalizes_to_network_base(): void
     {
@@ -114,10 +110,6 @@ class DhcpSubnetServiceTest extends TestCase
             'empty' => [''],
         ];
     }
-
-    // ========================================================================
-    // VLAN ID
-    // ========================================================================
 
     #[Test]
     #[DataProvider('invalidVlanIds')]
@@ -152,10 +144,6 @@ class DhcpSubnetServiceTest extends TestCase
         $this->service->validateVlanId(20, $subnet->id);
         $this->expectNotToPerformAssertions();
     }
-
-    // ========================================================================
-    // EXTRA_OPTION (sécurité — review 8.3 #1 : injection shell via config.inc.sh eval)
-    // ========================================================================
 
     #[Test]
     #[DataProvider('validExtraOptions')]
@@ -212,10 +200,6 @@ class DhcpSubnetServiceTest extends TestCase
         $this->assertNull($this->service->validateExtraOption('   '));
     }
 
-    // ========================================================================
-    // CRUD + validations composites
-    // ========================================================================
-
     #[Test]
     public function create_subnet_persists_and_reloads(): void
     {
@@ -232,7 +216,7 @@ class DhcpSubnetServiceTest extends TestCase
         $reload = collect($this->runner->executed)->contains(fn ($c) => str_contains($c, 'make_dhcpd_conf.sh'));
         $this->assertTrue($reload, 'Le reload doit être déclenché après création.');
 
-        // AC2 (review 8.3 #4) — vérification bout-en-bout : le fichier de params
+        // Vérification bout-en-bout : le fichier de params
         // sur disque reflète réellement la mutation (SQL → AtomicFileWriter → disque),
         // pas seulement le rendu en mémoire.
         $this->assertFileExists($this->tmpSubnetsFile);
@@ -362,10 +346,6 @@ class DhcpSubnetServiceTest extends TestCase
         $this->assertDatabaseMissing('dhcp_subnets', ['id' => $subnet->id]);
     }
 
-    // ========================================================================
-    // TRANSACTION TOUT-OU-RIEN
-    // ========================================================================
-
     #[Test]
     public function invalid_create_writes_nothing(): void
     {
@@ -391,10 +371,6 @@ class DhcpSubnetServiceTest extends TestCase
         $this->assertSame(1, DhcpSubnet::query()->count());
         $this->assertDatabaseMissing('dhcp_subnets', ['network' => '192.168.30.0/24']);
     }
-
-    // ========================================================================
-    // RENDER (snapshot)
-    // ========================================================================
 
     #[Test]
     public function render_emits_multi_ranges_with_contiguous_suffixes_and_stable_sort(): void

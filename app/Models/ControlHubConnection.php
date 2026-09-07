@@ -132,14 +132,14 @@ class ControlHubConnection extends Model
      *
      * Risque résiduel (review F8) : la clé est stockée sans protection d'intégrité —
      * un accès en écriture à la DB permettrait de la remplacer et de forger des JWT
-     * fédérés. À adresser dans la story de vérification JWT (pinning/contrôle).
+     * fédérés. À adresser avec la vérification JWT (pinning/contrôle).
      */
     public function hasFederatedIdp(): bool
     {
-        // Review 39.3 #4 — comparaison STRICTE (pas `empty()`) : `empty()` traiterait
-        // la chaîne littérale « 0 » comme absente et ferait basculer SILENCIEUSEMENT
-        // le verifier vers la config de repli alors que la colonne porte une valeur.
-        // Portillon de toute la précédence DB>config de la Story 39.3 → fail-closed net.
+        // Comparaison STRICTE, jamais `empty` : `empty` traiterait la chaîne
+        // littérale « 0 » comme absente et ferait basculer SILENCIEUSEMENT le
+        // verifier vers la config de repli alors que la colonne porte une valeur.
+        // C'est le portillon de toute la précédence DB > config : fail-closed.
         return $this->idp_public_key !== null && $this->idp_public_key !== ''
             && $this->idp_kid !== null && $this->idp_kid !== ''
             && $this->idp_iss !== null && $this->idp_iss !== '';

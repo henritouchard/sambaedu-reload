@@ -18,7 +18,7 @@ use Tests\TestCase;
 use Tests\Traits\CreatesPermissionSchema;
 
 /**
- * Story 49.1 (AC6, AC7) — onglet Profils de `/app/rights-management`.
+ * Onglet Profils de `/app/rights-management`.
  *
  * Couvre les deux sections (groupes porteurs / profils non portés), les gestes
  * donner-changer-retirer avec re-projection effective des membres, et le REFUS
@@ -102,10 +102,6 @@ class GroupRightsProfileTabTest extends TestCase
         return User::find($user->id)->roles()->pluck('name')->sort()->values()->all();
     }
 
-    // ========================================================================
-    // AC7 — les deux sections
-    // ========================================================================
-
     #[Test]
     public function the_tab_splits_carrier_groups_from_unattached_profiles(): void
     {
@@ -127,10 +123,6 @@ class GroupRightsProfileTabTest extends TestCase
         self::assertContains('user-admin', $unattached);
         self::assertNotContains('prof', $unattached, 'un profil porté sort de la section secondaire');
     }
-
-    // ========================================================================
-    // AC7 — donner des permissions à un groupe
-    // ========================================================================
 
     #[Test]
     public function giving_permissions_to_a_group_links_it_and_reprojects_its_members(): void
@@ -219,10 +211,6 @@ class GroupRightsProfileTabTest extends TestCase
         self::assertSame([], $this->roleNames($paul));
     }
 
-    // ========================================================================
-    // AC6 — suppression refusée sur les DEUX chemins
-    // ========================================================================
-
     #[Test]
     public function bulk_delete_refuses_a_carried_profile_and_names_the_carriers(): void
     {
@@ -277,10 +265,6 @@ class GroupRightsProfileTabTest extends TestCase
 
         self::assertNull(Role::where('name', 'libre')->first());
     }
-
-    // ========================================================================
-    // Gardes serveur
-    // ========================================================================
 
     #[Test]
     public function a_user_without_the_permission_cannot_assign_a_profile_to_a_group(): void

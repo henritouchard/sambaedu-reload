@@ -18,7 +18,7 @@ use Tests\Traits\CreatesDhcpSchema;
 use Tests\Traits\CreatesPermissionSchema;
 
 /**
- * Story 8.1 — T8b / AC9 : étape 10 « Importer les réservations DHCP » dans
+ * T8b / : étape 10 « Importer les réservations DHCP » dans
  * la page Livewire SFC `/sync-from-ad`.
  *
  * Couvre :
@@ -141,7 +141,7 @@ class DhcpReservationsStepTest extends TestCase
         Livewire::test('pages::sync-from-ad.index')
             ->call('runStep', 'dhcp_reservations');
 
-        // AC9 : aucun reload pendant l'étape 10
+        // Aucun reload pendant l'étape 10
         foreach ($runner->executed as $cmd) {
             $this->assertStringNotContainsString('make_dhcpd_conf.sh', $cmd);
         }

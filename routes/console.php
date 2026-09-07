@@ -27,7 +27,7 @@ Artisan::command('inspire', function () {
 | retention.failed_days (30 j). Les runs running sont toujours préservés.
 | Seuils configurables dans config/sambaedu.php (workers.retention.*).
 */
-// Slot 02:40 : échelonnement de la fenêtre de maintenance (discipline Story 24.1
+// slot 02:40 : échelonnement de la fenêtre de maintenance (discipline
 // — trash 02:00, federated 02:30, agent:reports:prune 02:35) pour ne pas empiler
 // les purges sur le créneau minuit (error-logs:prune, parc:prune-group à 00:00).
 Schedule::command('queue-task-runs:prune')

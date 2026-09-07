@@ -10,7 +10,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 25.4 (Tâche 4) + Story 27.16 (renommage SE5) — conformité du template
+ * (Tâche 4) + (renommage SE5) — conformité du template
  * GPO-dispatcher figée `SE_agent_bootstrap` (ex-`se4_agent_bootstrap`, source
  * dans le repo sous `resources/gpo/`, déployable vers `/usr/share/sambaedu/gpo/`)
  * à {@see GpoTemplateRegistry}.
@@ -20,8 +20,8 @@ use Tests\TestCase;
  *    `[CSE]` machine) ;
  *  - le `GPT.INI` porte bien le displayName SE5 `SE_agent_bootstrap` ;
  *  - le `startup.cmd` est générique (CA + binaire stable + `agent.exe install`
- *    + tâche de refresh) et SANS logique métier (piège n° 16) ;
- *  - les scripts SYSVOL sont en CRLF + pur ASCII (piège n° 12).
+ *    + tâche de refresh) et SANS logique métier ;
+ *  - les scripts SYSVOL sont en CRLF et en pur ASCII.
  */
 final class SeAgentBootstrapTemplateTest extends TestCase
 {
@@ -64,7 +64,7 @@ final class SeAgentBootstrapTemplateTest extends TestCase
         // la reconnaissance → « gpo invalide ».
         self::assertStringContainsString('gpcmachineextensionnames=', $gptIni);
         self::assertStringNotContainsString('gPCMachineExtensionNames', $gptIni);
-        // displayName SE5 (renommé 27.16) — l'ancien préfixe se4_ a disparu.
+        // displayName SE5 (renommé) — l'ancien préfixe se4_ a disparu.
         self::assertStringContainsString('displayName=SE_agent_bootstrap', $gptIni);
         self::assertStringNotContainsString('se4_agent_bootstrap', $gptIni);
     }
@@ -82,7 +82,7 @@ final class SeAgentBootstrapTemplateTest extends TestCase
         self::assertStringContainsString('agent.exe', $cmd);
         self::assertStringContainsString('install -server-url', $cmd);
         self::assertStringContainsString('schtasks', $cmd);
-        // Spécialisation figée : nom serveur uniquement (piège n° 16).
+        // Seule spécialisation admise : le nom du serveur.
         self::assertStringContainsString('###_SE4FS_NAME_###', $cmd);
         // AUCUNE logique métier : pas d'appel au canal de config legacy
         // (applications.php), pas de Registry.pol.
@@ -95,8 +95,8 @@ final class SeAgentBootstrapTemplateTest extends TestCase
     #[Test]
     public function sysvol_scripts_use_crlf_line_endings_and_pure_ascii(): void
     {
-        // Piège n° 12 : tout .cmd/.bat déposé dans SYSVOL doit finir en \r\n —
-        // LF seul échoue silencieusement. + pur ASCII (Story 27.16).
+        // Tout .cmd ou .bat déposé dans SYSVOL doit finir en \r\n et rester en
+        // pur ASCII : avec des LF seuls, l'exécution échoue silencieusement.
         foreach (['Machine/Scripts/Startup/startup.cmd', 'Machine/Scripts/scripts.ini', 'GPT.INI'] as $rel) {
             $content = (string) file_get_contents($this->source . '/' . $rel);
 

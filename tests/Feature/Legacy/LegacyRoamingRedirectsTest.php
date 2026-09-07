@@ -9,7 +9,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 1bis.18f — Tests Feature des redirections legacy.
+ * .18f — Tests Feature des redirections legacy.
  *
  * Vérifie que LegacyCatchallController::handle() détecte les paths
  *   gpo/no_roam.php
@@ -18,8 +18,6 @@ use Tests\TestCase;
  * et émet une 302 vers la page native /admin/settings/files?tab=roaming
  * (resp. /admin/gpo/del-roam.sh) **avant** tout pipeline legacy
  * (executeViaBootstrap ou proxy).
- *
- * Couvre AC #9 + AC #10 cas #9.
  */
 class LegacyRoamingRedirectsTest extends TestCase
 {

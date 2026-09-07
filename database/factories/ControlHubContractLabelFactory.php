@@ -10,7 +10,7 @@ use App\Models\ControlHubContractLabel;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
- * Story 28.1 — Factory de label d'un contrat amont controlHub.
+ * Factory de label d'un contrat amont controlHub.
  * Défaut : mode `free`.
  *
  * @extends Factory<ControlHubContractLabel>

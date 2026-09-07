@@ -124,8 +124,7 @@ class {$name}Policy
      */
     public function viewAny(?User \$user): bool
     {
-        // TODO: Implémenter la vérification des droits
-        // return \$this->hasAdminRights(\$user);
+        // TODO: implémenter la vérification des droits.
         return true;
     }
 
@@ -164,7 +163,7 @@ class {$name}Policy
     /**
      * Vérifie si l'utilisateur a les droits d'administration.
      *
-     * Squelette NATIF (Story 38.4) : la vérification passe par les permissions
+     * Squelette NATIF : la vérification passe par les permissions
      * Spatie via `\$user->can()` — NE JAMAIS réintroduire les fonctions legacy
      * `have_right`/`search_user`/`legacy()->getConfig()` (retirées du runtime).
      *

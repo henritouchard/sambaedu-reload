@@ -15,14 +15,10 @@ use LdapRecord\Models\Attributes\Guid;
  * Service natif de gestion AD côté machines (création, mise à jour hardware,
  * OS, requête de connexion remote).
  *
- * Story 16.7 — AC3.1 (cf. décision user D1 « PURE NATIVE » 2026-05-12) +
- * tranchement DO3 par défaut (option (a) : `App\Ldap\AdMachineManager` pour
- * cohérence avec `App\Ldap\AdUserManager` Story 16.3b).
- *
  * **Périmètre** : porte natif les fonctions legacy AD consommées par
  * `applications.inc.php::get_app_scripts_info` :
  *
- *  - `check_computer($config, $machine, &$html)`   → {@see check()}
+ *  - `check_computer($config, $machine, &$html)` → {@see check()}
  *  - `register_machine_hardware($config, $m, $uuid)` → {@see registerHardware()}
  *  - `list_remote_connexion($config, $machineCn, $userLdap)` → {@see listRemoteConnexion()}
  *
@@ -33,7 +29,7 @@ use LdapRecord\Models\Attributes\Guid;
  * **Sécurité** :
  *
  *  - Mode array `SambaToolRunner` (jamais de concat shell — défense en
- *    profondeur, parité 16.3b `AdUserManager`).
+ *  profondeur, parité `AdUserManager`).
  *  - Regex stricte sur tous les inputs (`MACHINE_REGEX`) AVANT tout appel
  *    shell — refus précoce d'`'; rm -rf /`.
  *  - Tous les logs sur le channel `gpo` (audit AD writeback) avec
@@ -47,7 +43,7 @@ use LdapRecord\Models\Attributes\Guid;
  *
  * @legacy-port path="sambaedu/includes/ldap.inc.php (check_computer, register_machine_hardware)"
  * @legacy-port path="sambaedu/includes/remote.inc.php (list_remote_connexion)"
- * @see AdUserManager Pattern source (Story 16.3b).
+ * @see AdUserManager Pattern source.
  */
 class AdMachineManager
 {
@@ -190,7 +186,7 @@ class AdMachineManager
 
         // Écriture `netbootGUID` via LdapRecord (LDAP direct sur le DC distant).
         //
-        // Pourquoi PAS samba-tool : `samba-tool computer edit` (4.22) n'a pas
+        // Pourquoi PAS samba-tool : `samba-tool computer edit` n'a pas
         // d'option `--set-attribute` — uniquement `--editor` (interactif). On
         // pose donc l'attribut via le model {@see MachineModel}, comme le job
         // de rename ({@see \App\Jobs\AdSync\WorkstationAdSyncJob::handleRename}).
@@ -254,13 +250,13 @@ class AdMachineManager
      *  2. sinon, lit le groupe AD `remote_<machineCn>` (objectclass guacConfigGroup)
      *  3. si `$userDn` ∈ membres → retourne `$remote['guacconfigprotocol']` (`rdp`/`vnc`/`ssh`)
      *
-     * **Tranchement pragmatique 16.7** : la lecture du groupe `remote_<cn>` requiert
+     * **Tranchement pragmatique** : la lecture du groupe `remote_<cn>` requiert
      * `search_ad($cn, "remote")` qui n'est pas natif (LdapModels). On expose un
      * comportement gracieux conservateur :
      *  - Si Guacamole non configuré (`config('sambaedu.guacamole_url')` vide) → `''`
      *  - Sinon → `''` par défaut (parité « pas de remote ») + log info documentant
      *    le shim (cf. tech-debt-gpo.md). Le portage complet sera fait quand un
-     *    `RemoteConnectionRepository` natif sera créé (story dédiée Guacamole).
+     *    `RemoteConnectionRepository` natif sera créé, côté Guacamole.
      *
      * @return string `'rdp'`, `'vnc'`, `'ssh'`, ou `''` (pas de remote).
      */
@@ -282,8 +278,8 @@ class AdMachineManager
         }
 
         // @legacy-port partiel : la lecture du groupe `remote_<cn>` LDAP via
-        // `search_ad($cn, "remote")` n'est pas portée native. Story dédiée
-        // « Guacamole RemoteConnectionRepository » à créer (cf. tech-debt-gpo.md).
+        // `search_ad($cn, "remote")` n'est pas portée native : un
+        // `RemoteConnectionRepository` Guacamole reste à écrire (cf. tech-debt-gpo.md).
         Log::channel('gpo')->debug('[gpo] ad.machine.remote.list shim fallback', [
             'action_type' => 'ad.machine.remote.list',
             'machine' => $machineCn,
@@ -295,8 +291,6 @@ class AdMachineManager
     }
 
     /**
-     * Story 3.3 — D14 / AC3.1.
-     *
      * Renomme un compte machine dans l'AD — port natif de la branche
      * `move_ad($config, $oldName, "cn=$newName,$ou", "computer")` legacy
      * `enregistrement.php:56`.

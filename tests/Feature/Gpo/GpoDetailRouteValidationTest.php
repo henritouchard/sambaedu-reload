@@ -15,17 +15,17 @@ use Tests\TestCase;
 use App\Models\User;
 
 /**
- * Tests Feature — Validation regex GUID anti-injection (Story 16.2, AC4.2).
+ * Tests Feature — Validation regex GUID anti-injection.
  *
  * Vérifie que les GUIDs malformés retournent 404 avant tout appel samba-tool.
  * Couvre deux niveaux de défense :
  * - **Niveau routeur HTTP** (`->where('guid', ...)`) : test via `$this->get()`
  *   qui frappe la route réelle et confirme que la regex bloque effectivement
- *   sans dispatcher Livewire (Story 16.2 fix #1).
+ *   sans dispatcher Livewire.
  * - **Niveau composant** (`mount()` defense-in-depth) : test via `Livewire::test()`
  *   qui contourne le routeur et vérifie que la SFC se protège elle-même.
  *
- * Note Fix #9 : la regex de route accepte désormais le GUID avec OU sans
+ * La regex de route accepte le GUID avec OU sans
  * accolades. Les tests de format invalide vérifient des inputs qui ne
  * matchent ni l'un ni l'autre (lettres hors hex, longueur incorrecte, etc.).
  */
@@ -61,10 +61,6 @@ class GpoDetailRouteValidationTest extends TestCase
         return $u;
     }
 
-    // =========================================================================
-    // AC4.2 — Validation GUID anti-injection (niveau composant Livewire)
-    // =========================================================================
-
     #[Test]
     public function it_returns_404_for_injection_string_without_calling_service(): void
     {
@@ -80,7 +76,7 @@ class GpoDetailRouteValidationTest extends TestCase
     #[Test]
     public function it_returns_404_for_garbage_guid_with_invalid_chars(): void
     {
-        // Fix #9 : la regex tolère les accolades optionnelles, donc on ne
+        // La regex tolère les accolades optionnelles, donc on ne
         // peut plus tester "sans accolades" comme cas invalide. On teste à
         // la place un input avec des caractères non-hex (Z) qui doit échouer.
         $admin = $this->makeAdmin('admin-garbage-test');
@@ -108,18 +104,14 @@ class GpoDetailRouteValidationTest extends TestCase
             ->assertStatus(404);
     }
 
-    // =========================================================================
-    // Fix #1 — Validation regex au niveau routeur HTTP (defense in depth)
-    // =========================================================================
-
     #[Test]
     public function the_route_regex_blocks_invalid_guid_at_http_level(): void
     {
-        // Fix #1 : couvre la regex `->where('guid', ...)` au niveau routeur,
+        // Couvre la regex `->where('guid', ...)` au niveau routeur,
         // qu'aucun test ne couvrait — Livewire::test() contourne le routeur.
         // Le service ne doit JAMAIS être instancié pour un input invalide.
         //
-        // Story 16.9 : la route /admin/settings/gpo/{guid} étant maintenant
+        // La route /admin/settings/gpo/{guid} étant maintenant
         // sous le groupe `admin` (vs ancien `app`), elle est suivie par le
         // catchall legacy qui retourne 302 quand la regex GUID bloque (avant :
         // 404 routeur direct car `/app/gpo/{guid}` ne matchait rien). Les deux
@@ -143,11 +135,11 @@ class GpoDetailRouteValidationTest extends TestCase
     #[Test]
     public function the_route_regex_accepts_guid_without_braces_at_http_level(): void
     {
-        // Fix #9 + #1 : la regex de route accepte le GUID sans accolades ;
+        // La regex de route accepte le GUID sans accolades ;
         // au niveau HTTP, la route doit donc dispatcher (200 ou 404 métier
         // selon le retour du service) — pas un 404 routeur.
         // Bypass sambaedu.auth (vérifie $_SESSION['login'], non touché par
-        // `actingAs`) ET sambaedu.admin/RequireAdminRights (Story 16.9 :
+        // `actingAs`) ET sambaedu.admin/RequireAdminRights :
         // la route /admin/settings/gpo/{guid} est sous double middleware, et
         // RequireAdminRights lit `sambaedu_user` que SambaEduAuth aurait injecté
         // mais qu'on bypass ici). On garde `can:server.admin` actif pour valider

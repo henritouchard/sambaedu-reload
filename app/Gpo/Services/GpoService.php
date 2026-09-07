@@ -14,27 +14,22 @@ use InvalidArgumentException;
 use RuntimeException;
 
 /**
- * Service métier d'abstraction `samba-tool gpo` — Epic 16 (Story 16.1).
+ * Service métier d'abstraction `samba-tool gpo`.
  *
  * Entrée unique pour toutes les opérations GPO Samba. Délègue l'exécution
  * shell à {@see SambaToolRunner} (le seul autorisé à invoquer le binaire,
  * cf. garde-fou archi `GpoNamespaceTest`).
  *
- * Périmètre Story 16.1 :
+ * Périmètre :
  *
  * - **Lecture** : `list`, `get`, `listContainers`, `getLinks`, `getInheritance`
  *   sont **implémentées** (parsing complet de la sortie samba-tool).
  * - **Écriture** : `create`, `delete`, `fetch`, `setLink`, `removeLink`,
  *   `setInheritance` sont des **stubs typés** — signatures stables, logs émis,
- *   mais `RuntimeException` levée. L'implémentation effective est déléguée à
- *   Story 16.4 (CRUD) et Story 16.5 (liaisons).
- *
- * Cette approche fige les signatures côté API et permet aux stories suivantes
- * de s'appuyer dessus sans casser de contrat.
+ *   mais `RuntimeException` levée.
  *
  * Cohabitation : {@see \App\Services\GpoSyncService} (legacy `computer.elevate`)
- * reste vivant et marqué `@deprecated`. Il sera replié dans ce service à
- * partir de Story 16.4+.
+ * reste vivant et marqué `@deprecated`. Il sera replié dans ce service.
  */
 class GpoService
 {
@@ -201,14 +196,10 @@ class GpoService
         }
     }
 
-    // -----------------------------------------------------------------------
-    // STUBS Story 16.4 (écriture) — signatures stables, implémentation TBD.
-    // -----------------------------------------------------------------------
-
     /**
      * Crée une nouvelle GPO (`samba-tool gpo create`).
      *
-     * Story 38.4 (AC1) — implémentation native de l'ancien stub 16.4, requise
+     * Implémentation native de l'ancien stub, requise
      * par le port de `import_gpo` ({@see \App\Services\Gpo\NativeGpoPublisher}).
      * Parité de la branche `gpocreate` legacy (`samba-tool.inc.php:1183`) :
      * `samba-tool gpo create <displayName>` puis extraction du GUID `{...}` de
@@ -266,7 +257,7 @@ class GpoService
                 ));
             }
 
-            // Story 16.14 Q2 — nouvelle GPO : invalider le cache de listing.
+            // Nouvelle GPO : invalider le cache de listing.
             $this->invalidateCacheAll();
 
             $log->success(['created' => true, 'gpo_name' => $summary->name]);
@@ -303,13 +294,13 @@ class GpoService
     /**
      * Supprime une GPO (`samba-tool gpo del`).
      *
-     * @throws RuntimeException  Stub : implémentation déléguée à Story 16.4.
+     * @throws RuntimeException Stub : implémentation déléguée à.
      */
     public function delete(string $name): bool
     {
         $log = GpoLogger::action('gpo.delete', context: ['gpo_name' => $name]);
-        $log->step('stub — implementation pending Story 16.4');
-        $e = new RuntimeException('GpoService::delete() — not implemented yet, see Story 16.4');
+        $log->step('stub — implementation pending');
+        $e = new RuntimeException('GpoService::delete() — not implemented yet');
         $log->failure($e);
 
         throw $e;
@@ -318,14 +309,14 @@ class GpoService
     /**
      * Récupère localement une GPO depuis SYSVOL (`samba-tool gpo fetch`).
      *
-     * @throws RuntimeException  Stub : implémentation déléguée à Story 16.3
+     * @throws RuntimeException Stub : implémentation déléguée à
      *                            (lecture sections nécessite fetch local).
      */
     public function fetch(string $name, string $destDir): bool
     {
         $log = GpoLogger::action('gpo.fetch', context: ['gpo_name' => $name, 'dest_dir' => $destDir]);
-        $log->step('stub — implementation pending Story 16.3/16.4');
-        $e = new RuntimeException('GpoService::fetch() — not implemented yet, see Story 16.3/16.4');
+        $log->step('stub — implementation pending');
+        $e = new RuntimeException('GpoService::fetch() — not implemented yet');
         $log->failure($e);
 
         throw $e;
@@ -334,7 +325,7 @@ class GpoService
     /**
      * Lie une GPO à un container AD (`samba-tool gpo setlink`).
      *
-     * Story 16.5 — AC1.1. Implémentation native via `SambaToolRunner` mode array
+     * . Implémentation native via `SambaToolRunner` mode array
      * (pas de concat shell). Inputs validés par regex stricte AVANT side effect.
      *
      * Idempotence : si la liaison existe déjà (`samba-tool` retourne exit != 0
@@ -378,7 +369,7 @@ class GpoService
 
             if ($result->successful()) {
                 $log->success();
-                // Story 16.14 Q2 — invalider cache santé pour cette GPO.
+                // Invalider le cache santé pour cette GPO.
                 $this->invalidateCacheFor($gpoName);
                 return true;
             }
@@ -388,7 +379,7 @@ class GpoService
             if (self::looksLikeIdempotentLinkError($stderr)) {
                 $log->step('idempotent: link déjà présent — succès silencieux', ['stderr_excerpt' => substr($stderr, 0, 200)]);
                 $log->success(['idempotent' => true]);
-                // Story 16.14 Q2 — même en idempotent : le set a peut-être été demandé pour bumper.
+                // Même en idempotent : le set a peut-être été demandé pour bumper.
                 $this->invalidateCacheFor($gpoName);
                 return true;
             }
@@ -407,7 +398,7 @@ class GpoService
     /**
      * Supprime une liaison GPO ↔ container (`samba-tool gpo dellink`).
      *
-     * Story 16.5 — AC1.2. Idempotent : si le lien n'existe pas, l'opération
+     * . Idempotent : si le lien n'existe pas, l'opération
      * retourne `true` (parité avec le legacy `gpodellink` qui ne signale pas
      * cette condition au caller).
      *
@@ -430,7 +421,7 @@ class GpoService
 
             if ($result->successful()) {
                 $log->success();
-                // Story 16.14 Q2 — invalider cache santé pour cette GPO.
+                // Invalider le cache santé pour cette GPO.
                 $this->invalidateCacheFor($gpoName);
                 return true;
             }
@@ -457,7 +448,7 @@ class GpoService
     /**
      * Définit l'héritage GPO sur un container (`samba-tool gpo setinheritance`).
      *
-     * Story 16.5 — AC1.3. **NE PAS reproduire le bug legacy
+     * . **NE PAS reproduire le bug legacy
      * `samba-tool.inc.php:1027-1030`** (qui concaténait `inherit` sur la string
      * `$message` au lieu de `$command`). Notre mode array bypass naturellement
      * le bug : le 4ème argument est typé et passé au binaire intact.
@@ -488,7 +479,7 @@ class GpoService
             }
 
             $log->success();
-            // Story 16.14 Q2 — setInheritance affecte toutes les GPOs liées à l'OU.
+            // setInheritance affecte toutes les GPOs liées à l'OU.
             // On ne connait pas précisément les GUIDs concernés ici → flush global.
             $this->invalidateCacheAll();
             return true;
@@ -499,7 +490,7 @@ class GpoService
     }
 
     /**
-     * Réordonne les liaisons GPO d'un container AD (Story 16.5 — AC1.4 / D3).
+     * Réordonne les liaisons GPO d'un container AD.
      *
      * `samba-tool gpo setlink` ne supporte pas le réordonnancement natif —
      * on simule donc une transaction logique :
@@ -554,10 +545,9 @@ class GpoService
                 }
             }
 
-            // Story 16.5 review #S3 : exiger une PERMUTATION COMPLÈTE de l'état
-            // initial. Une liste tronquée provoquerait une suppression silencieuse
-            // de liens (remove all → re-setlink uniquement les listés).
-            // Combiné à #7 (Locked) = défense en profondeur côté service.
+            // Exiger une PERMUTATION COMPLÈTE de l'état initial : le réordonnancement
+            // supprime tous les liens puis les repose dans l'ordre donné, donc une
+            // liste tronquée effacerait silencieusement les liens absents.
             $initialGuids = array_keys($byGuid);
             sort($initialGuids);
             $orderedSorted = $orderedGpoNames;
@@ -625,7 +615,7 @@ class GpoService
             }
 
             $log->success(['count' => count($applied)]);
-            // Story 16.14 Q2 — invalider toutes les GPOs réordonnées (leurs links changent d'ordre).
+            // Invalider toutes les GPOs réordonnées : leurs liens changent d'ordre.
             foreach ($orderedGpoNames as $guid) {
                 $this->invalidateCacheFor($guid);
             }
@@ -637,7 +627,7 @@ class GpoService
     }
 
     /**
-     * Story 16.14 Q2 — Hook d'invalidation du cache santé pour une GPO précise.
+     * Hook d'invalidation du cache santé pour une GPO précise.
      *
      * Utilise un lazy lookup via `app()` pour éviter une dépendance circulaire
      * dans le constructeur. Best-effort : un échec d'invalidation ne doit pas
@@ -653,7 +643,7 @@ class GpoService
     }
 
     /**
-     * Story 16.14 Q2 — Hook d'invalidation globale du cache santé.
+     * Hook d'invalidation globale du cache santé.
      */
     private function invalidateCacheAll(): void
     {
@@ -663,12 +653,6 @@ class GpoService
             // log silencieux.
         }
     }
-
-    // -----------------------------------------------------------------------
-    // Helpers internes Story 16.5 — validation + helpers samba-tool sans
-    // log haut niveau (utilisés par reorderLinks pour éviter de poluer le
-    // catalogue avec N actions `gpo.link.add` quand on réordonne).
-    // -----------------------------------------------------------------------
 
     /**
      * Valide qu'une string est un GUID GPO au format Microsoft strict
@@ -707,9 +691,9 @@ class GpoService
      * Heuristique stderr legacy : détecte « already exists / linked » pour
      * traiter l'erreur comme idempotente (succès silencieux).
      *
-     * Story 16.5 review #3 : `'object class violation'` retiré — c'est une
-     * erreur LDAP générique de schéma, pas un signe de lien déjà existant.
-     * Cf. TD-16.5-4 pour la fragilité résiduelle des heuristiques stderr.
+     * `'object class violation'` n'est volontairement PAS traité comme
+     * idempotent : c'est une erreur LDAP générique de schéma, pas un signe de
+     * lien déjà existant.
      */
     private static function looksLikeIdempotentLinkError(string $stderr): bool
     {
@@ -722,9 +706,8 @@ class GpoService
      * Heuristique stderr legacy : détecte « does not exist / not linked » pour
      * traiter le dellink comme idempotent.
      *
-     * Story 16.5 review #3 : `'no such'` (générique) restreint à
-     * `'no such gp link'` — le match large interceptait `'no such attribute'`
-     * (vraie erreur LDAP). Cf. TD-16.5-4.
+     * Le match est restreint à `'no such gp link'` : `'no such'` seul
+     * intercepterait `'no such attribute'`, qui est une vraie erreur LDAP.
      */
     private static function looksLikeIdempotentUnlinkError(string $stderr): bool
     {
@@ -787,10 +770,6 @@ class GpoService
             $stderr,
         ));
     }
-
-    // -----------------------------------------------------------------------
-    // Parsers de sortie samba-tool — privés, testés via GpoServiceTest.
-    // -----------------------------------------------------------------------
 
     /**
      * Parse la sortie texte de `samba-tool gpo listall`.
@@ -904,7 +883,7 @@ class GpoService
             }
 
             // Bloc complet ? on instancie le lien. Sinon, on logge un step
-            // (pour traçabilité Epic 16) et on poursuit — pas d'écrasement silencieux.
+            // (pour traçabilité) et on poursuit — pas d'écrasement silencieux.
             if ($current['gpo'] !== null && $current['name'] !== null && $current['options'] !== null) {
                 $optionsInt = (int) $current['options'];
                 $links[] = new GpoLink(

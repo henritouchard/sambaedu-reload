@@ -12,8 +12,8 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * Story 15.5 — Modèle Eloquent de la table `wpkg_deployment_workstation_status`
- * (créée par 15.1, sans modèle).
+ * Modèle Eloquent de la table `wpkg_deployment_workstation_status`
+ * (créée par, sans modèle).
  *
  * Une ligne = un (deployment, workstation). `app_profile_id` est nullable
  * (un déploiement peut cibler un poste sans profil dédié, ex bulk machine).

@@ -15,14 +15,12 @@ use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
- * Story 3.5 — D6 / AC2.1 / AC2.2 / AC2.3.
- *
  * Service d'assemblage dynamique du fichier `unattend.xml` text/plain consommé
  * par Windows setup.exe pendant une install Windows automatisée iPXE.
  *
  * **Port natif** de `sambaedu/includes/windows.inc.php:3-380`
- * (`update_xml_unattend()`) simplifié au scope 3.5 (sans Win7 + sans branche
- * `specialize` clonage — déférée 3.7 cf. story 3.5 § D6).
+ * (`update_xml_unattend()`), sans le support Win7 ni la branche `specialize`
+ * de clonage.
  *
  * **Algorithme iso-legacy** (`windows.inc.php:3-370`) :
  *
@@ -47,15 +45,15 @@ use Throwable;
  *   9. Set AdministratorPassword = `adminse_passwd`.
  *   10. AutoLogon LogonCount = `4294967295` si `!join && win_autologon == 1`.
  *   11. Interpole `###_ADMINSE_NAME_###`, `###_SE4FS_NAME_###`, `###_NAME_###`,
- *       `###_UUID_###`, `###_MAC_###`, `###_AGENT_ENROLL_TICKET_###` (Story
- *       23.3 — enrôlement agent porte 1) dans les CommandLine + Path nodes via
+ *       `###_UUID_###`, `###_MAC_###`, `###_AGENT_ENROLL_TICKET_###`
+ *       (enrôlement agent porte 1) dans les CommandLine + Path nodes via
  *       {@see WindowsXmlPlaceholders} (uuid/mac requis par la résolution du
  *       controller `/ipxe/windows/action`).
- *   12. Retourne le XML formatté UTF-8 (DOMDocument `saveXML()`).
+ *  12. Retourne le XML formatté UTF-8 (DOMDocument `saveXML()`).
  *
  * **Sécurité** :
  *  - Anti-injection : hostname/AD-ou/credentials passent par
- *    {@see WindowsXmlPlaceholders::sanitize()} (escape XML special).
+ *  {@see WindowsXmlPlaceholders::sanitize()} (escape XML special).
  *  - Aucune écriture disque (pas de `/tmp/unattend.log` parité legacy retirée).
  *  - Aucun secret dans les logs (sha256 only).
  */
@@ -106,7 +104,7 @@ final class WindowsUnattendBuilder
     /**
      * Fragments XML `<DiskConfiguration>` selon bios. Iso-legacy
      * `windows.inc.php:51-194` (legacy/uefi simple — les variants `_dboot`
-     * sont hors-scope 3.5 — D6).
+     * sont hors-scope).
      *
      * @var array<string,string>
      */
@@ -192,7 +190,7 @@ final class WindowsUnattendBuilder
     }
 
     /**
-     * Channel Monolog dédié (iso 3.1 D7).
+     * Channel Monolog dédié.
      */
     private function channel(): string
     {
@@ -322,7 +320,7 @@ final class WindowsUnattendBuilder
         $computerNodes = $xpath->query('/ns:unattend/ns:settings/ns:component/ns:ComputerName');
         if ($computerNodes !== false) {
             foreach ($computerNodes as $node) {
-                // Post-review #3 : `nodeValue =` attend du XML escapé.
+                // `nodeValue =` attend du XML escapé.
                 // `sanitizeForIpxeOutput()` autorise `&` (ASCII printable)
                 // → passer par sanitize() pour escape XML.
                 $node->nodeValue = WindowsXmlPlaceholders::sanitize($hostname);
@@ -404,8 +402,8 @@ final class WindowsUnattendBuilder
         }
 
         // 10. AdministratorPassword = adminse_passwd (toujours, peu importe
-        // perso). Bug post-review : le code utilisait `$localPasswd` qui en
-        // mode perso=1 vaut `win_user_passwd` au lieu de `adminse_passwd`.
+        // perso). Ne PAS utiliser `$localPasswd`, qui en mode perso=1 vaut
+        // `win_user_passwd` et non `adminse_passwd`.
         $adminsePasswd = (string) config('sambaedu.windows.adminse_passwd', '');
         $this->setNodeValue(
             $xpath,
@@ -417,7 +415,7 @@ final class WindowsUnattendBuilder
         // (`###_ADMINSE_NAME_###`, `###_SE4FS_NAME_###`, `###_NAME_###`,
         // `###_UUID_###`, `###_MAC_###`).
         //
-        // Fix 2026-06-04 — UUID/MAC dans le curl OOBE : le legacy résolvait le
+        // UUID/MAC dans le curl OOBE : le legacy résolvait le
         // poste par `name`, mais `IpxeWindowsActionController` résout par
         // UUID/MAC uniquement (le name reporté n'est pas trusted). Sans eux,
         // chaque rapport OOBE part en `unknown_workstation` et les actions
@@ -428,11 +426,11 @@ final class WindowsUnattendBuilder
             'NAME' => $hostname,
             'UUID' => strtolower((string) ($workstation->uuid ?? '')),
             'MAC' => strtolower((string) ($workstation->mac ?? '')),
-            // Story 23.3 — ticket d'enrôlement one-time (porte 1) interpolé
+            // Ticket d'enrôlement one-time (porte 1) interpolé
             // dans la FirstLogonCommand « agent enrollment ». Vide si la
-            // migration 23.3 n'est pas passée (le POST partira avec un
+            // migration n'est pas passée (le POST partira avec un
             // ticket vide → 403 immédiat, non bloquant pour l'install).
-            // Invariant hex strict (review 23.3) : le ticket atterrit entre
+            // Invariant hex strict : le ticket atterrit entre
             // quotes simples PowerShell — tout non-hex (impossible via
             // openTicket, défense en profondeur) est vidé plutôt
             // qu'interpolé.
@@ -548,8 +546,7 @@ final class WindowsUnattendBuilder
      * Set le `nodeValue` du PREMIER node match si la query retourne au moins
      * 1 élément. Helper iso-legacy `windows.inc.php:236-260`.
      *
-     * **Post-review code-review #3** (defense in depth — décision D6) : la
-     * valeur passe systématiquement par `WindowsXmlPlaceholders::sanitize()`
+     * La valeur passe systématiquement par `WindowsXmlPlaceholders::sanitize()`
      * AVANT affectation. Ce wrapper est *nécessaire* (pas seulement
      * defense-in-depth) car `DOMNode::nodeValue =` attend du XML déjà escapé
      * — un credential brut contenant `&` ou `<` produirait un XML mal formé
@@ -568,7 +565,7 @@ final class WindowsUnattendBuilder
     }
 
     /**
-     * Story 23.3 (review) — invariant hex strict du ticket d'enrôlement.
+     * Invariant hex strict du ticket d'enrôlement.
      *
      * Le ticket est interpolé entre quotes simples dans une CommandLine
      * PowerShell ; `sanitizeForTextContent()` (générique, newlines only) est
@@ -592,8 +589,7 @@ final class WindowsUnattendBuilder
      * re-escape automatiquement les caractères XML lors de la sérialisation
      * via textContent.
      *
-     * **Post-review code-review #3** (defense in depth — décision D6) : chaque
-     * valeur de remplacement passe par
+     * Chaque valeur de remplacement passe par
      * {@see WindowsXmlPlaceholders::sanitizeForTextContent()} qui filtre les
      * newlines + chars non-printables (mais N'applique PAS htmlspecialchars
      * — DOMDocument escape déjà nativement via textContent =, sinon

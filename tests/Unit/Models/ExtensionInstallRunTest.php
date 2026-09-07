@@ -10,7 +10,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 56.3 — L'état d'un run, sans base de données.
+ * L'état d'un run, sans base de données.
  *
  * `isStale()` est la seule règle du modèle qui décide de quelque chose : c'est
  * elle qui empêche un worker tué de condamner la bibliothèque. Elle se calcule

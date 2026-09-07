@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Relations\Pivot;
 use InvalidArgumentException;
 
 /**
- * Story 5.2 (D5=A) — Modèle pivot custom pour la table `user_group_user`.
+ * Modèle pivot custom pour la table `user_group_user`.
  *
  * Permet à `App\Observers\UserGroupUserPivotObserver` d'écouter les events
  * Eloquent `created`/`deleted` sur les rows pivot User↔UserGroup. Ces events
@@ -36,11 +36,11 @@ class UserGroupUserPivot extends Pivot
     public $timestamps = false;
 
     /**
-     * Story 42.1 → 62.1 — les trois clés HISTORIQUES du rôle d'arête
+     * → — les trois clés HISTORIQUES du rôle d'arête
      * `user_group_user.role`.
      *
-     * Le rôle d'un user DANS un groupe est un attribut d'arête `string`. Story
-     * 60.2 — ce vocabulaire est GÉNÉRIQUE : il qualifie une appartenance, il ne
+     * Le rôle d'un user DANS un groupe est un attribut d'arête `string`. Ce
+     * vocabulaire est GÉNÉRIQUE : il qualifie une appartenance, il ne
      * décrit aucun métier scolaire et n'est pas un niveau d'accès (l'accès est
      * l'autre côté du mappage, `ro|rw`). Le libellé MÉTIER dépend du type de
      * groupe et vit dans {@see \App\Support\RoleCatalog} — `manager` se lit
@@ -48,9 +48,9 @@ class UserGroupUserPivot extends Pivot
      *  - `member`  : membre simple, sans rôle de gestion sur ce groupe ;
      *  - `manager` : membre qui gère le groupe (posé par défaut pour un
      *                `users.role='prof'` au rattachement, cf.
-     *                {@see self::defaultRoleForGlobalRole()}) ;
+     *  {@see self::defaultRoleForGlobalRole()}) ;
      *  - `owner`   : « propriétaire » de l'arête — ABSORBE l'ancien flag d'arête
-     *                `is_head_teacher` (professeur principal). Depuis 42.2, le
+     *  `is_head_teacher` (professeur principal). Depuis, le
      *                rôle est la SEULE source (le miroir n'est plus écrit) ; c'est
      *                lui qui alimente la projection d'annuaire `PP_`.
      *
@@ -59,7 +59,7 @@ class UserGroupUserPivot extends Pivot
      * {@see self::assertValidRole()} est donc la SEULE frontière côté SE5 ; PG
      * lèverait un 22001 seulement à l'écriture d'une valeur > 20 en prod.
      *
-     * **Ces trois-là restent des CONSTANTES, et c'est délibéré.** Story 62.1 : le
+     * **Ces trois-là restent des CONSTANTES, et c'est délibéré.** : le
      * vocabulaire n'est plus borné, il est CATALOGUÉ ({@see self::roles()}) — un
      * établissement peut y ajouter « tuteur ». Mais ces trois clés-ci sont écrites
      * EN LITTÉRAL par du code vivant (dérivation au rattachement, garde
@@ -74,7 +74,7 @@ class UserGroupUserPivot extends Pivot
     public const ROLE_OWNER = 'owner';
 
     /**
-     * Story 62.1 — le vocabulaire de rôle d'arête, LU dans le catalogue.
+     * Le vocabulaire de rôle d'arête, LU dans le catalogue.
      *
      * Ce n'est plus une constante : le catalogue ({@see \App\Models\GroupRole})
      * est administrable depuis `/admin/settings/groups`. La lecture est mémoïsée
@@ -90,7 +90,7 @@ class UserGroupUserPivot extends Pivot
     }
 
     /**
-     * Story 4.14 — cast booléen de l'attribut d'arête `is_head_teacher`.
+     * Cast booléen de l'attribut d'arête `is_head_teacher`.
      *
      * SQLite stocke les bool en 0/1 (string « 0 »/« 1 » à la lecture brute),
      * PG en true/false. Sans ce cast, `$pivot->is_head_teacher` renvoie une
@@ -104,17 +104,17 @@ class UserGroupUserPivot extends Pivot
         'is_head_teacher' => 'boolean',
     ];
 
-    // NB Story 42.1/42.2 — pas de cast pour `role` : c'est un `string` natif
-    // fiable sur les deux drivers. Depuis 42.2, le miroir `is_head_teacher`
+    // NB — pas de cast pour `role` : c'est un `string` natif
+    // fiable sur les deux drivers. Depuis, le miroir `is_head_teacher`
     // n'est PLUS écrit sur le chemin vivant (le read-back `projectFoldedGroup`
     // ne pose que `role`) : la colonne devient STALE et n'est plus LUE par
-    // aucun code vivant (audit 42.2 — restent les vestiges one-shot
+    // aucun code vivant (audit — restent les vestiges one-shot
     // MergeLegacyUserGroups/BackfillUserGroupUserRoles, gardés hasColumn).
     // Colonne + cast + withPivot CONSERVÉS (fixtures de tests, bases
     // brownfield) jusqu'à la migration destructive `dropColumn` post-42.4.
 
     /**
-     * Story 42.1 → 62.1 — Garde applicative du vocabulaire de rôle d'arête.
+     * → — Garde applicative du vocabulaire de rôle d'arête.
      *
      * SQLite ne borne pas les varchar : tout chemin applicatif qui reçoit une
      * valeur de rôle NON constante (backfill, helper de dérivation, futurs
@@ -135,7 +135,7 @@ class UserGroupUserPivot extends Pivot
     }
 
     /**
-     * Story 42.1 — Rôle d'arête PAR DÉFAUT au rattachement, dérivé du rôle
+     * Rôle d'arête PAR DÉFAUT au rattachement, dérivé du rôle
      * GLOBAL `users.role` (`eleve|prof|admin|autre`).
      *
      * `prof` → {@see self::ROLE_MANAGER} ; tout le reste (élève, admin, autre,
@@ -147,12 +147,8 @@ class UserGroupUserPivot extends Pivot
     {
         $role = $globalRole === 'prof' ? self::ROLE_MANAGER : self::ROLE_MEMBER;
 
-        // Review 42.1 #2 — défense en profondeur : la garde est câblée sur le
-        // point de dérivation partagé par tous les écrivains, pas seulement
-        // exercée en test. Coût nul : 42.2 (projection) et 42.4 (read-back du
-        // trio AD) en héritent — la dérivation heuristique HORS trio (D5) passe
-        // par ici, et le read-back du trio écrit des constantes de vocabulaire
-        // (jamais d'assertValidRole en levée dans le chemin d'import — D6).
+        // Défense en profondeur : la garde est câblée sur le point de dérivation
+        // partagé par TOUS les écrivains, pas seulement exercée en test.
         self::assertValidRole($role);
 
         return $role;

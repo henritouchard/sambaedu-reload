@@ -21,7 +21,7 @@ use Tests\Traits\CreatesPermissionSchema;
 use Tests\Traits\CreatesWindowsIsoSchema;
 
 /**
- * Story 3.6 — AC5.* — Tests Feature du composant Livewire SFC
+ * .* — Tests Feature du composant Livewire SFC
  * `pages::admin.ipxe.iso-windows.index`.
  *
  * Couvre :
@@ -255,7 +255,7 @@ class WindowsIsoWindowsLivewireTest extends TestCase
     }
 
     /* =================================================================
-     * Réinjection des pilotes (Story 3.10)
+     * Réinjection des pilotes
      * ================================================================= */
 
     #[Test]
@@ -463,13 +463,7 @@ class WindowsIsoWindowsLivewireTest extends TestCase
         self::assertNull($component->get('currentRunning'));
     }
 
-    /* =================================================================
-     * Corrections post-review 2026-05-21
-     * ================================================================= */
-
     /**
-     * #9 (post-review) — Ajout test Feature anonymous Livewire.
-     *
      * Le `mount()` du composant fait `abort_unless(Auth::check() && ...)`.
      * Sans `actingAs()`, on doit lever un abort 403.
      */
@@ -482,8 +476,6 @@ class WindowsIsoWindowsLivewireTest extends TestCase
     }
 
     /**
-     * #10 (post-review) — Test polling transition terminal.
-     *
      * Sur un download `running` (downloading), on simule l'écriture DB par
      * le Worker (status → success) puis on call `refresh()`. Le composant
      * doit dispatcher `toastMagic` status `success` (transition terminal
@@ -521,8 +513,6 @@ class WindowsIsoWindowsLivewireTest extends TestCase
     }
 
     /**
-     * #15 (post-review) — Test lock released on cancel during job.
-     *
      * L'orchestrator `cancel()` doit `forceRelease()` le lock global pour
      * permettre à un nouveau download d'être lancé immédiatement après
      * une annulation, sans attendre les 2h de TTL.

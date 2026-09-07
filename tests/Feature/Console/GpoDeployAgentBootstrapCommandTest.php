@@ -11,7 +11,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 27.16 — mapping résultat → exit code de `gpo:deploy-agent-bootstrap`.
+ * Mapping résultat → exit code de `gpo:deploy-agent-bootstrap`.
  *
  * Le câblage scripts (`update.sh`/`install.sh`) exige que la commande soit
  * NON BLOQUANTE : skip et même échec doivent sortir en 0 par défaut (fail-soft).

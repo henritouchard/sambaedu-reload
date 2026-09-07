@@ -19,7 +19,7 @@ use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
 /**
- * Story 25.5 — surface releases & rings (AC2, AC3, AC6).
+ * Surface releases & rings.
  *
  * L'UI est la 2ᵉ façade sur `ReleaseCreationService` (SEUL écrivain) : cibler
  * un ring = `target()` (`agent.release.targeted`), définir la stable =
@@ -144,7 +144,7 @@ class ReleasesRingsSurfaceTest extends TestCase
     }
 
     /**
-     * AC6 : CHAQUE méthode mutante vérifie `Gate::authorize('server.admin')`
+     * CHAQUE méthode mutante vérifie `Gate::authorize('server.admin')`
      * (adressabilité /livewire/update). On couvre les 5 méthodes, pas seulement
      * `openTarget` — un refactor qui retirerait un seul `Gate::authorize` casse.
      *

@@ -13,14 +13,10 @@ use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
- * Story 3.5 — D7 / AC3.3.
- * Story 3.8 — D7 / AC5.1-5.7 — étendu avec 14 méthodes record* pour les
- * flows post-OOBE (port complet legacy action.php dispatcher).
- *
  * Hook étapes Windows post-install : reçoit les callbacks `curl
  * /ipxe/windows/action` émis (a) depuis WinPE en début d'install
  * (`etape=winpe&ret=0`), (b) depuis le 1er logon OOBE (`etape=oobe&ret=0`)
- * via `FirstLogonCommands` injecté dans `unattend.xml`, et (c, story 3.8)
+ * via `FirstLogonCommands` injecté dans `unattend.xml`, et (c)
  * depuis les 6 flows post-OOBE (sysprep, nosysprep, join, renomme, post, wpkg).
  *
  * **Port natif COMPLET** de `legacy/modules/ipxe/Win10/action.php` (733 LOC) :
@@ -30,31 +26,31 @@ use Throwable;
  *  - Branche D (validation state machine) : `record{Sysprep,Join,Renomme,
  *    Post,Wpkg}{...}` selon le tuple (etape, ret).
  *
- * **Idempotence + concurrence** (D7 / AC5.2) : chaque méthode wrap dans
+ * **Idempotence + concurrence** : chaque méthode wrap dans
  * `DB::transaction()` + `Workstation::lockForUpdate()` — protège contre les
  * doubles updates concurrents (2 POSTes simultanés `etape=sysprep` sur même
  * poste).
  *
- * **`Workstation::status` non touché** (fix 22001 — aligné LinuxPostInstallTracker) :
+ * **`Workstation::status` non touché**, comme dans `LinuxPostInstallTracker` :
  * `workstations.status` est un `varchar(20)` à domaine fermé
  * (`active|inactive|protected` — cf. scopes du modèle). Les phrases d'étape
  * iso-legacy (`'installation Windows terminee'` = 29 c., etc.) provoquaient
  * un SQLSTATE[22001] « value too long » → HTTP 500 sur les callbacks
  * `/ipxe/windows/action`. L'avancement est tracé via `progress` +
  * `programmed_action` (etape/ret) + `MachineBootLog` + logs channel `ipxe`.
- * Comme on n'écrit plus `status`, la sémantique « préserver `protected` »
- * (décision #M3) est respectée nativement.
+ * Comme on n'écrit plus `status`, la sémantique « préserver `protected` » est
+ * respectée nativement.
  *
- * **Audit MachineBootLog** (D11 / AC5.3) : insert d'une ligne par étape
- * avec label `ipxe_win_{step}` (6 nouveaux labels ≤ varchar(20)).
+ * **Audit MachineBootLog** : insert d'une ligne par étape avec label
+ * `ipxe_win_{step}` (labels ≤ varchar(20)).
  *
- * **Logging** (D10 / AC5.4) : channel `ipxe` events
+ * **Logging** : channel `ipxe` events
  * `ipxe.windows.action.<step>.<state>` (pas de secrets clairs).
  */
 final class WindowsPostInstallTracker
 {
     /**
-     * Channel Monolog dédié (iso 3.1 D7).
+     * Channel Monolog dédié.
      */
     private function channel(): string
     {
@@ -69,8 +65,8 @@ final class WindowsPostInstallTracker
         string $name = '',
         string $ip = '',
     ): void {
-        // Fix 22001 — on ne touche plus `status` (cf. docblock classe). Le
-        // début d'install est tracé via MachineBootLog + log ci-dessous.
+        // On ne touche pas `status` (cf. docblock de classe) : le début
+        // d'install est tracé via MachineBootLog + le log ci-dessous.
         $this->persistMachineBootLog($workstation, 'ipxe_win_install', true, $ip);
         Log::channel($this->channel())->info('ipxe.windows.action.winpe_start', [
             'action_type' => 'ipxe.windows.action.winpe_start',
@@ -89,7 +85,7 @@ final class WindowsPostInstallTracker
         string $name = '',
         string $ip = '',
     ): void {
-        // Fix 22001 — on ne touche plus `status` (cf. docblock classe).
+        // On ne touche pas `status` (cf. docblock de classe).
         // L'issue d'install est tracée via os + last_report_at +
         // MachineBootLog, iso LinuxPostInstallTracker.
         $workstation->os = 'windows';
@@ -97,7 +93,7 @@ final class WindowsPostInstallTracker
         $workstation->save();
         $this->persistMachineBootLog($workstation, 'ipxe_win_report', true, $ip);
 
-        // Story 3.11 — consommation one-shot de la réinstallation armée. L'OOBE
+        // Consommation one-shot de la réinstallation armée. L'OOBE
         // atteint = l'OS Windows est fraîchement installé et a bootté (point
         // terminal « install terminée », parallèle du `linux_install_done`). La
         // requête active passe `done` → plus servie aux boots suivants. Best-effort,
@@ -120,7 +116,7 @@ final class WindowsPostInstallTracker
     {
         $this->persistMachineBootLog($workstation, 'ipxe_win_install', true, $ip);
 
-        // Story 3.11 — le payload WinPE est délivré : l'installeur a la main. On
+        // Le payload WinPE est délivré : l'installeur a la main. On
         // bascule la requête armée en `installing` pour qu'elle ne soit plus
         // servie aux boots suivants (les reboots de `setup.exe` doivent tomber
         // sur le disque). Best-effort, à côté de `programmed_action`.
@@ -140,21 +136,17 @@ final class WindowsPostInstallTracker
         ]);
     }
 
-    /* ==================================================================
-     * Story 3.8 — D7 / AC5.1 — 14+ méthodes record* post-OOBE.
-     *
-     * Mapping iso-legacy lignes 408-727 (dispatcher branches A + D).
-     * ================================================================== */
+    /* Mapping iso-legacy lignes 408-727 (dispatcher branches A + D). */
 
     /**
-     * Story 3.8 — sysprep branche A (`ret<0` premier appel).
+     * Sysprep branche A (`ret<0` premier appel).
      *
      * Parité legacy lignes 415-428 :
      *  - Si `type ∈ {clonage, clonage2}` → progress=0%,
      *    programmed_action.role=modele.
      *  - Sinon → progress=0%.
      *
-     * (Le status legacy "préparation 1er boot" n'est plus écrit — fix 22001.)
+     * (Le status legacy « préparation 1er boot » n'est plus écrit.)
      */
     public function recordSysprepInitiated(Workstation $workstation, string $ip = ''): void
     {
@@ -176,7 +168,7 @@ final class WindowsPostInstallTracker
     }
 
     /**
-     * Story 3.8 — sysprep ret=0 (branche D ligne 527-538).
+     * Sysprep ret=0 (branche D ligne 527-538).
      */
     public function recordSysprepGpoStart(Workstation $workstation, string $ip = ''): void
     {
@@ -195,7 +187,7 @@ final class WindowsPostInstallTracker
     }
 
     /**
-     * Story 3.8 — sysprep ret=1 (branche D ligne 539-550).
+     * Sysprep ret=1 (branche D ligne 539-550).
      */
     public function recordSysprepGeneralized(Workstation $workstation, string $ip = ''): void
     {
@@ -214,7 +206,7 @@ final class WindowsPostInstallTracker
     }
 
     /**
-     * Story 3.8 — sysprep ret=2 (branche D ligne 551-562).
+     * Sysprep ret=2 (branche D ligne 551-562).
      */
     public function recordSysprepNoneClone(Workstation $workstation, string $ip = ''): void
     {
@@ -234,7 +226,7 @@ final class WindowsPostInstallTracker
     }
 
     /**
-     * Story 3.8 — Q-2 refacto clarté — `etape=nosysprep&ret=0` SE5 distinct.
+     * Q-2 refacto clarté — `etape=nosysprep&ret=0` SE5 distinct.
      *
      * Branche A (premier appel) : status inchangé, progress=50%, etape=nosysprep.
      * Branche D (ret=0) : update etape, log advanced.
@@ -251,15 +243,15 @@ final class WindowsPostInstallTracker
     }
 
     /**
-     * Story 3.8 — join branche A (`ret<0`) — port legacy lignes 436-446.
+     * Join branche A (`ret<0`) — port legacy lignes 436-446.
      *
-     * Review #3 — persiste l'OU cible (`$ou`) et le role de jonction
+     * Persiste l'OU cible (`$ou`) et le role de jonction
      * (`$role`) dans `programmed_action`. Le poste ne re-envoie PAS ces
      * paramètres dans les curls internes `ret=0/1` (cf. `join.blade.php`) ;
      * sans persistance serveur-side, le 2e render ferait `Add-Computer
      * -OUPath ''` → poste joint dans `CN=Computers` au lieu de l'OU cible.
      * Le legacy résolvait via APCu (`actions[uuid][role]`) ; SE5 utilise la
-     * colonne JSONB `programmed_action` dédiée (D7).
+     * colonne JSONB `programmed_action` dédiée.
      */
     public function recordJoinInitiated(
         Workstation $workstation,
@@ -272,7 +264,7 @@ final class WindowsPostInstallTracker
                 'role' => 'windows',
                 'etape' => 'join',
             ];
-            // Review #3 — persister OU cible + role jonction (lus aux ret=0/1).
+            // Persister OU cible + role jonction (lus aux ret=0/1).
             if ($ou !== '') {
                 $updates['ou'] = $ou;
             }
@@ -288,7 +280,7 @@ final class WindowsPostInstallTracker
     }
 
     /**
-     * Story 3.8 — join ret=0 (branche D ligne 567-577).
+     * Join ret=0 (branche D ligne 567-577).
      */
     public function recordJoinAdminseStarted(Workstation $workstation, string $ip = ''): void
     {
@@ -307,7 +299,7 @@ final class WindowsPostInstallTracker
     }
 
     /**
-     * Story 3.8 — join ret=1 (branche D ligne 578-588).
+     * Join ret=1 (branche D ligne 578-588).
      */
     public function recordJoinDomained(Workstation $workstation, string $ip = ''): void
     {
@@ -326,7 +318,7 @@ final class WindowsPostInstallTracker
     }
 
     /**
-     * Story 3.8 — join ret=2 (branche D ligne 589-600).
+     * Join ret=2 (branche D ligne 589-600).
      */
     public function recordJoinComplete(Workstation $workstation, string $ip = ''): void
     {
@@ -346,7 +338,7 @@ final class WindowsPostInstallTracker
     }
 
     /**
-     * Story 3.8 — renomme branche A (`ret<0`) — port legacy lignes 447-456.
+     * Renomme branche A (`ret<0`) — port legacy lignes 447-456.
      */
     public function recordRenommeInitiated(Workstation $workstation, string $ip = ''): void
     {
@@ -360,24 +352,24 @@ final class WindowsPostInstallTracker
     }
 
     /**
-     * Story 3.8 — renomme ret=0 (branche D lignes 671-700) — AD rename.
+     * Renomme ret=0 (branche D lignes 671-700) — AD rename.
      *
-     * **Story 4.9 refactor (root-cause fix divergence PG↔AD)** :
+     * ** refactor (root-cause fix divergence PG↔AD)** :
      *
      *  - Avant : appel manuel `$adManager->renameComputer()` (samba-tool plan B)
      *    SANS écrire `$ws->name = $role` en PG → divergence permanente.
      *  - Maintenant : on écrit `$ws->name = $role` dans la transaction PG, et
      *    l'observer {@see \App\Observers\WorkstationObserver} dispatch async
-     *    {@see \App\Jobs\AdSync\WorkstationAdSyncJob::rename()} qui exécute
+     *  {@see \App\Jobs\AdSync\WorkstationAdSyncJob::rename()} qui exécute
      *    modrdn LDAP (préserve objectGUID + netbootGUID).
      *
-     *  - Trade-off accepté (D3) : si le job AD échoue (3 retries × backoff
+     *  - Trade-off accepté : si le job AD échoue (3 retries × backoff
      *    10s), le PG est déjà committé → fenêtre transitoire de divergence
      *    jusqu'à retry final / alerte. Identique au pattern
      *    `WorkstationGroupAdSyncJob` en prod.
      *
      *  - Plus de `registerHardware` post-rename : modrdn préserve netbootGUID
-     *    (D7, validé VM 2026-05-28).
+     *    (vérifié sur VM).
      *
      *  - Le paramètre `$adManager` est conservé pour compat ABI (call-sites
      *    iPXE) mais n'est plus utilisé. Le rename AD passe par l'observer.
@@ -386,7 +378,7 @@ final class WindowsPostInstallTracker
      *  - Si `role` non vide → renommage PG via Eloquent + observer async,
      *    progress=60%.
      *  - Si `role` vide → progress=20% + MachineBootLog success=false + log
-     *    warning (les status phrases legacy ne sont plus écrites — fix 22001).
+     *    warning (les phrases de status legacy ne sont plus écrites).
      */
     public function recordRenommeAdRenamed(
         Workstation $workstation,
@@ -414,7 +406,7 @@ final class WindowsPostInstallTracker
         $oldName = (string) ($workstation->name ?? '');
 
         $this->wrapTransaction($workstation, function (Workstation $ws) use ($role, $ip): void {
-            // Story 4.9 — fix root cause : écrire le nouveau nom côté PG.
+            // Fix root cause : écrire le nouveau nom côté PG.
             // L'observer Workstation dispatchera async le job AD rename
             // (modrdn LDAP, préserve objectGUID + netbootGUID).
             $ws->name = $role;
@@ -442,7 +434,7 @@ final class WindowsPostInstallTracker
     }
 
     /**
-     * Story 3.8 — renomme ret=1 (branche D ligne 702-712).
+     * Renomme ret=1 (branche D ligne 702-712).
      */
     public function recordRenommeFinished(Workstation $workstation, string $ip = ''): void
     {
@@ -461,7 +453,7 @@ final class WindowsPostInstallTracker
     }
 
     /**
-     * Story 3.8 — post branche A (`ret<0`) — port legacy lignes 457-465.
+     * Post branche A (`ret<0`) — port legacy lignes 457-465.
      */
     public function recordPostInitiated(Workstation $workstation, string $ip = ''): void
     {
@@ -475,7 +467,7 @@ final class WindowsPostInstallTracker
     }
 
     /**
-     * Story 3.8 — post ret=0 (branche D ligne 619-629).
+     * Post ret=0 (branche D ligne 619-629).
      */
     public function recordPostAutologon(Workstation $workstation, string $ip = ''): void
     {
@@ -493,7 +485,7 @@ final class WindowsPostInstallTracker
     }
 
     /**
-     * Story 3.8 — post ret=1 (branche D ligne 630-640).
+     * Post ret=1 (branche D ligne 630-640).
      */
     public function recordPostFinished(Workstation $workstation, string $ip = ''): void
     {
@@ -512,7 +504,7 @@ final class WindowsPostInstallTracker
     }
 
     /**
-     * Story 3.8 — wpkg branche A (`ret<0`) — port legacy lignes 466-474.
+     * Wpkg branche A (`ret<0`) — port legacy lignes 466-474.
      */
     public function recordWpkgInitiated(Workstation $workstation, string $ip = ''): void
     {
@@ -526,7 +518,7 @@ final class WindowsPostInstallTracker
     }
 
     /**
-     * Story 3.8 — wpkg ret=0 (branche D ligne 644-655).
+     * Wpkg ret=0 (branche D ligne 644-655).
      */
     public function recordWpkgAutologon(Workstation $workstation, string $ip = ''): void
     {
@@ -545,7 +537,7 @@ final class WindowsPostInstallTracker
     }
 
     /**
-     * Story 3.8 — wpkg ret=1 (branche D ligne 656-666).
+     * Wpkg ret=1 (branche D ligne 656-666).
      */
     public function recordWpkgFinished(Workstation $workstation, string $ip = ''): void
     {
@@ -566,12 +558,12 @@ final class WindowsPostInstallTracker
     }
 
     /**
-     * Story 3.8 — default branche D (ligne 716-727) — fin process.
+     * Default branche D (ligne 716-727) — fin process.
      *
-     * Parité legacy : os='windows', progress=100% (status legacy 'termine'
-     * non porté — fix 22001).
+     * Parité legacy : os='windows', progress=100% (le status legacy 'termine'
+     * n'est pas porté).
      *
-     * @internal Review #6 — non dispatchée par le controller 3.8 :
+     * @internal Non dispatchée par le controller :
      * l'étape `default` (= step inconnu) est rejetée 422 par
      * {@see \App\Ipxe\Http\Requests\IpxeWindowsActionRequest} (Rule::in 8 cases)
      * AVANT d'atteindre le controller. Méthode conservée pour symétrie avec le
@@ -595,23 +587,23 @@ final class WindowsPostInstallTracker
     }
 
     /* ==================================================================
-     * Helpers privés Story 3.8 — D7.
+     * Helpers privés.
      * ================================================================== */
 
     /**
      * Wrap une closure dans `DB::transaction()` + `lockForUpdate()` sur la
-     * Workstation (D7 / AC5.2) — defense in depth contre les doubles updates
+     * workstation — defense in depth contre les doubles updates
      * concurrents.
      *
      * Cas test (SQLite :memory:) : `lockForUpdate` est silencieusement
      * ignoré par SQLite — le wrapping reste cohérent côté API.
      *
-     * Review #4 — note : si la Workstation est supprimée entre la résolution
+     * Note : si la Workstation est supprimée entre la résolution
      * par {@see \App\Ipxe\Services\WorkstationLocator} et le lock (race
      * < 100ms), la closure abort silencieusement MAIS le `logState()` appelé
      * par la méthode `record*` après s'exécute quand même (log "phantom" sur
-     * une instance non persistée). Accepté en v1 : risque quasi-inexistant en
-     * prod, log inoffensif (audit only). À revoir si la rigueur d'audit
+     * une instance non persistée). Accepté : risque quasi-inexistant en
+     * prod, log inoffensif (audit seulement). À revoir si la rigueur d'audit
      * l'exige (retourner un bool depuis cette méthode + conditionner logState).
      *
      * @param  callable(Workstation): void  $closure
@@ -637,7 +629,7 @@ final class WindowsPostInstallTracker
     }
 
     /**
-     * Story 3.11 — Marque `installing` la réinstallation armée du poste dès que
+     * Marque `installing` la réinstallation armée du poste dès que
      * le payload WinPE est délivré : les reboots de `setup.exe` ne doivent plus
      * se faire re-servir l'action, sinon l'installation repart de zéro sans
      * jamais atteindre l'OOBE. Best-effort — jamais bloquant.
@@ -658,7 +650,7 @@ final class WindowsPostInstallTracker
     }
 
     /**
-     * Story 3.11 — Marque `done` la réinstallation OS armée du poste (table
+     * Marque `done` la réinstallation OS armée du poste (table
      * dédiée `workstation_reinstall_requests`). Best-effort — jamais bloquant.
      */
     private function markReinstallDone(Workstation $workstation): void
@@ -690,7 +682,6 @@ final class WindowsPostInstallTracker
 
     /**
      * Merge programmed_action JSON cohérent (préserve clés non touchées).
-     * D7 / T4.2.
      *
      * @param  array<string, mixed>  $updates
      */
@@ -702,7 +693,7 @@ final class WindowsPostInstallTracker
     }
 
     /**
-     * Log info channel `ipxe` event `ipxe.windows.action.<step>.<state>` (D10).
+     * Log info channel `ipxe` event `ipxe.windows.action.<step>.<state>`.
      */
     private function logState(Workstation $workstation, string $step, string $state, string $ip): void
     {
@@ -715,7 +706,7 @@ final class WindowsPostInstallTracker
     }
 
     /**
-     * Insert `MachineBootLog` (best-effort). Iso 3.4 `LinuxPostInstallTracker`.
+     * Insert `MachineBootLog` (best-effort). Iso `LinuxPostInstallTracker`.
      */
     private function persistMachineBootLog(
         Workstation $workstation,

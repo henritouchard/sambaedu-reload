@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Network\Data;
 
 /**
- * Story 8.4 — Issue typée d'une mise à jour DDNS pilotée par DHCP.
+ * Issue typée d'une mise à jour DDNS pilotée par DHCP.
  *
  * Le but de ce type est de rendre l'idempotence **mesurable** : `UNCHANGED`
  * doit dominer massivement les logs (un renouvellement de bail toutes les

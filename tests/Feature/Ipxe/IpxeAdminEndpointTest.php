@@ -12,7 +12,7 @@ use Tests\TestCase;
 use Tests\Support\IpxeAuthTestHelper;
 
 /**
- * Story 3.2 — AC2.1 / AC3.1 / AC8.2 / T6.3.
+ * T6.3.
  *
  * Tests feature de la route native `GET|POST /ipxe/admin`.
  */
@@ -40,7 +40,7 @@ class IpxeAdminEndpointTest extends TestCase
         self::assertStringStartsWith('#!ipxe', $body);
         self::assertStringContainsString('chain --replace --autofree admin##params', $body);
         self::assertStringContainsString('text/plain', (string) $response->headers->get('Content-Type'));
-        // Fix review #6 — assertions headers sécurité complètes au niveau Feature.
+        // Assertions headers sécurité complètes au niveau Feature.
         // Symfony normalise `no-store` en `no-store, private` au send (cf.
         // ResponseHeaderBag::computeCacheControlValue) ; on assert l'inclusion.
         self::assertStringContainsString('no-store', (string) $response->headers->get('Cache-Control'));
@@ -71,11 +71,10 @@ class IpxeAdminEndpointTest extends TestCase
     #[Test]
     public function it_returns_minimal_menu_for_unknown_workstation(): void
     {
-        // Story 3.3 — AC6.6 / T6.8 — la modification de `admin.blade.php`
-        // remplace le message neutre 3.2 ("Poste non enregistre, fonctions de
-        // maintenance indisponibles") par l'item enrollment `(n) Nommer le poste`.
-        // L'item maintenance reste absent (poste inconnu ne peut pas faire de
-        // maintenance — parité 3.2 D7).
+        // `admin.blade.php` remplace le message neutre ("Poste non enregistre,
+        // fonctions de maintenance indisponibles") par l'item enrollment
+        // `(n) Nommer le poste`. L'item maintenance reste absent : un poste
+        // inconnu ne peut pas faire de maintenance.
         $response = $this->post('/ipxe/admin', [
             'mac' => 'aa:bb:cc:dd:ee:99',
             'uuid' => '99999999-9999-9999-9999-999999999999',
@@ -124,7 +123,7 @@ class IpxeAdminEndpointTest extends TestCase
     }
 
     /* ------------------------------------------------------------------
-     * Story 3.4 — AC7.3 — item Installation Linux dans le menu admin.
+     * Item Installation Linux dans le menu admin.
      * ------------------------------------------------------------------ */
 
     #[Test]
@@ -171,7 +170,7 @@ class IpxeAdminEndpointTest extends TestCase
     }
 
     /* ------------------------------------------------------------------
-     * Story 3.5 — AC7.3 — item Installation Windows + non-régression
+     * Item Installation Windows + non-régression
      * ------------------------------------------------------------------ */
 
     #[Test]
@@ -220,7 +219,7 @@ class IpxeAdminEndpointTest extends TestCase
     #[Test]
     public function it_shows_all_3_2_3_3_3_4_3_5_items_together_for_known_workstation(): void
     {
-        // Non-régression : tous les items des stories 3.2-3.5 cohabitent
+        // Non-régression : tous les items cohabitent
         // dans le menu admin connu (avec leurs feature flags activés).
         config([
             'ipxe.enrollment.enabled' => true,
@@ -243,11 +242,9 @@ class IpxeAdminEndpointTest extends TestCase
         $body = (string) $response->getContent();
         // Enrollment 3.3.
         self::assertStringContainsString('item --key n set-name', $body);
-        // Install Linux 3.4.
         self::assertStringContainsString('item --key l install-linux', $body);
-        // Install Windows 3.5.
         self::assertStringContainsString('item --key w install-windows', $body);
-        // Maintenance 3.2 (toujours présent).
+        // Maintenance (toujours présent).
         self::assertStringContainsString('item --key m maintenance', $body);
     }
 }

@@ -9,7 +9,7 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Process;
 
 /**
- * Story 38.6 — Suppression définitive du FS legacy, post-GO uniquement.
+ * Suppression définitive du FS legacy, post-GO uniquement.
  *
  * Envoie `/var/www/sambaedu.off` à la corbeille via `trash` ou `gio trash`
  * — JAMAIS `rm -rf` (doctrine projet). Refuse si l'extinction à blanc n'est

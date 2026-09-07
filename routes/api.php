@@ -15,45 +15,45 @@ use App\Http\Controllers\Api\v1\ControlHub\ApplicationController;
 use App\Http\Controllers\Api\v1\ControlHub\AppProfileController;
 use App\Http\Controllers\Api\v1\ControlHub\SyncManifestController;
 use App\Http\Controllers\Api\WpkgReportController;
-// Story 56.4 — API extensions v1 (contrat public consommé par les extensions)
+// API extensions v1 (contrat public consommé par les extensions)
 use App\Http\Controllers\Api\Ext\V1\MeController as ExtV1MeController;
 
-// Story 16.10 — Auth v1 poste ↔ serveur local (HTTPS + JWT RS256)
+// Auth v1 poste ↔ serveur local (HTTPS + JWT RS256)
 use App\Auth\V1\Http\Controllers\EnrollController as AuthV1EnrollController;
 use App\Auth\V1\Http\Controllers\RefreshController as AuthV1RefreshController;
 use App\Auth\V1\Http\Controllers\PingController as AuthV1PingController;
-// Story 16.11 — Auto-bootstrap migration postes
-//  Note Story 16.13bis : `BootstrapScriptController` + routes
+// Auto-bootstrap migration postes
+// note : `BootstrapScriptController` + routes
 //  `agent.v1.bootstrap.{cmd,sh}` ont été supprimés ; la logique fragment
 //  est portée par `App\Auth\V1\Migration\Http\Controllers\MigrationController`
 //  directement sur les routes legacy `gpo/*_out.php` (web.php).
-// Story 16.12 — Ingestion logs exécution scripts
+// Ingestion logs exécution scripts
 use App\ScriptsOs\Http\Controllers\ScriptExecutionLogIngestionController as ScriptsOsIngestionController;
-// Story 23.3 — Canal agent desired-state (Epic 23) : enrôlement porte 1.
+// Canal agent desired-state : enrôlement porte 1.
 // Alias requis : `EnrollController` collisionne avec celui du canal JWT
 // legacy-migration (`App\Auth\V1\...`), importé plus haut sous AuthV1EnrollController.
 use App\Http\Controllers\Api\V1\Agent\EnrollController as AgentEnrollController;
-// Story 23.5 — Canal agent desired-state : GET /state (alias iso AgentEnrollController).
+// Canal agent desired-state : GET /state (alias iso AgentEnrollController).
 use App\Http\Controllers\Api\V1\Agent\StateController as AgentStateController;
-// Story 24.1 — Canal agent desired-state : POST /report (alias iso AgentStateController).
+// Canal agent desired-state : POST /report (alias iso AgentStateController).
 use App\Http\Controllers\Api\V1\Agent\ReportController as AgentReportController;
-// Story 24.4 — Canal agent desired-state : GET /assets/wallpaper/{filename} (alias iso AgentReportController).
+// Canal agent desired-state : GET /assets/wallpaper/{filename} (alias iso AgentReportController).
 use App\Http\Controllers\Api\V1\Agent\AssetController as AgentAssetController;
-// Story 25.1 — Canal agent desired-state : GET /release (manifest) + GET /releases/{filename} (alias iso AgentAssetController).
+// Canal agent desired-state : GET /release (manifest) + GET /releases/{filename} (alias iso AgentAssetController).
 use App\Http\Controllers\Api\V1\Agent\ReleaseController as AgentReleaseController;
-// Story 27.1bis — Canal agent desired-state : GET /tools/{filename} (artefact outil de rendu portable — Rainmeter ; alias iso AgentReleaseController).
+// Canal agent desired-state : GET /tools/{filename} (artefact outil de rendu portable — Rainmeter ; alias iso AgentReleaseController).
 use App\Http\Controllers\Api\V1\Agent\ToolController as AgentToolController;
 // Détection d'extinction — POST /shutdown (signal best-effort du service au shutdown Windows ; alias iso AgentToolController).
 use App\Http\Controllers\Api\V1\Agent\PresenceController as AgentPresenceController;
-// Story 25.4 — Endpoints d'amorçage LAN NON authentifiés (binaire stable + CA)
+// Endpoints d'amorçage LAN NON authentifiés (binaire stable + CA)
 // servis aux deux chemins d'installation (GPO-dispatcher figée + unattend iPXE)
 // AVANT que l'agent ait un token. `auth.v1.lan-only` (RFC1918), HORS du groupe `agent.token`.
 use App\Http\Controllers\Api\V1\Agent\BootstrapController as AgentBootstrapController;
-// Story 27.14 — Les imports des controllers du canal de config legacy
+// Les imports des controllers du canal de config legacy
 // (`WallpaperController::apiV1`, `OverlayController`, `AppPolicyController`,
 // `Gpo\{NetworkOut,VeyonOut,AssociationsOut,ApplicationsScripts}Controller`,
 // `ShortcutExportController`) ont été retirés avec le groupe de routes
-// `/api/v1/workstation-config/*` (16.13) et `/api/v1/shortcuts/export/*`.
+// `/api/v1/workstation-config/*` et `/api/v1/shortcuts/export/*`.
 // `WallpaperController` survit (thumbnail/assetThumbnail) mais n'est consommé
 // QUE par routes/web.php — plus aucune route API ne le référence.
 /*
@@ -191,7 +191,7 @@ Route::prefix('wpkg')->middleware('local.request')->group(function () {
 Route::prefix('v1/agent')->name('agent.v1.')
     // Headers de sécurité (Cache-Control no-store + HSTS + nosniff) sur toutes les
     // réponses agent — les responses enroll/refresh portent des tokens clear, on
-    // doit empêcher tout caching intermédiaire. Cf. review 16.10 finding #A.
+    // doit empêcher tout caching intermédiaire. Cf. review finding #A.
     ->middleware('auth.v1.secure-headers')
     ->group(function () {
         Route::post('/enroll', [AuthV1EnrollController::class, 'store'])
@@ -204,10 +204,10 @@ Route::prefix('v1/agent')->name('agent.v1.')
 
         Route::middleware('auth.v1.workstation')->group(function () {
             Route::get('/ping', [AuthV1PingController::class, 'show'])->name('ping');
-            // Futurs endpoints (16.12 logs, futures stories scripts) ajoutent leurs routes ici.
+            // Les futurs endpoints (logs, scripts) ajoutent leurs routes ici.
         });
 
-        // Story 16.13bis — les routes `GET /bootstrap.{cmd,sh}` (16.11) ont
+        // Les routes `GET /bootstrap.{cmd,sh}` ont
         // été supprimées : la logique est portée par `MigrationController`
         // sur les routes legacy `gpo/*_out.php` (web.php).
     });
@@ -281,7 +281,7 @@ Route::post('/v1/agent/report', [AgentReportController::class, 'store'])
     ->middleware(['auth.v1.secure-headers', 'throttle:60,1', 'agent.token'])
     ->name('agent.v1.report');
 
-// `GET /v1/agent/assets/wallpaper/{filename}` (24.4) : serving binaire des
+// `GET /v1/agent/assets/wallpaper/{filename}` : serving binaire des
 // assets de la bibliothèque wallpaper, téléchargés par le service SYSTEM
 // (vérif SHA-256 côté poste). Chaîne iso state/report ; filename
 // content-addressed validé strictement par le controller (sinon 404).
@@ -289,9 +289,9 @@ Route::get('/v1/agent/assets/wallpaper/{filename}', [AgentAssetController::class
     ->middleware(['auth.v1.secure-headers', 'throttle:60,1', 'agent.token'])
     ->name('agent.v1.assets.wallpaper');
 
-// `GET /v1/agent/release` + `GET /v1/agent/releases/{filename}` (25.1) :
-// distribution canari par rings (D6). Manifest wrapper SE5, url ABSOLUE ;
-// binaire servi seulement s'il est publié dans agent_releases (l'agent 25.2
+// `GET /v1/agent/release` + `GET /v1/agent/releases/{filename}` :
+// distribution canari par rings. Manifest wrapper SE5, url ABSOLUE ;
+// binaire servi seulement s'il est publié dans agent_releases (l'agent
 // vérifie SHA-256 + signature avant exécution). Chaîne iso state/report.
 Route::get('/v1/agent/release', [AgentReleaseController::class, 'manifest'])
     ->middleware(['auth.v1.secure-headers', 'throttle:60,1', 'agent.token'])
@@ -301,11 +301,11 @@ Route::get('/v1/agent/releases/{filename}', [AgentReleaseController::class, 'dow
     ->middleware(['auth.v1.secure-headers', 'throttle:60,1', 'agent.token'])
     ->name('agent.v1.release.download');
 
-// `GET /v1/agent/tools/{filename}` (27.1bis, D8) : serving binaire des
+// `GET /v1/agent/tools/{filename}` : serving binaire des
 // artefacts d'OUTILS DE RENDU portables posés par l'agent au bootstrap
 // (aujourd'hui : Rainmeter portable). Route/asset DÉDIÉE, distincte de
-// `agent_releases`/`/releases` (réservés au binaire agent + auto-update
-// 25.2). Filename strict `sambaedu-rainmeter-…\.zip` + realpath confiné sous
+// `agent_releases`/`/releases` (réservés au binaire agent + auto-update).
+// Filename strict `sambaedu-rainmeter-…\.zip` + realpath confiné sous
 // `agent.tools_path` (sinon 404 indistinct) ; l'INTÉGRITÉ SHA-256 est
 // vérifiée côté agent AVANT extraction (pattern SyncWallpaperAssets). Chaîne
 // iso state/report/asset.
@@ -313,16 +313,16 @@ Route::get('/v1/agent/tools/{filename}', [AgentToolController::class, 'download'
     ->middleware(['auth.v1.secure-headers', 'throttle:60,1', 'agent.token'])
     ->name('agent.v1.tools.download');
 
-// `GET /v1/agent/tools-manifest` + `GET /v1/agent/overlay-skin` (25.6, D8(b)/D7) :
-// manifest tool/skin DÉDIÉ (iso release-manifest 25.1, HORS items desired-state
+// `GET /v1/agent/tools-manifest` + `GET /v1/agent/overlay-skin` :
+// manifest tool/skin DÉDIÉ (iso release-manifest, HORS items desired-state
 // → golden overlay/state INCHANGÉS) + serving de la skin d'overlay Rainmeter
 // par la ROUTE AGENT authentifiée (PAS d'alias Apache public). Le manifest
 // expose l'outil ACTIF {key, filename, sha256, size} (SHA-256 vérifié côté
-// agent AVANT extraction — D6, remplace la constante Go figée) + la skin
-// {filename, sha256} ; outil désactivé/absent → tool: null (no-op gracieux,
-// D4). La skin a un filename FIXE (anti-traversal par construction). Chaîne iso
-// state/report/tools. Placées AVANT le bloc 25.4/16.13 (fenêtre 1500 chars
-// ScriptsOsNamespaceTest — après le groupe 16.12, jamais juste avant).
+// agent AVANT extraction) + la skin
+// {filename, sha256} ; outil désactivé/absent → tool: null (no-op gracieux).
+// La skin a un filename FIXE (anti-traversal par construction). Chaîne iso
+// state/report/tools. Placées AVANT le bloc (fenêtre 1500 chars
+// ScriptsOsNamespaceTest — après le groupe, jamais juste avant).
 Route::get('/v1/agent/tools-manifest', [AgentToolController::class, 'manifest'])
     ->middleware(['auth.v1.secure-headers', 'throttle:60,1', 'agent.token'])
     ->name('agent.v1.tools.manifest');

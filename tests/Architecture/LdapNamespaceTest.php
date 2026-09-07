@@ -9,12 +9,12 @@ use PHPUnit\Framework\TestCase;
 use Symfony\Component\Finder\Finder;
 
 /**
- * Garde-fou architectural Story 16.7 (AC7.4).
+ * Garde-fou architectural.
  *
  * Vérifie que `app/Ldap/*` :
  *
  *  1. Utilise `SambaToolRunner` mode array — pas de concaténation shell
- *     (parité 16.3b `AdUserManager`, étendu à 16.7 `AdMachineManager`).
+ *  (parité `AdUserManager`, étendu `AdMachineManager`).
  *  2. N'invoque pas `exec`/`shell_exec`/`passthru`/`proc_open` directs.
  *  3. Ne contient pas de string contenant `samba-tool ` suivie d'une variable
  *     interpolée (`samba-tool $foo`) — détection par grep défensif.
@@ -100,7 +100,7 @@ class LdapNamespaceTest extends TestCase
     }
 
     /**
-     * AC7.4 : aucun fichier sous `app/Gpo/Services/Application*` n'importe
+     * Aucun fichier sous `app/Gpo/Services/Application*` n'importe
      * `LdapRecord` directement — il passe par AdMachineManager ou WorkstationRepository.
      */
     #[Test]
@@ -128,7 +128,7 @@ class LdapNamespaceTest extends TestCase
     }
 
     /**
-     * AC7.4 : aucun fichier sous `app/Gpo/Services/Application*` n'écrit
+     * Aucun fichier sous `app/Gpo/Services/Application*` n'écrit
      * hors `/tmp/applications-*` (grep défensif sur `file_put_contents`).
      */
     #[Test]

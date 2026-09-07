@@ -16,7 +16,7 @@ use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * Story 20.4 — D-2 / D-3 / D-4 / D-5.
+ * D-2 / D-3 / D-4 / D-5.
  *
  * Capture DÉNORMALISÉE des actions d'administration réalisées par un acteur
  * fédéré, dans la table `external_action_audit_logs`.
@@ -24,7 +24,7 @@ use Symfony\Component\HttpFoundation\Response;
  * S'exécute APRÈS le guard de session (le branchement garantit `Auth::user()`
  * peuplé — D-4) et n'agit QUE si la session est marquée « fédérée »
  * (`FederatedSession::isFederated()`), ce qui discrimine l'externe de l'AD
- * locale (AC2). Une requête non fédérée ne touche JAMAIS ce journal et le flux
+ * locale. Une requête non fédérée ne touche JAMAIS ce journal et le flux
  * LDAP est strictement inchangé.
  *
  * Écriture en `terminate()` (post-review P-1/P-2) : `handle()` se réduit à
@@ -34,7 +34,7 @@ use Symfony\Component\HttpFoundation\Response;
  *  - P-2 : l'INSERT d'audit sort de la pile de réponse → zéro latence ajoutée
  *    au TTFB (l'écriture se fait connexion HTTP déjà fermée).
  *  - P-1 : une requête qui lève une exception non catchée est convertie en
- *    réponse 500 par le handler d'exceptions AVANT que `terminate()` ne soit
+ *  réponse 500 par le handler d'exceptions AVANT que `terminate()` ne soit
  *    appelé → l'action en erreur est désormais auditée (`status_code=500`).
  *
  * IMPORTANT (sémantique Laravel) : `terminate()` reçoit `$request` ET
@@ -54,7 +54,7 @@ use Symfony\Component\HttpFoundation\Response;
  *
  * Dénormalisation à l'instant de l'action (D-5) : login + sub + nom + rôle
  * Spatie actif sont COPIÉS dans la ligne — avant toute anonymisation ultérieure
- * de l'identité externe (Story 20.2).
+ * de l'identité externe.
  */
 class AuditExternalAction
 {
@@ -81,7 +81,7 @@ class AuditExternalAction
      */
     public function terminate(Request $request, Response $response): void
     {
-        // Discrimination externe vs AD (AC2) : aucune écriture hors session
+        // Discrimination externe vs AD : aucune écriture hors session
         // fédérée. Le flux LDAP n'est jamais touché.
         if (! FederatedSession::isFederated($request)) {
             return;
@@ -154,7 +154,7 @@ class AuditExternalAction
                 ? ExternalIdentity::withTrashed()->find($user->external_identity_id)
                 : null;
 
-            // Rôle Spatie ACTIF (cohérence 20.3) : la source de vérité de
+            // Rôle Spatie ACTIF (cohérence) : la source de vérité de
             // `actor_role` est `getRoleNames()` (appliqué par `syncRoles`).
             $actorRole = $user->getRoleNames()->first();
 
@@ -173,7 +173,7 @@ class AuditExternalAction
             );
         } catch (\Throwable $e) {
             // Best-effort (D-3) : on ne casse pas la requête métier. On trace
-            // l'échec SANS PII (AC5/AC7). ATTENTION : `$e->getMessage()` d'une
+            // L'échec SANS PII. ATTENTION : `$e->getMessage` d'une
             // erreur DB ré-imprime le SQL AVEC les valeurs liées (login/nom/sub
             // = PII) → on NE logge JAMAIS le message brut, seulement la CLASSE
             // d'exception (suffisante pour le diagnostic, jamais ré-identifiante).

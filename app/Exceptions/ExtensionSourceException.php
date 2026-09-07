@@ -7,7 +7,7 @@ namespace App\Exceptions;
 use RuntimeException;
 
 /**
- * Story 56.1 — Refus explicite d'un acte d'administration de SOURCE
+ * Refus explicite d'un acte d'administration de SOURCE
  * ({@see \App\Services\Extensions\ExtensionSourceService}).
  *
  * Toujours attrapée par le SFC appelant → `toastError`, jamais une 500. Le
@@ -78,7 +78,7 @@ final class ExtensionSourceException extends RuntimeException
     }
 
     /**
-     * Story 56.1 (review #3) — L'INSERT a été refusé par la contrainte
+     * L'INSERT a été refusé par la contrainte
      * d'unicité que le `SELECT` préalable croyait satisfaite : deux admins ont
      * ajouté une source au même instant. Fenêtre étroite, mais le seul
      * comportement acceptable est un message métier — la discipline « jamais
@@ -124,7 +124,7 @@ final class ExtensionSourceException extends RuntimeException
     /**
      * Retrait refusé tant qu'une extension de la source est INTÉGRÉE.
      *
-     * On ne dé-intègre jamais silencieusement (invariant 54.1 #4) : supprimer
+     * On ne dé-intègre jamais silencieusement : supprimer
      * la source emporterait ses lignes `extensions` par cascade FK, donc des
      * tuiles en service. C'est à l'admin de désinstaller d'abord.
      *

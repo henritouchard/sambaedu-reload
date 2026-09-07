@@ -25,7 +25,7 @@ use Tests\TestCase;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * Tests d'intégration pour la création d'utilisateur (Story 2.1)
+ * Tests d'intégration pour la création d'utilisateur
  *
  * Vérifie le double-write SQL (persistUserToSql) avec une vraie DB.
  * Fonctionne sur :
@@ -92,7 +92,7 @@ class UserCreationTest extends TestCase
             Schema::create('user_group_user', function (Blueprint $table) {
                 $table->foreignId('user_group_id')->constrained('user_groups')->onDelete('cascade');
                 $table->foreignId('user_id')->constrained('users')->onDelete('cascade');
-                // Story 42.1 — rôle d'arête (parité migration ; l'attach import
+                // Rôle d'arête (parité migration ; l'attach import
                 // pose désormais `role` dérivé sur les arêtes nouvelles).
                 $table->string('role', 20)->default('member');
                 $table->primary(['user_group_id', 'user_id']);
@@ -182,10 +182,6 @@ class UserCreationTest extends TestCase
     {
         return $prefix . '.phpunit.' . uniqid();
     }
-
-    // =========================================================================
-    // Double-write PostgreSQL
-    // =========================================================================
 
     #[Test]
     public function persistUserToSql_creates_user_in_database(): void
@@ -351,10 +347,6 @@ class UserCreationTest extends TestCase
         $this->assertTrue(true, 'Aucune exception levée malgré erreur DB');
     }
 
-    // =========================================================================
-    // Audit logging (NFR8)
-    // =========================================================================
-
     #[Test]
     public function creation_logs_audit_entry_with_action_and_operator(): void
     {
@@ -362,10 +354,6 @@ class UserCreationTest extends TestCase
         $this->assertStringContainsString("'action' => 'user.create'", $source);
         $this->assertStringContainsString("'operator'", $source);
     }
-
-    // =========================================================================
-    // Liaison groupes SQL (user_group_user pivot)
-    // =========================================================================
 
     #[Test]
     public function persistUserGroupsToSql_links_eleve_to_categorie_and_classe(): void

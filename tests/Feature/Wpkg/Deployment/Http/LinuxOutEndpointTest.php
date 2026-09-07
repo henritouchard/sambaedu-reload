@@ -11,10 +11,10 @@ use Tests\Support\WpkgSchemaBootstrapper;
 use Tests\TestCase;
 
 /**
- * Story 17.6 / AC1 / AC6.2 — Endpoint `/wpkg/linux_out.php`.
+ * Endpoint `/wpkg/linux_out.php`.
  *
- * Parité iso-legacy stricte (correctif post-review #1, décision Henri
- * « aligner sur les 6 siblings ») : le controller lit le contexte pré-calculé
+ * Parité iso-legacy stricte, alignée sur les 6 endpoints siblings : le
+ * controller lit le contexte pré-calculé
  * `apps.<md5>` (store `app_context`, posé par `CacheAppContextWriter`), extrait
  * `raw['liste_applications']` (liste plate d'`app_id` lowercase pré-résolue à
  * l'assembly du script — équivalent natif de
@@ -69,7 +69,7 @@ class LinuxOutEndpointTest extends TestCase
     }
 
     /**
-     * AC1.4 — Parité plain-text : apt explicite + fallback app_id.
+     * Parité plain-text : apt explicite + fallback app_id.
      *
      * Contexte avec 3 apps applicables (liste lowercase) :
      *   - firefox  : <linux type="apt" package="firefox-esr"/> → "firefox-esr"
@@ -107,7 +107,7 @@ class LinuxOutEndpointTest extends TestCase
 
         $response->assertOk();
         // Parité mimetype text/plain (Laravel ajoute ; charset=utf-8 — pattern
-        // natif accepté, iso AssociationsOutEndpointTest 16.13 ; le client
+        // natif accepté, iso AssociationsOutEndpointTest ; le client
         // `for p in $packages` ignore le charset).
         self::assertStringStartsWith('text/plain', (string) $response->headers->get('Content-Type'));
 
@@ -116,7 +116,7 @@ class LinuxOutEndpointTest extends TestCase
     }
 
     /**
-     * S1 (Henri) — Une app présente dans `liste_applications` mais au statut
+     * Une app présente dans `liste_applications` mais au statut
      * non `Installed` (Available / UpdateAvailable) est EXCLUE (parité packages.xml
      * legacy qui ne contient que les apps Installed).
      */
@@ -147,7 +147,7 @@ class LinuxOutEndpointTest extends TestCase
     }
 
     /**
-     * AC1.5 — id absent → 200 body "" (parité `linux_out.php:14-16`).
+     * Id absent → 200 body "" (parité `linux_out.php:14-16`).
      */
     #[Test]
     public function it_returns_empty_body_when_id_is_missing(): void
@@ -160,7 +160,7 @@ class LinuxOutEndpointTest extends TestCase
     }
 
     /**
-     * #1 — id invalide (pas un md5 32 hex) → 200 body "" (le legacy
+     * Id invalide (pas un md5 32 hex) → 200 body "" (le legacy
      * `apcu_fetch` sur une clé non posée retourne false → bloc non exécuté).
      */
     #[Test]
@@ -173,7 +173,7 @@ class LinuxOutEndpointTest extends TestCase
     }
 
     /**
-     * #1 — contexte expiré/absent (md5 valide mais pas de clé `apps.<md5>`) →
+     * Contexte expiré/absent (md5 valide mais pas de clé `apps.<md5>`) →
      * 200 body "" (parité : le legacy n'exécute pas le bloc `if ($info)`).
      */
     #[Test]
@@ -187,7 +187,7 @@ class LinuxOutEndpointTest extends TestCase
     }
 
     /**
-     * AC1.1 — Accepte POST (parité `$_POST["id"]` legacy).
+     * Accepte POST (parité `$_POST["id"]` legacy).
      */
     #[Test]
     public function it_accepts_post_with_id(): void
@@ -208,7 +208,7 @@ class LinuxOutEndpointTest extends TestCase
     }
 
     /**
-     * AC4.2 — Un appel depuis une IP hors allowlist `local.request` est rejeté
+     * Un appel depuis une IP hors allowlist `local.request` est rejeté
      * (403), parité comportement `wpkg/reports/*`. On force REMOTE_ADDR à une
      * IP publique non whitelistée et on vide l'allowlist config.
      */

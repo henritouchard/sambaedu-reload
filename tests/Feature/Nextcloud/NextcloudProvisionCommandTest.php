@@ -17,7 +17,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 61.1 — la commande, ses codes de sortie, et le traitement en file.
+ * La commande, ses codes de sortie, et le traitement en file.
  */
 class NextcloudProvisionCommandTest extends TestCase
 {
@@ -128,10 +128,6 @@ class NextcloudProvisionCommandTest extends TestCase
         Http::assertNotSent(static fn (Request $r): bool => in_array($r->method(), ['POST', 'PUT', 'DELETE'], true));
     }
 
-    // =====================================================================
-    // Le garde-fou : un geste déconseillé se confirme
-    // =====================================================================
-
     /**
      * Le montage SMB est un chemin d'accès qui n'est pas acquis : la commande
      * prévient et demande. Un refus ne doit rien laisser derrière lui — donc
@@ -208,10 +204,6 @@ class NextcloudProvisionCommandTest extends TestCase
             ->assertExitCode(0);
     }
 
-    // =====================================================================
-    // Le traitement en file
-    // =====================================================================
-
     /**
      * La charge utile ne porte QUE des identifiants. Un rapport ou une
      * configuration s'y trouvant serait périmé au moment de l'exécution — et un
@@ -259,7 +251,7 @@ class NextcloudProvisionCommandTest extends TestCase
     }
 
     /**
-     * Revue #4 — TEST DE GARDE : le délai maximal du traitement doit rester
+     * TEST DE GARDE : le délai maximal du traitement doit rester
      * INFÉRIEUR au TTL du verrou.
      *
      * Les unités des ouvriers lancent `queue:work` sans `--timeout` : sans

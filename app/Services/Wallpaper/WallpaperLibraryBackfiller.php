@@ -44,7 +44,6 @@ class WallpaperLibraryBackfiller
             return $stats;
         }
 
-        // ---- Pass A : lignes wallpapers existantes (colonne `path` encore là) ----
         $importedPaths = [];
         foreach (DB::table('wallpapers')->get() as $row) {
             $path = (string) ($row->path ?? '');
@@ -65,7 +64,6 @@ class WallpaperLibraryBackfiller
             }
         }
 
-        // ---- Pass B : fichiers orphelins sur disque (sans ligne DB) ----
         if (! is_dir($legacyDir)) {
             return $stats;
         }

@@ -8,7 +8,7 @@ use App\Ipxe\Services\IpxeAuthOutcome;
 use Illuminate\Http\Request;
 
 /**
- * Story 4.10 (correctif review #12) — Contrat d'autorisation iPXE.
+ * Contrat d'autorisation iPXE.
  *
  * **But** : permettre de stubber l'auth iPXE dans les tests sans étendre la
  * classe concrète {@see \App\Ipxe\Services\IpxeAuthService} (qui contient
@@ -22,7 +22,7 @@ use Illuminate\Http\Request;
  *    non-contrôlée en prod — pattern « ouvert à l'extension, fermé à la
  *    modification » via le contrat, pas via l'héritage).
  *  - Le contrat d'autorisation iPXE est explicite : une seule méthode
- *    {@see authorize()} qui renvoie un {@see IpxeAuthOutcome}.
+ *  {@see authorize()} qui renvoie un {@see IpxeAuthOutcome}.
  *  - Les implémentations alternatives (stubs de test, mock partiel,
  *    décorateur futur — ex. cache, audit) deviennent triviales.
  *

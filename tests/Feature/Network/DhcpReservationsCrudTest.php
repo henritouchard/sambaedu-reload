@@ -17,7 +17,7 @@ use Tests\Traits\CreatesDhcpSchema;
 use Tests\Traits\CreatesPermissionSchema;
 
 /**
- * Story 8.1 — Tests Feature CRUD réservations DHCP via Livewire SFC.
+ * Tests Feature CRUD réservations DHCP via Livewire SFC.
  *
  * Couvre :
  *  - création / édition / suppression via la page Livewire `network/dhcp/index` ;
@@ -163,7 +163,6 @@ class DhcpReservationsCrudTest extends TestCase
 
     public function test_non_admin_cannot_save_even_if_mount_bypassed(): void
     {
-        // Admin pour mount
         $admin = $this->makeAdmin('admin-mount');
         $this->actingAs($admin);
         $component = Livewire::test('pages::network.dhcp.index');

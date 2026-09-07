@@ -7,7 +7,7 @@ namespace Tests\Feature\Oidc\Concerns;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 55.2 — capture des enregistrements du channel `oidc` pour vérifier que
+ * Capture des enregistrements du channel `oidc` pour vérifier que
  * les **codes fins** partent bien au journal (et que la PII n'y part PAS).
  *
  * ⚠️ `Log::spy()` seul ne suffit pas : le code écrit via `Log::channel('oidc')`,
@@ -19,7 +19,7 @@ use Illuminate\Support\Facades\Log;
  * Ce que ça permet de prouver, et qu'aucune assertion sur la réponse HTTP ne
  * peut prouver : la réponse est volontairement MUETTE (pas d'oracle), donc la
  * seule trace exploitable du motif réel est le journal. Un journal muet
- * rendrait toute intégration ratée indiagnosticable (FR20).
+ * rendrait toute intégration ratée indiagnosticable.
  */
 trait CapturesOidcLogs
 {

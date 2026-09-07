@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 4-4 (tâche 2.3) — Historique d'exécution des crons WorkstationGroup.
+ * -4 (tâche) — Historique d'exécution des crons WorkstationGroup.
  *
  * 1 row par exécution (recurring ou one_shot). Le JSONB summary stocke :
  *  - success_count, failed_count, skipped_count
@@ -22,7 +22,7 @@ use Illuminate\Support\Facades\Schema;
  *
  * Rétention 30 jours via commande `parc:prune-group-schedule-runs` (daily).
  * FK `schedule_id` en nullOnDelete : historique préservé si schedule supprimé
- * (AC6 — l'audit survit à la suppression du cron).
+ * (l'audit survit à la suppression du cron).
  */
 return new class extends Migration
 {

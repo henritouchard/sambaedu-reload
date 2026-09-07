@@ -9,7 +9,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 27.7 (AC1) — content-adressage d'un `.ico` vers le dossier servi.
+ * Content-adressage d'un `.ico` vers le dossier servi.
  * Filename = `<sha256>.ico`, copie (jamais déplacement), idempotent.
  */
 class ShortcutIconAssetServiceTest extends TestCase
@@ -84,7 +84,7 @@ class ShortcutIconAssetServiceTest extends TestCase
     public function filename_is_content_derived_never_user_controlled(): void
     {
         // Le filename servi est ENTIÈREMENT dérivé du contenu (hash hex) : aucun
-        // `..`/séparateur possible (garde-fou sécurité, piège n° 1/n° 3).
+        // `..`/séparateur possible (garde-fou sécurité).
         $source = $this->sourceDir . '/../evil name,%.ico';
         file_put_contents($this->sourceDir . '/evilsrc.ico', 'payload');
 

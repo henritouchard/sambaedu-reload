@@ -131,7 +131,7 @@ class ShortcutSyncTest extends TestCase
         ];
     }
 
-    // ─── /sync ───────────────────────────────────────────────────────────────
+    // /sync
 
     #[Test]
     public function sync_requires_auth(): void
@@ -224,7 +224,7 @@ class ShortcutSyncTest extends TestCase
         $this->assertArrayNotHasKey('linux', $task->payload);
     }
 
-    // ─── /delete ─────────────────────────────────────────────────────────────
+    // /delete
 
     #[Test]
     public function delete_requires_auth(): void

@@ -18,8 +18,8 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 27.11 — `AssociationResolver` : traduit *(extension X, app A)* en
- * *(progid, source, wpkg_package)* (AC3). Couvre les trois branches (riche /
+ * `AssociationResolver` : traduit *(extension X, app A)* en
+ * *(progid, source, wpkg_package)*. Couvre les trois branches (riche /
  * générique / native), la jointure `packages.xml ⇄ app_id`, le garde-fou exe
  * manquant, et l'upsert `file_associations` iso `catalogKey` + attache au parc.
  *
@@ -142,7 +142,7 @@ class AssociationResolverTest extends TestCase
         ]);
     }
 
-    // ── Branche 1 : native curée déclarant l'extension → ProgId canonique ──────
+    // Branche 1 : native curée déclarant l'extension → ProgId canonique
 
     #[Test]
     public function native_app_with_declared_identifier_yields_canonical_progid(): void
@@ -167,7 +167,7 @@ class AssociationResolverTest extends TestCase
         self::assertTrue($resolved->generic);
     }
 
-    // ── Branche 2 : WPKG déclarant un handler pour X → ProgId riche ────────────
+    // Branche 2 : WPKG déclarant un handler pour X → ProgId riche
 
     #[Test]
     public function wpkg_app_with_declared_handler_yields_rich_progid(): void
@@ -199,7 +199,7 @@ class AssociationResolverTest extends TestCase
         self::assertSame('firefox', $resolved->wpkgPackage);
     }
 
-    // ── Branche 3 : générique (WPKG sans handler déclaré pour X) ───────────────
+    // Branche 3 : générique (WPKG sans handler déclaré pour X)
 
     #[Test]
     public function wpkg_app_without_declared_handler_yields_generic_progid(): void
@@ -213,7 +213,7 @@ class AssociationResolverTest extends TestCase
         self::assertTrue($resolved->generic);
     }
 
-    // ── Garde-fou : générique sans exe → exception (piège n°4) ─────────────────
+    // Garde-fou : générique sans exe → exception
 
     #[Test]
     public function generic_without_executable_throws(): void
@@ -224,7 +224,7 @@ class AssociationResolverTest extends TestCase
         $this->resolver()->resolve('.clclcc', $this->wpkgApp('firefox', null));
     }
 
-    // ── Upsert file_associations + attache parc (iso catalogKey) ───────────────
+    // Upsert file_associations + attache parc (iso catalogKey)
 
     #[Test]
     public function compose_upserts_file_association_and_attaches_to_parc(): void

@@ -5,15 +5,15 @@ declare(strict_types=1);
 namespace App\Enums;
 
 /**
- * Story 54.1 — État d'une extension dans le registre local.
+ * État d'une extension dans le registre local.
  *
  * - `Available`  : présente au catalogue, PAS encore intégrée à l'instance.
- * - `Integrated` : intégrée — sa tuile est éligible au lanceur (Story 54.3).
+ * - `Integrated` : intégrée — sa tuile est éligible au lanceur.
  *
  * ⚠️ La synchro de la source bundled n'écrit JAMAIS la colonne `status`
- * (idempotence AC2 de 54.1). Les transitions (bouton « Intégrer » /
+ * (idempotence). Les transitions (bouton « Intégrer » /
  * « Désinstaller » + journal d'audit) vivent dans
- * {@see \App\Services\Extensions\ExtensionLifecycleService} (Story 54.2),
+ * {@see \App\Services\Extensions\ExtensionLifecycleService},
  * seul écrivain de cette colonne.
  */
 enum ExtensionStatus: string

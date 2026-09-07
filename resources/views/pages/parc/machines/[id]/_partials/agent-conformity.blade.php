@@ -1,4 +1,4 @@
-{{-- Story 24.7 / AC2, AC4, AC5 — Conformité agent de la fiche poste.
+{{-- Conformité agent de la fiche poste.
 
      Extension de la card Agent (23.2) : état rapporté PAR TYPE (3 statuts —
      Story 27.8 : `drifted_allowed` retiré), derniers événements datés, états
@@ -40,7 +40,7 @@
             @endcan
         </div>
 
-        {{-- État de la demande pendante (AC5) --}}
+        {{-- État de la demande pendante --}}
         @if ($workstation->hasAgentSyncPending())
             <div class="alert alert-info py-2 mb-4 text-sm">
                 <i class="fa-solid fa-hourglass-half"></i>
@@ -51,7 +51,7 @@
             </div>
         @endif
 
-        {{-- Poste muet (état dérivé, décision n° 7) --}}
+        {{-- Poste muet (état dérivé) --}}
         @if ($workstation->isAgentSilent())
             <div class="alert alert-warning py-2 mb-4 text-sm">
                 <i class="fa-solid fa-volume-xmark"></i>
@@ -126,7 +126,7 @@
                                         —
                                     @endif
                                 </td>
-                                {{-- Hash OPAQUE, tronqué, jamais interprété (piège 9). --}}
+                                {{-- Hash OPAQUE, tronqué, jamais interprété. --}}
                                 <td class="font-mono text-xs text-base-content/40"
                                     title="Hash opaque (non interprété)">
                                     {{ Str::limit($state->hash, 10, '…') }}

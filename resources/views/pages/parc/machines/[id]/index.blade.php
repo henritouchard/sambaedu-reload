@@ -48,7 +48,7 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
 
     public string $deploymentTab = 'errors';
 
-    // Story 15.4 / Décision A 2026-05-07 — onglet de premier niveau (général | wpkg).
+    // Onglet de premier niveau (général | wpkg).
     // Les options `.ini` WPKG ont leur propre onglet de premier niveau « settings »
     // (Paramètres), ex-sous-onglet de l'onglet Applications.
     #[Url(as: 'tab', keep: true)]
@@ -60,7 +60,7 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
         return $this->resolveBack(route('app.parc.index', ['tab' => 'machines']));
     }
 
-    // ── Modales WPKG (assignation directe poste) ───────────────────────────
+    // Modales WPKG (assignation directe poste)
     public bool $showAttachWpkgProfileModal = false;
     public array $selectedWpkgProfileIdsToAdd = [];
     public string $wpkgProfileSearch = '';
@@ -81,17 +81,17 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
     public array $selectedLogicalGroupIds = [];
     public Collection $availableLogicalGroups;
 
-    // État de readiness post-action (AC2/AC3/AC4 — story 4-2).
+    // État de readiness post-action (-2).
     // Ces 4 propriétés pilotent le polling Livewire `wire:poll.Ns` :
     // le poll n'est rendu dans le Blade que si $statusRunning est vrai,
     // ce qui arrête automatiquement l'interrogation du serveur dès que
     // l'action est résolue (succès ou timeout).
     //
     // $currentTaskId : id de la ligne MachinePowerActionTask associée à
-    // l'action en cours (review #1 — corrections 2026-04-20). Permet à
+    // l'action en cours. Permet à
     // pollMachineReadiness() (a) de connaître l'état du job async, (b) de
     // gérer la machine à états `restart_phase` pour éviter le faux succès
-    // du restart (review #2).
+    // du restart.
     public bool $statusRunning = false;
     public ?string $runningAction = null;
     public ?string $runningActionStartedAt = null;
@@ -167,7 +167,7 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
         try {
             $this->availablePhysicalRooms = $this->parcService->getPhysicalRooms();
 
-            // Story 4.11 — `groups` contient aussi la salle physique (pivot
+            // `groups` contient aussi la salle physique (pivot
             // global) ; on filtre via la relation `logicalGroups` pour ne pas
             // exclure/afficher la salle parmi les groupes logiques.
             $currentGroupIds = $this->workstation->logicalGroups->pluck('id')->toArray();
@@ -231,7 +231,7 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
             $this->loadMachine();
             $this->loadAvailableGroups();
         } catch (\App\Exceptions\ControlHub\UpstreamLockCollisionException $e) {
-            // Story 30.5 — collision verrou/verrou prédite : message explicite.
+            // Collision verrou/verrou prédite : message explicite.
             $this->toastError($e->getMessage());
         } catch (\Exception $e) {
             Log::error('[MachineShow] Erreur ajout au groupe: ' . $e->getMessage());
@@ -253,7 +253,7 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
     }
 
     /**
-     * Story 23.2 / AC6 — Révocation par événement du token agent (FR14).
+     * Révocation par événement du token agent.
      * Le prochain appel du poste sur le canal agent recevra 401.
      */
     public function revokeAgentToken(TokenRotationService $tokenService): void
@@ -304,18 +304,18 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
     }
 
     /**
-     * Story 24.7 / AC5 — « Forcer la synchro » d'un poste (mécanique PULL,
-     * décision n° 1). Pose `agent_sync_requested_at` via SyncRequestService :
+     * « Forcer la synchro » d'un poste (mécanique PULL,
+     * Pose `agent_sync_requested_at` via SyncRequestService :
      * le prochain `GET /state` du poste re-télécharge l'état complet (bypass
      * 304), le premier `POST /report` suivant solde la demande. Désactivé
-     * (côté Blade) pour un poste non enrôlé ou en quarantaine (piège 6) — on
+     * (côté Blade) pour un poste non enrôlé ou en quarantaine — on
      * re-garde côté serveur (une requête Livewire forgée ne contourne pas
      * l'éligibilité, le service filtre).
      */
     public function forceSyncWorkstation(SyncRequestService $syncRequests): void
     {
         // Guard serveur-side : forcer la synchro = action de contrôle du
-        // poste, même gate que les autres mutations parc (review 24.7 #1).
+        // poste, même gate que les autres mutations parc.
         if (!Gate::allows('computer.control')) {
             $this->toastAccessDenied();
             return;
@@ -349,9 +349,9 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
     }
 
     /**
-     * Story 24.7 / AC2 — États rapportés COURANTS par type (lecture agrégée
+     * États rapportés COURANTS par type (lecture agrégée
      * via ConformityService, relue à chaque cycle wire:poll pour le retour
-     * auto à compliant — AC4).
+     * auto à compliant —).
      *
      * @return \Illuminate\Support\Collection<int, \App\Models\AgentResourceState>
      */
@@ -381,7 +381,7 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
     }
 
     /**
-     * Story 24.7 / AC2 — Derniers événements de changement (10, datés).
+     * Derniers événements de changement (10, datés).
      *
      * @return \Illuminate\Support\Collection<int, \App\Models\AgentReportEvent>
      */
@@ -396,7 +396,7 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
 
     /**
      * Version stable publiée du binaire agent (`agent_releases.is_stable`,
-     * au plus une ligne — invariant 25.1). Null si aucune release publiée.
+     * au plus une ligne — invariant). Null si aucune release publiée.
      * Sert au badge « à jour » de l'onglet Agent.
      */
     public function getStableAgentVersionProperty(): ?string
@@ -406,7 +406,7 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
 
     public function executeMachinePowerAction(string $action): void
     {
-        // Guard review #14 (2026-04-20) : empêche de lancer une seconde action
+        // Empêche de lancer une seconde action
         // tant que la précédente n'est pas résolue. Indispensable car
         // `@disabled` côté Blade ne protège pas d'une requête Livewire forgée
         // manuellement (double-click rapide, dev tools, etc.).
@@ -430,7 +430,7 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
             return;
         }
 
-        // Review #1 (NFR2) — on dispatche le job async puis on retourne
+        // On dispatche le job async puis on retourne
         // immédiatement. Le toast apparaît sans attendre ping/shell (< 500 ms).
         try {
             // Validation de l'action en amont (même logique que WorkstationGroupService).
@@ -441,7 +441,7 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
             $actionLabel = $this->parcService->getMachineActionLabel($action);
             $initiatedBy = auth()->user()?->name ?? session('login') ?? 'system';
 
-            // Review #2 — pour un restart, on initialise la phase 'waiting-down'
+            // Pour un restart, on initialise la phase 'waiting-down'
             // pour que le polling attende d'abord que la machine cesse de
             // répondre avant de chercher son retour (évite le faux succès à t+3s).
             $restartPhase = $action === 'restart'
@@ -481,11 +481,11 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
     }
 
     /**
-     * Polling de readiness post-action (AC3/AC4 story 4-2).
+     * Polling de readiness post-action (-2).
      *
      * Appelé par wire:poll.{N}s sur la vue tant que $statusRunning est vrai.
      *
-     * Responsabilités (review #1 & #2 — 2026-04-20) :
+     * Responsabilités :
      *  1. Consommer l'état de la task DB (MachinePowerActionTask) pour détecter
      *     les échecs remontés par DispatchMachinePowerActionJob (MAC invalide,
      *     shutdown sur machine off, exception, etc.).
@@ -552,7 +552,7 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
                 return;
             }
 
-            // Restart = machine à états (review #2).
+            // Restart = machine à états.
             // Tant qu'on est en 'waiting-down', on attend que la machine cesse
             // de répondre. Une fois détectée offline on passe à 'waiting-up'.
             // Une fois détectée online, on marque la task completed.
@@ -650,7 +650,7 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
     }
 
     /* ================================================================
-     * Story 3.11 — Réinstallation OS pilotée (poste unique).
+     * Réinstallation OS pilotée (poste unique).
      * ================================================================ */
 
     // État de la modale de réinstallation.
@@ -881,13 +881,9 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
         }
     }
 
-    // ============================================================
-    // Story 15.4 — Onglet Applications WPKG (Décision A)
-    // ============================================================
-
     public function setTab(string $tab): void
     {
-        // Story 37.1 — onglet « État cible » (consultation pure, aucun droit
+        // Onglet « État cible » (consultation pure, aucun droit
         // supplémentaire ; visible sous le gate de page existant).
         $allowed = ['general', 'logical', 'wpkg', 'settings', 'agent', 'state'];
         $this->tab = in_array($tab, $allowed, true) ? $tab : 'general';
@@ -958,7 +954,7 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
     public function getAvailableWpkgProfilesProperty()
     {
         $existing = $this->workstation->appProfiles()->pluck('app_profiles.id')->toArray();
-        // Story 15.4 / Correction post-review #2 : eager-load `applications`
+        // Eager-load `applications`
         // pour le sous-texte « N application(s) » de attach-profiles-modal
         // (évite le N+1).
         $query = AppProfile::query()
@@ -1132,12 +1128,12 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
     private function ensureWpkgAssignAuthorized(): void
     {
         try {
-            // Story 29.1 — Gate SCOPÉ sur la SALLE PHYSIQUE de rattachement du
+            // Gate SCOPÉ sur la SALLE PHYSIQUE de rattachement du
             // poste (`Workstation::physicalRoom`). Une délégation WPKG sur cette
             // salle devient opposable au niveau poste.
             // Poste sans salle physique (nomade/non rattaché) → `physicalRoom`
             // vaut null : la policy se rabat alors sur le droit GLOBAL seul
-            // (AC #5 — pas de fausse ouverture, seul l'admin global passe).
+            // (pas de fausse ouverture : seul l'admin global passe).
             Gate::authorize('assign-wpkg-workstationGroup', $this->workstation->physicalRoom);
         } catch (AuthorizationException $e) {
             $this->toastError('Vous n\'avez pas la permission de modifier les assignations WPKG.');
@@ -1202,7 +1198,7 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
                         </li>
                     @endforeach
 
-                    {{-- Story 3.11 — Réinstallation OS pilotée (poste unique).
+                    {{-- Réinstallation OS pilotée (poste unique).
                          Séparée des actions power : c'est une action système
                          destructrice, pas un simple changement d'état. --}}
                     @can('computer.install')
@@ -1292,7 +1288,7 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
                                 {{ $deployErrors->count() }} échec{{ $deployErrors->count() > 1 ? 's' : '' }} de déploiement
                             </span>
                         @endif
-                        {{-- Story 3.11 — état de la réinstallation en cours, au
+                        {{-- État de la réinstallation en cours, au
                              même niveau que les autres badges d'état du poste. --}}
                         @can('computer.install')
                             @if ($this->activeReinstall)
@@ -1348,10 +1344,10 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
             </div>
         </div>
 
-        {{-- Story 15.4 / Décision A — Onglets de premier niveau (général | wpkg).
+        {{-- Décision A — Onglets de premier niveau (général | wpkg).
              Accès deep-link via ?tab=wpkg. La card header reste visible
              dans les 2 modes (identité + statut sont communs). --}}
-        {{-- Story 37.1 — Onglet « État cible » ajouté à la barre. --}}
+        {{-- Onglet « État cible » ajouté à la barre. --}}
         <x-molecules.tabs :tabs="[
             'general' => ['label' => 'Général', 'icon' => 'fa-solid fa-circle-info'],
             'logical' => ['label' => 'Groupes logiques', 'icon' => 'fa-solid fa-layer-group', 'badge' => $workstation->logicalGroups->count()],
@@ -1432,7 +1428,7 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
             </div>
         </div>
 
-        {{-- Story 23.2 / AC6 — Card canal agent (token desired-state, Epic 23) --}}
+        {{-- Card canal agent (token desired-state) --}}
         <div class="card bg-base-100 shadow-sm border border-base-300">
             <div class="card-body">
                 <div class="flex items-center justify-between mb-4">
@@ -1504,13 +1500,13 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
                     </p>
                 @endif
 
-                {{-- Story 24.7 — conformité par type + événements + forcer la synchro --}}
+                {{-- Conformité par type + événements + forcer la synchro --}}
                 @include('pages.parc.machines.[id]._partials.agent-conformity')
             </div>
         </div>
 
         @elseif ($tab === 'state')
-            {{-- Story 37.1 — onglet « État cible », SFC Livewire scopé au poste.
+            {{-- Onglet « État cible », SFC Livewire scopé au poste.
                  Branche PLATE de la chaîne d'onglets (review #7 : elle était à
                  tort imbriquée dans le @else Général / le @if déploiement, d'où
                  la card « Groupes logiques » qui fuitait et l'état cible masqué
@@ -1789,7 +1785,7 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
 
     </div>{{-- /space-y-6 --}}
 
-    {{-- Story 15.4 — Modales WPKG (toujours rendues si flag actif) --}}
+    {{-- Modales WPKG (toujours rendues si flag actif) --}}
     @if ($showAttachWpkgProfileModal)
         <x-organisms.wpkg.attach-profiles-modal
             title="Ajouter des profils applicatifs au poste"
@@ -1834,7 +1830,7 @@ new #[Title('Détails de la Machine - SE4FS')] class extends Component {
     <!-- Modale log d'installation WPKG (partagée) -->
     <livewire:components::organisms.install-log-modal />
 
-    {{-- Story 3.11 — Modale de réinstallation OS (poste unique). --}}
+    {{-- Modale de réinstallation OS (poste unique). --}}
     @can('computer.install')
         @include('pages.parc._partials.reinstall-modal', [
             'reinstallTitle' => 'Réinstaller le poste',

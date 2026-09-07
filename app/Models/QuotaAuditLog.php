@@ -86,9 +86,6 @@ class QuotaAuditLog extends Model
         return $query->where('target_name', $targetName);
     }
 
-    /**
-     * Retourne le label de l'action
-     */
     public function getActionLabel(): string
     {
         return match ($this->action) {

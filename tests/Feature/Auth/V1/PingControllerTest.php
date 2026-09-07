@@ -14,7 +14,6 @@ use Tests\Concerns\IssuesWorkstationJwt;
 use Tests\TestCase;
 
 /**
- * Story 16.10 — AC5.3 / AC7.2.
  *
  * Tests Feature `GET /api/v1/agent/ping`.
  *

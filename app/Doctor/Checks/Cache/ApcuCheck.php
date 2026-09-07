@@ -9,7 +9,7 @@ use App\Doctor\EnvironmentCheck;
 
 /**
  * Vérifie qu'APCu est installé ET activé pour l'environnement courant
- * (CLI ou web). Piège récurrent (cf. Story 16.8) : APCu installé pour
+ * (CLI ou web). Piège récurrent : APCu installé pour
  * PHP-FPM mais désactivé en CLI → `php artisan` fail silencieusement
  * sur les opérations qui dépendent du cache APCu.
  */

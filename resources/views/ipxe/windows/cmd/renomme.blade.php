@@ -1,4 +1,4 @@
-{{-- Story 3.8 - D6 / AC4.4 - Port iso legacy/modules/ipxe/Win10/action.php cmd_renomme (LOC 317-351). --}}
+{{-- Port iso legacy/modules/ipxe/Win10/action.php cmd_renomme (LOC 317-351). --}}
 {{-- Securite critique : ce .cmd s'execute en SYSTEM cote Windows post-reboot. --}}
 {{-- Sanitization : tous les placeholders passent par sanitizeBatPlaceholder() dans le builder. --}}
 REM cmd

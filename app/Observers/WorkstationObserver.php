@@ -9,7 +9,7 @@ use App\Models\Workstation;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 4.9 — Observer pour synchroniser automatiquement les Workstations vers l'AD.
+ * Observer pour synchroniser automatiquement les Workstations vers l'AD.
  *
  * Pattern miroir strict de {@see WorkstationGroupObserver}.
  *
@@ -23,10 +23,6 @@ use Illuminate\Support\Facades\Log;
  * Helper {@see withoutSync()} : SEUL moyen autorisé pour écrire un
  * Workstation sans déclencher le job AD (seeders, imports CSV, sync inverse
  * depuis AD).
- *
- * Décision D4 (Henri 2026-05-28) : les hooks pivot audit-only
- * (`onGroupAttached`/`onGroupDetached`/`onGroupsSynced`) ont été supprimés —
- * code mort depuis Epic 4 (sync AD machine→groupe retirée 2026-05-20).
  */
 class WorkstationObserver
 {
@@ -35,8 +31,8 @@ class WorkstationObserver
      * conventionnelle) pour les tests qui doivent l'inspecter mais NE DOIT
      * PAS être écrit en dehors de {@see withoutSync()}.
      *
-     * Auto-fix #10 (review 4.9, 2026-05-28) : les helpers `disableSync()` /
-     * `enableSync()` sont passés `private` — l'unique API publique est
+     * Les helpers `disableSync()` / `enableSync()` sont `private` : l'unique
+     * API publique est
      * `withoutSync()` qui garantit la restauration du flag (try/finally-safe).
      */
     public static bool $syncEnabled = true;
@@ -81,7 +77,7 @@ class WorkstationObserver
             'name' => $workstation->name,
         ]);
 
-        // Auto-fix #8 (review 4.9) : `->afterCommit()` garantit que le job ne
+        // `->afterCommit()` garantit que le job ne
         // soit pas exécuté avant que la transaction Eloquent englobante ne
         // soit committée (sinon `find($id)` du worker pourrait renvoyer null
         // en queue=sync ou en mode database).
@@ -104,7 +100,7 @@ class WorkstationObserver
         $nameChanged = $workstation->wasChanged('name');
         $statusChanged = $workstation->wasChanged('status');
 
-        // Décision design #3 (Henri 2026-05-28) : si name ET status changent
+        // Si name ET status changent
         // dans le même `save()`, on dispatche UN SEUL job `update` (fusion
         // rename + status en une transaction LDAP). Sinon, comportement
         // standard (rename ou status indépendants).
@@ -140,7 +136,6 @@ class WorkstationObserver
                 'new_name' => $newName,
             ]);
 
-            // Auto-fix #8 : afterCommit.
             dispatch(WorkstationAdSyncJob::rename((int) $workstation->id, $oldName, $newName))->afterCommit();
         }
 
@@ -150,7 +145,6 @@ class WorkstationObserver
                 'status' => $workstation->status,
             ]);
 
-            // Auto-fix #8 : afterCommit.
             dispatch(WorkstationAdSyncJob::status((int) $workstation->id, (string) $workstation->status))->afterCommit();
         }
     }
@@ -170,8 +164,7 @@ class WorkstationObserver
             'name' => $workstation->name,
         ]);
 
-        // Auto-fix #8 : afterCommit (cohérence avec les autres dispatch).
-        // Note : `deleting` est avant le commit, donc afterCommit garantit
+        // `deleting` est avant le commit, donc afterCommit garantit
         // qu'on ne supprime AD que si la row PG est bien supprimée.
         dispatch(WorkstationAdSyncJob::delete(
             (string) $workstation->name,

@@ -29,15 +29,14 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 35.6 — Tests Unit du provider `privilege` CAPABILITY-FIRST + du guard
+ * Tests Unit du provider `privilege` CAPABILITY-FIRST + du guard
  * d'authoring `PrivilegeAuthoringGuard` + du wiring observer (dispatch par
  * mécanisme).
  *
  * Le provider EXPANSE une capacité → AU PLUS un item CONCRET 2 clés
- * `{privilege, accounts}` (jetons d'audience résolus par convention, D6 —
- * `AudienceTokens` de 36.1 réutilisé). Lecture Postgres pure (NFR7 — la
- * résolution SID est côté POSTE, LSA). Invariant central 27.12 : jamais d'id/
- * key de capacité au payload.
+ * `{privilege, accounts}` (jetons d'audience résolus par convention via
+ * `AudienceTokens`). Lecture Postgres pure : la résolution SID est côté POSTE,
+ * par LSA. Invariant central : jamais d'id/key de capacité au payload.
  */
 class CapabilityPrivilegeProviderTest extends TestCase
 {
@@ -104,7 +103,7 @@ class CapabilityPrivilegeProviderTest extends TestCase
         UserGroup::factory()->create(['name' => 'Eleves', 'type' => 'role']);
     }
 
-    // ── Type / sémantique / portée ────────────────────────────────────────
+    // Type / sémantique / portée
 
     #[Test]
     public function provider_declares_privilege_exclusive_machine(): void
@@ -141,7 +140,7 @@ class CapabilityPrivilegeProviderTest extends TestCase
         }
     }
 
-    // ── (b) Map accounts + sentinelle UNMANAGED + forme inattendue ────────
+    // (b) Map accounts + sentinelle UNMANAGED + forme inattendue
 
     #[Test]
     public function unmanaged_sentinel_emits_nothing(): void
@@ -172,7 +171,7 @@ class CapabilityPrivilegeProviderTest extends TestCase
         self::assertCount(0, $this->provider()->itemsFor($this->ctx()));
     }
 
-    // ── (c) Jeton d'audience résolu (user_groups seedé) ───────────────────
+    // (c) Jeton d'audience résolu (user_groups seedé)
 
     #[Test]
     public function audience_token_is_resolved_to_the_conventional_group_name(): void
@@ -218,13 +217,13 @@ class CapabilityPrivilegeProviderTest extends TestCase
         Log::shouldHaveReceived('warning')->atLeast()->once();
     }
 
-    // ── (e) Compte littéral verbatim ──────────────────────────────────────
+    // (e) Compte littéral verbatim
 
     #[Test]
     public function literal_account_is_emitted_verbatim(): void
     {
         // Aucun groupe seedé : un littéral part quand même (résolu par l'agent
-        // via LSA sur le poste joint — piège #7).
+        // via LSA sur le poste joint).
         $this->makeCapability('cap_verbatim', 'on', [
             'privilege' => self::RDP_DENY,
             'accounts' => ['MONDOMAINE\\Eleves'],
@@ -235,7 +234,7 @@ class CapabilityPrivilegeProviderTest extends TestCase
         self::assertSame(['MONDOMAINE\\Eleves'], $items->first()->payload['accounts']);
     }
 
-    // ── (f) accounts: [] (off) ⇒ item ÉMIS avec liste vide ────────────────
+    // (f) accounts: [] (off) ⇒ item ÉMIS avec liste vide
 
     #[Test]
     public function off_value_emits_the_item_with_an_empty_accounts_list(): void
@@ -251,7 +250,7 @@ class CapabilityPrivilegeProviderTest extends TestCase
         self::assertSame(self::RDP_DENY, $items->first()->payload['privilege']);
     }
 
-    // ── (g) Privilège hors SeDeny* / vide ⇒ non émis (défensif) ───────────
+    // (g) Privilège hors SeDeny* / vide ⇒ non émis (défensif)
 
     #[Test]
     public function out_of_allowlist_privilege_emits_nothing(): void
@@ -274,7 +273,7 @@ class CapabilityPrivilegeProviderTest extends TestCase
         self::assertCount(0, $this->provider()->itemsFor($this->ctx()));
     }
 
-    // ── (h) exclusiveKey : 1 segment minuscule ────────────────────────────
+    // (h) exclusiveKey : 1 segment minuscule
 
     #[Test]
     public function exclusive_key_is_the_lowercase_privilege_name_single_segment(): void
@@ -288,7 +287,7 @@ class CapabilityPrivilegeProviderTest extends TestCase
         self::assertStringNotContainsString('|', $a, '1 segment (piège #4 : la maille gagne la liste ENTIÈRE)');
     }
 
-    // ── (i) Provider Postgres pur (NFR7) ──────────────────────────────────
+    // (i) Provider Postgres pur
 
     #[Test]
     public function provider_source_has_no_ad_apcu_dependency(): void
@@ -311,7 +310,7 @@ class CapabilityPrivilegeProviderTest extends TestCase
         }
     }
 
-    // ── Piège #11 : override UserGroup sans effet (contexte machine-only) ──
+    // Override UserGroup sans effet : le contexte est machine-only
 
     #[Test]
     public function user_group_override_never_reaches_a_privilege_item(): void
@@ -343,7 +342,7 @@ class CapabilityPrivilegeProviderTest extends TestCase
         self::assertCount(0, $items, 'défaut unmanaged + override user sans effet ⇒ rien émis');
     }
 
-    // ── Guard d'authoring (AC3) — service PUR, sans DB ────────────────────
+    // Guard d'authoring — service PUR, sans DB
 
     private function guard(): PrivilegeAuthoringGuard
     {
@@ -422,7 +421,7 @@ class CapabilityPrivilegeProviderTest extends TestCase
     #[Test]
     public function guard_accepts_an_empty_accounts_list(): void
     {
-        // Une liste vide EST légitime (= off, privilège vidé — piège #6).
+        // Une liste vide EST légitime (= off, privilège vidé).
         $v = $this->guardOne('off_ok', 'attention refus de logon', [
             'privilege' => self::RDP_DENY,
             'accounts' => [],
@@ -465,7 +464,7 @@ class CapabilityPrivilegeProviderTest extends TestCase
         }
     }
 
-    // ── Observer (AC3) : enforcement serveur au `saving` ──────────────────
+    // Observer : enforcement serveur au `saving`
 
     #[Test]
     public function observer_refuses_to_persist_a_grant_privilege_projection(): void

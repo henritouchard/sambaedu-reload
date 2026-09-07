@@ -90,7 +90,7 @@ new class extends Component {
                     ->orWhere('fullname', 'ILIKE', "%{$q}%")
                     ->orWhere('email', 'ILIKE', "%{$q}%"));
 
-            // RGPD — même scoping que la page /users (correction review 7.2 #3) :
+            // RGPD — même scoping que la page /users :
             // un Prof/EleveAdmin scopé classe (user.read sans rôle global) ne doit
             // voir que les co-membres de ses propres classes. Sans ce filtre, la
             // recherche contournerait `UserPolicy::view()`.

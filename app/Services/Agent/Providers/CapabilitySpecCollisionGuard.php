@@ -7,7 +7,7 @@ namespace App\Services\Agent\Providers;
 use App\Models\CapabilityProjection;
 
 /**
- * Story 35.2 (AC3) — garde-fou d'AUTHORING des `spec` registre : refuse les
+ * Garde-fou d'AUTHORING des `spec` registre : refuse les
  * configurations que le compilateur ne peut PAS arbitrer au poste.
  *
  * **Pourquoi.** `registry` et `registry_list` ont des `exclusiveKey()`
@@ -35,12 +35,12 @@ use App\Models\CapabilityProjection;
  *   3. `values` bien formées : littéral = liste de scalaires ; map
  *      valeur-capacité = chaque entrée liste de scalaires (jamais `$ensure`
  *      ni forme assoc — non supportés en registry_list).
- *   4. BORNÉ DES RUCHES par mécanisme (Story 35.3) : `registry` ∈
+ * 4. BORNÉ DES RUCHES par mécanisme : `registry` ∈
  *      {HKLM, HKCU, HKU} ; `registry_list` ∈ {HKLM, HKCU} — un conteneur
  *      `hive: HKU` est une violation NOMMÉE (le fan-out d'une réconciliation
  *      de clé-conteneur multiplierait la propriété de clé par N ruches sans
- *      consommateur connu — hors scope 35.3, extension future si besoin réel).
- *   5. HINT `spec.refresh` (Story 43.2, D1/D2) — pour les DEUX mécanismes, si
+ *  consommateur connu — hors scope, extension future si besoin réel).
+ * 5. HINT `spec.refresh` — pour les DEUX mécanismes, si
  *      la RACINE du `spec` porte la clé `refresh` : (a) la valeur DOIT être
  *      une string du vocabulaire fermé
  *      {@see CapabilityProjection::REFRESH_HINTS} (rejette
@@ -48,11 +48,11 @@ use App\Models\CapabilityProjection;
  *      `SHELL_NOTIFY`, valeurs 41.x anticipées type `logoff`) ; (b) — règle
  *      5b — la spec doit porter AU MOINS une clé/conteneur `hive: HKCU` : un
  *      hint sans clé de portée session est INERTE (jamais recopié par
- *      {@see AbstractCapabilityStateProvider::withRefreshHint()},
+ *  {@see AbstractCapabilityStateProvider::withRefreshHint()},
  *      gaté par portée Session/MachineUser) — une erreur d'authoring, refusée
  *      en amont plutôt que silence. `spec.refresh` ABSENT est un no-op (champ
- *      optionnel, AC1) : aucune des deux sous-règles ne s'applique.
- *   6. MARQUEUR `writer` (Story 35.7, D3) — attribut OPTIONNEL posé **PAR
+ * optionnel) : aucune des deux sous-règles ne s'applique.
+ * 6. MARQUEUR `writer` — attribut OPTIONNEL posé **PAR
  *      CLÉ** de `spec.keys[]` (contrairement à `refresh`, posé par
  *      projection) des mécanismes registry + registry_list. Borné : (a) la
  *      valeur DOIT être `'system'` ({@see CapabilityProjection::WRITER_SYSTEM},
@@ -65,14 +65,14 @@ use App\Models\CapabilityProjection;
  *      `CurrentVersion\Policies`, en LECTURE SEULE pour l'utilisateur
  *      standard sur poste joint au domaine : leçon runtime
  *      `blocked_executables`, « Accès refusé » du compagnon). **Exclusion
- *      mutuelle refresh/writer** (piège n°6) : `refresh` n'est émis QUE sur
+ *      mutuelle refresh/writer** : `refresh` n'est émis QUE sur
  *      les items appliqués par le compagnon — la garde structurelle vit dans
- *      `withRefreshHint()` (jamais de `refresh` sur un payload marqué) et le
+ *  `withRefreshHint()` (jamais de `refresh` sur un payload marqué) et le
  *      retrofit `2026_07_13_100000` retire le hint des projections
  *      re-routées ; pas de règle de guard supplémentaire (le spec peut
  *      légitimement mêler clés marquées et clés compagnon sous un même hint).
  *
- * **Sémantique `HKU` (Story 35.3, contrat §7.1).** Une clé `hive: 'HKU'` est
+ * **Sémantique `HKU` (contrat §7.1).** Une clé `hive: 'HKU'` est
  * émise par le provider MACHINE seul et appliquée par le service SYSTEM à
  * « toutes les ruches utilisateur du poste + `.DEFAULT` » (fan-out agent, drift
  * agrégé) — PAS de ciblage par utilisateur sur cette ruche (structurel : le
@@ -89,13 +89,13 @@ use App\Models\CapabilityProjection;
 final class CapabilitySpecCollisionGuard
 {
     /**
-     * Ruches admises par mécanisme (Story 35.3) : `HKU` n'existe qu'en
+     * Ruches admises par mécanisme : `HKU` n'existe qu'en
      * `registry` (fan-out scalaire) — refusé en `registry_list`.
      *
      * Convention d'authoring : forme COURTE exclusive (HKLM/HKCU/HKU). Le
      * binaire tolère aussi les alias longs (HKEY_LOCAL_MACHINE, …) mais le
      * catalogue n'en écrit jamais — un import amont devra normaliser vers la
-     * forme courte avant d'entrer ici (review 35.3 #3).
+     * forme courte avant d'entrer ici.
      *
      * @var array<string, list<string>>
      */
@@ -117,7 +117,7 @@ final class CapabilitySpecCollisionGuard
     {
         $violations = [];
 
-        // ── 5. spec.refresh (Story 43.2) : vocabulaire fermé + non-inertie ──
+        // 5. spec.refresh : vocabulaire fermé + non-inertie
         foreach ($projections as $projection) {
             $mechanism = $projection['mechanism'] ?? null;
             if (! in_array($mechanism, [
@@ -129,7 +129,7 @@ final class CapabilitySpecCollisionGuard
 
             $spec = $projection['spec'] ?? null;
             if (! is_array($spec) || ! array_key_exists('refresh', $spec)) {
-                continue; // champ optionnel ABSENT : rien à valider (AC1).
+                continue; // champ optionnel ABSENT : rien à valider.
             }
 
             $refresh = $spec['refresh'];
@@ -159,7 +159,7 @@ final class CapabilitySpecCollisionGuard
             }
         }
 
-        // ── 6. Marqueur `writer` (Story 35.7) : enum fermé + HKCU-only ──────
+        // 6. Marqueur `writer` : enum fermé + HKCU-only
         foreach ($projections as $projection) {
             $mechanism = $projection['mechanism'] ?? null;
             if (! in_array($mechanism, [
@@ -198,7 +198,7 @@ final class CapabilitySpecCollisionGuard
                     $violations[] = sprintf(
                         "%s [%s] clé '%s' : writer 'system' sur la ruche '%s' — le service SYSTEM "
                         .'y est déjà l\'exécutant, marqueur admis UNIQUEMENT sur une clé hive=HKCU '
-                        .'(application par-session HKU\<SID>, Story 35.7).',
+                        .'(application par-session HKU\<SID>).',
                         $mechanism,
                         (string) ($projection['capability'] ?? ''),
                         $identity,
@@ -208,7 +208,7 @@ final class CapabilitySpecCollisionGuard
             }
         }
 
-        // ── Index des conteneurs registry_list par identité {hive|path} ─────
+        // Index des conteneurs registry_list par identité {hive|path}
         /** @var array<string, list<string>> $containers identité → capacités */
         $containers = [];
         foreach ($projections as $projection) {
@@ -219,7 +219,7 @@ final class CapabilitySpecCollisionGuard
                 $identity = $this->identity($key);
                 $containers[$identity][] = (string) $projection['capability'];
 
-                // 2bis. hive/path requis (review 35.2 #3) : un conteneur vide
+                // 2bis. hive/path requis : un conteneur vide
                 // passerait l'authoring puis serait rejeté {status: error}
                 // silencieux par parseRegistryListSpec côté agent — refus AMONT.
                 if (trim((string) ($key['hive'] ?? '')) === '' || trim((string) ($key['path'] ?? '')) === '') {
@@ -230,7 +230,7 @@ final class CapabilitySpecCollisionGuard
                     );
                 }
 
-                // 4. Borné des ruches (Story 35.3) : HKU refusé en registry_list
+                // 4. Borné des ruches : HKU refusé en registry_list
                 // (violation NOMMÉE — fan-out de clé-conteneur hors scope) ;
                 // toute autre ruche inconnue refusée aussi. Ruche vide déjà
                 // couverte par la violation « hive et path sont requis ».
@@ -275,7 +275,7 @@ final class CapabilitySpecCollisionGuard
             }
         }
 
-        // ── 1. Collision scalaire↔conteneur (égalité STRICTE d'identité) ────
+        // 1. Collision scalaire↔conteneur (égalité STRICTE d'identité)
         foreach ($projections as $projection) {
             if (($projection['mechanism'] ?? null) !== CapabilityProjection::MECHANISM_REGISTRY) {
                 continue;
@@ -283,7 +283,7 @@ final class CapabilitySpecCollisionGuard
             foreach ($this->specKeys($projection['spec'] ?? null) as $key) {
                 $identity = $this->identity($key);
 
-                // 4. Borné des ruches (Story 35.3) : une clé scalaire `registry`
+                // 4. Borné des ruches : une clé scalaire `registry`
                 // n'admet que HKLM | HKCU | HKU — toute autre valeur (typo
                 // 'HKX', ruche vide, HKCR non routé…) ne serait émise par AUCUN
                 // provider (silence d'authoring) : refus AMONT.
@@ -337,7 +337,7 @@ final class CapabilitySpecCollisionGuard
     }
 
     /**
-     * Story 43.2 (règle 5b) — au moins une clé/conteneur `hive: HKCU` parmi les
+     * Au moins une clé/conteneur `hive: HKCU` parmi les
      * clés d'une spec (générique registry/registry_list : les deux formes
      * portent un champ `hive`).
      *

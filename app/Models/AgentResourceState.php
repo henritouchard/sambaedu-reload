@@ -9,13 +9,13 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * Story 24.1 — État de conformité COURANT d'un type de ressource sur un
- * poste, rapporté par l'agent (`POST /api/v1/agent/report`, D3/FR9).
+ * État de conformité COURANT d'un type de ressource sur un
+ * poste, rapporté par l'agent (`POST /api/v1/agent/report`).
  *
  * Upsert par (workstation_id, type) — UNIQUE en base : le volume est borné
  * structurellement à postes × types. Écrit UNIQUEMENT par
  * {@see \App\Services\Agent\Reporting\ReportIngestService} ; lu par l'UI
- * conformité (24.5/FR10).
+ * conformité.
  *
  * `reported_at` est rafraîchi à CHAQUE rapport, même identique (fraîcheur
  * du dernier check-in de contenu — donnée UI) ; seul le journal

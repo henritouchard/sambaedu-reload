@@ -18,7 +18,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 42.1 (review #1) — Tests du payload de sync pivot à rôle dérivé
+ * Tests du payload de sync pivot à rôle dérivé
  * {@see User::userGroupSyncPayloadWithDerivedRole()}, consommé par les
  * écrivains pivot UI hors import (fiche user `syncGroupsFromAd`, drawer
  * « Gestion des groupes »).
@@ -107,10 +107,6 @@ class UserDerivedRolePayloadTest extends TestCase
         $pp->userGroups()->syncWithoutDetaching($pp->userGroupSyncPayloadWithDerivedRole([$g->id]));
         $this->assertSame(UserGroupUserPivot::ROLE_OWNER, $this->role($g->id, $pp->id), 'owner non rétrogradé (syncWithoutDetaching)');
     }
-
-    // ------------------------------------------------------------------
-    // Helpers (patron BackfillUserGroupUserRolesTest)
-    // ------------------------------------------------------------------
 
     private function role(int $groupId, int $userId): string
     {

@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 
 /**
- * Story 20.1 — D-6.
+ * D-6.
  *
  * Trace la consommation d'un jeton fédéré (anti-rejeu `jti` à usage unique).
  * Couche de persistance derrière {@see \App\Auth\Federated\Jwt\FederatedJwtReplayChecker}

@@ -11,7 +11,7 @@ use Livewire\Component;
 use Livewire\WithFileUploads;
 
 /**
- * Story 27.17 — Onglet « Outils agent » de /admin/settings/parc-defaults.
+ * Onglet « Outils agent » de /admin/settings/parc-defaults.
  *
  * Surface d'administration du catalogue `agent_tools` (aujourd'hui : le portable
  * Rainmeter), réutilisant le SEUL écrivain {@see AgentToolService} (upload/toggle).
@@ -23,7 +23,7 @@ use Livewire\WithFileUploads;
  *
  * Chaque action mutante re-garde `Gate::authorize('server.admin')` (double
  * protection : middleware route + action adressable via /livewire/update).
- * Décision Henri : tout en `server.admin`.
+ * Toute la page est gardée par `server.admin`.
  */
 new class extends Component {
     use WithFileUploads, WithToasts;
@@ -124,7 +124,7 @@ new class extends Component {
                 </div>
             </div>
 
-            {{-- Catalogue : l'outil de rendu Rainmeter (mono-version, D5) --}}
+            {{-- Catalogue : l'outil de rendu Rainmeter (une seule version à la fois) --}}
             <div class="card bg-base-100 shadow-sm border border-base-300 w-full">
                 <div class="card-body">
                     <h3 class="card-title text-base">Outil de rendu (overlay)</h3>

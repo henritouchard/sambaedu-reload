@@ -12,9 +12,9 @@ use Symfony\Component\Console\Output\BufferedOutput;
 use Tests\TestCase;
 
 /**
- * Story 17.5 / AC3.1 — Tests Feature des commandes `winscript-logs:*`.
+ * Tests Feature des commandes `winscript-logs:*`.
  *
- * **Isolation `.env` (D5)** : chaque test écrit dans un `.env` de fixture
+ * **Isolation `.env`** : chaque test écrit dans un `.env` de fixture
  * temporaire (`sys_get_temp_dir()`) injecté via `setEnvPath()`. Le `.env`
  * réel du repo n'est JAMAIS touché. Le fixture est nettoyé en `tearDown`.
  *
@@ -211,7 +211,7 @@ class WinscriptLogsCommandsTest extends TestCase
     public function preserves_crlf_line_endings_on_replacement(): void
     {
         // .env en CRLF (ex. édité sous Windows) : le terminateur \r\n de la ligne
-        // modifiée doit être préservé byte-pour-byte (AC2.2).
+        // modifiée doit être préservé byte-pour-byte.
         $original = "APP_NAME=SambaEdu\r\nSAMBAEDU_SCRIPTS_LOGGING_ENABLED=false\r\nDB_CONNECTION=mysql\r\n";
         $this->writeFixture($original);
 

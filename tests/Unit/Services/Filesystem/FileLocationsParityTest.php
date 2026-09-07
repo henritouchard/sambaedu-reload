@@ -14,13 +14,13 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 63.1 — AC8 : sur une instance en place, la résolution rend
+ * Sur une instance en place, la résolution rend
  * EXACTEMENT ce que les capacités globales produisent aujourd'hui.
  *
- * Les cinq lignes de la table de l'AC8, jouées via la commande de reprise
+ * Les cinq lignes de la table, jouées via la commande de reprise
  * (`files:adopt-locations`) puis vérifiées contre `FileLocationService`, et
  * contre l'équivalence `capabilities()['home'] === espacePersoSurSmb()` /
- * `capabilities()['shares'] === espacePartageSurSmb()` que 63.2 invoquera.
+ * `capabilities()['shares'] === espacePartageSurSmb()` que invoquera.
  */
 class FileLocationsParityTest extends TestCase
 {

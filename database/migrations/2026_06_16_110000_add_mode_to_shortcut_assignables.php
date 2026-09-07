@@ -7,8 +7,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 27.3 — AC1 (drift policy PAR ASSIGNATION, révise la décision n° 2 de
- * 27.1).
+ * (drift policy PAR ASSIGNATION).
  *
  * Greffe la colonne `mode` sur le pivot polymorphe `shortcut_assignables` : le
  * mode strict|default n'est plus une propriété de la RÈGLE (`shortcuts.mode`,

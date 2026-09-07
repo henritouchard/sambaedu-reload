@@ -9,7 +9,7 @@ use App\Services\FilePolicyService;
 use App\Services\ServiceCredentials;
 
 /**
- * Story 61.1 — LA CONFIGURATION DE CONNEXION, VALIDÉE UNE FOIS POUR TOUTES.
+ * LA CONFIGURATION DE CONNEXION, VALIDÉE UNE FOIS POUR TOUTES.
  *
  * Un objet de configuration existe ici pour une raison précise : la complétude se
  * vérifie **avant** la première écriture, en un seul endroit, et le refus nomme ce
@@ -59,7 +59,7 @@ final class NextcloudConnectionConfig
          * là où il est consommé. Ce n'est donc pas une donnée de CONNEXION : on
          * parle à l'instance sans lui, et l'écran le déclare `nullable` sans
          * astérisque. Le rendre obligatoire ici rendrait muets la création de
-         * compte (AC5) et la propagation de mot de passe (AC7), que
+         * compte et la propagation de mot de passe, que
          * {@see NextcloudClientFactory::makeOrNull()} avale par conception.
          */
         public readonly string $smbHost,
@@ -75,7 +75,7 @@ final class NextcloudConnectionConfig
 
     /**
      * Fabrique depuis l'état persisté. **Lève** si la capacité est éteinte ou si
-     * un réglage manque — c'est le point fail-closed de la story.
+     * un réglage manque : c'est le point fail-closed.
      *
      * @throws NextcloudConfigurationException
      */

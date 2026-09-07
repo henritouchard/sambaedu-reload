@@ -18,7 +18,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Tests Feature du compagnon de session — Story 24.3 (AC7).
+ * Tests Feature du compagnon de session.
  *
  * Simule, CÔTÉ SERVEUR uniquement (jamais de test Windows ici), le chemin
  * HTTP du sous-système compagnon : le fetch SYSTEM déclenché au logon tire
@@ -26,15 +26,15 @@ use Tests\TestCase;
  * (poste, user) et alimente le cache per-user que le processus user lit en
  * lecture seule (`agent/windows/SessionStateFetch.ps1` + `SessionCompanion.ps1`,
  * vue serveur dans docs/agent/session-companion.md). AUCUN code serveur
- * n'est modifié par la story : le `?user=` existe depuis 23.5 — ces tests
- * FIGENT le comportement que le compagnon consomme.
+ * n'a été modifié : le `?user=` existait déjà — ces tests FIGENT le comportement
+ * que le compagnon consomme.
  *
  * Invariants couverts : un ETag PAR couple (poste, user) — jamais de
  * revalidation cross-contexte ; login inconnu/compte local → 200
- * machine-only + `agent.state.unknown_user`, jamais d'erreur (piège n° 3) ;
- * lookup case-insensitive (sémantique AD) ; rotation D5 sur le chemin
+ * machine-only + `agent.state.unknown_user`, jamais d'erreur ;
+ * lookup case-insensitive (sémantique AD) ; rotation du jeton sur le chemin
  * compagnon (200 ET 304) ; quarantaine 403 = aucun fetch de session. La
- * matrice fine du `?user=` vit dans `StateEndpointTest` (23.5) — ici, le
+ * matrice fine du `?user=` vit dans `StateEndpointTest` — ici, le
  * CONTRAT DU SOUS-SYSTÈME compagnon.
  */
 final class SessionCompanionE2eTest extends TestCase
@@ -53,8 +53,8 @@ final class SessionCompanionE2eTest extends TestCase
     }
 
     /**
-     * GET /state tel que le fetch SYSTEM l'appelle : machine-only (service,
-     * 24.2) ou contexte user (`?user=<login court>`, fetch de session 24.3).
+     * GET /state tel que le fetch SYSTEM l'appelle : machine-only (service)
+     * ou contexte user (`?user=<login court>`, fetch de session).
      */
     private function state(string $token, array $headers = [], ?string $user = null): TestResponse
     {
@@ -89,7 +89,7 @@ final class SessionCompanionE2eTest extends TestCase
         return [$ws->refresh(), $token, $user, $userAsset];
     }
 
-    /** Décale l'échéance de rotation D5 du poste (pattern AgentSkeletonE2eTest). */
+    /** Décale l'échéance de rotation du jeton du poste (pattern AgentSkeletonE2eTest). */
     private function makeRotationDue(Workstation $ws): void
     {
         $ws->refresh();
@@ -98,7 +98,7 @@ final class SessionCompanionE2eTest extends TestCase
     }
 
     /**
-     * Capture les logs du channel `agent` (pattern 23.5/24.2 — mock étendu
+     * Capture les logs du channel `agent` (pattern — mock étendu
      * debug/info/warning/error/critical).
      *
      * @return \ArrayObject<int, array{0:string,1:string,2:array<string,mixed>}>
@@ -130,7 +130,7 @@ final class SessionCompanionE2eTest extends TestCase
         ));
     }
 
-    // ── Logon nominal — `?user=` connu : enveloppe v1, ETag DU contexte ──
+    // Logon nominal — `?user=` connu : enveloppe v1, ETag DU contexte
 
     #[Test]
     public function session_fetch_for_a_known_user_gets_the_envelope_with_its_own_context_etag(): void
@@ -161,8 +161,6 @@ final class SessionCompanionE2eTest extends TestCase
         self::assertNotSame($machineEtag, $userEtag);
     }
 
-    // ── Revalidation PAR contexte — jamais cross-contexte (piège n° 2) ───
-
     #[Test]
     public function if_none_match_revalidates_its_own_context_and_never_the_other(): void
     {
@@ -182,7 +180,7 @@ final class SessionCompanionE2eTest extends TestCase
         $this->state($token, ['If-None-Match' => $machineEtag], $user->login)->assertOk();
     }
 
-    // ── Login inconnu / compte local — machine-only, jamais d'erreur ─────
+    // Login inconnu / compte local — machine-only, jamais d'erreur
 
     #[Test]
     public function unknown_login_gets_the_machine_only_state_and_logs_unknown_user(): void
@@ -210,7 +208,7 @@ final class SessionCompanionE2eTest extends TestCase
     public function empty_user_param_yields_the_machine_context_without_unknown_user_noise(): void
     {
         // Garde-fou serveur du cas que la liste blanche SID de
-        // Get-InteractiveSessions prévient côté poste (review 24.3 #1) : si
+        // Get-InteractiveSessions prévient côté poste : si
         // un login VIDE passait quand même (`?user=`), le serveur doit rester
         // un contexte machine PROPRE — 200, même ETag que machine-only, et
         // surtout AUCUN log agent.state.unknown_user (un login vide n'est pas
@@ -247,7 +245,7 @@ final class SessionCompanionE2eTest extends TestCase
         self::assertCount(0, $this->logsOfType($logs, 'agent.state.unknown_user'));
     }
 
-    // ── Rotation D5 sur le chemin compagnon — 200 ET 304 ─────────────────
+    // Rotation du jeton sur le chemin compagnon — 200 ET 304
 
     #[Test]
     public function due_rotation_surfaces_on_a_session_fetch_200_and_the_new_token_works(): void
@@ -270,9 +268,9 @@ final class SessionCompanionE2eTest extends TestCase
     public function due_rotation_survives_a_session_fetch_304(): void
     {
         // Cycle nominal du compagnon = souvent un 304 (état stable) : la
-        // rotation doit y survivre aussi sur le chemin `?user=` (invariant
-        // D5), sinon un poste dont seules les sessions check-in entre deux
-        // cycles machine ne rotaterait jamais.
+        // rotation doit y survivre aussi sur le chemin `?user=`, sinon un
+        // poste dont seules les sessions check-in entre deux cycles machine
+        // ne rotaterait jamais.
         [$ws, $token, $user] = $this->enrolledWorkstationAndTargetedUser();
         $userEtag = $this->state($token, [], $user->login)->assertOk()->headers->get('ETag');
         $this->makeRotationDue($ws);
@@ -285,8 +283,6 @@ final class SessionCompanionE2eTest extends TestCase
         // Le nouveau token revalide immédiatement le MÊME contexte user.
         $this->state($new, ['If-None-Match' => $userEtag], $user->login)->assertStatus(304);
     }
-
-    // ── Quarantaine — aucun fetch de session (piège n° 11) ───────────────
 
     #[Test]
     public function quarantined_workstation_gets_403_on_a_session_fetch(): void
@@ -305,12 +301,12 @@ final class SessionCompanionE2eTest extends TestCase
             ]);
     }
 
-    // ── Séquence logon complète vue serveur ──────────────────────────────
+    // Séquence logon complète vue serveur
 
     #[Test]
     public function full_logon_sequence_machine_and_session_contexts_live_side_by_side(): void
     {
-        // LA séquence d'un poste 24.3 en régime établi, vue serveur : cycle
+        // LA séquence d'un poste en régime établi, vue serveur : cycle
         // machine (service) puis fetch de session (logon), chacun sur SON
         // ETag — deux caches, zéro interférence, et le cache user revalide
         // toujours après un passage machine (rien ne l'écrase).

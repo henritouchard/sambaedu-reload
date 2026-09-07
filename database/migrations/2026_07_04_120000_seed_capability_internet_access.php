@@ -5,23 +5,23 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 36.2 (AC5) — capacité de PREUVE du mécanisme HORS-REGISTRE `firewall` :
+ * Capacité de PREUVE du mécanisme HORS-REGISTRE `firewall` :
  * `internet_access`. La demande fondatrice « couper l'accès Internet d'un parc
  * de postes (salle d'examen) en gardant le réseau local » se projette sur UNE
  * règle pare-feu `block out internet any` dans le conteneur possédé
  * `SambaEdu-Agent` : le poste ne joint plus Internet, mais le LAN reste ouvert
  * (check-in agent, serveur SE5, partages SMB, DNS local préservés — les plages
- * privées sont EXCLUES de la traduction `internet` par construction, Q3).
+ * privées sont EXCLUES de la traduction `internet` par construction).
  *
- * Pattern iso 36.1 / lot CD95 : `updateOrInsert` par `key` puis par
+ * Pattern iso / lot CD95 : `updateOrInsert` par `key` puis par
  * `(capability_id, os, mechanism)`, idempotent, garde `hasTable`, `down()` par
  * suppression de la `key` (FK cascade → projection + assignments).
  *
- * ── ÉCART ASSUMÉ `ensure` (vs epic « sans verbe ensure ») ────────────────────
- * L'enum reste celui de l'epic TEL QUEL (unmanaged/on/off — contrairement à
+ * **Écart assumé sur `ensure`**, contre un cadrage « sans verbe ensure ».
+ * L'enum reste TEL QUEL (unmanaged/on/off — contrairement à
  * fs_acl, PAS besoin d'une 4e valeur : `on` EST déjà l'action réelle symétrique).
  * Mais la projection porte `ensure ∈ present|absent` (TOUJOURS émis). Motivation
- * (piège #2 + invariant « un off proposé fait une VRAIE action ») : le
+ * (invariant « un off proposé fait une VRAIE action ») : le
  * compilateur arbitre par IDENTITÉ (`rule_id`) entre items ÉMIS par maille — une
  * valeur qui n'émet RIEN ne peut JAMAIS battre une maille plus large qui émet
  * quelque chose. Si `on` n'émettait rien, un broadcast `off` (item block) NE
@@ -30,12 +30,12 @@ use Illuminate\Support\Facades\Schema;
  *     émis (aucun item firewall → le handler n'est même pas invoqué).
  *   - `on` « Autorisé » : émet le MÊME `rule_id` en `ensure:absent` → même
  *     identité → override de parc `on` annule un broadcast `off`, et le groupe
- *     `SambaEdu-Agent` finit VIDE (l'AC epic « on ⇒ groupe vide » à la LETTRE,
+ *     `SambaEdu-Agent` finit VIDE (« on ⇒ groupe vide » à la LETTRE,
  *     sans règle allow inerte qui interagirait avec une politique par défaut).
  *   - `off` « Coupé — réseau local seulement » : émet `ensure:present` → règle
  *     `block out internet any`.
  *
- * ── FENÊTRES D'ORPHELIN & GRAVITÉ TERRAIN (piège #3) ─────────────────────────
+ * **FENÊTRES D'ORPHELIN & GRAVITÉ TERRAIN**
  * Le type ABSENT du state ⇒ le handler n'est jamais invoqué : la règle block
  * SURVIVRAIT. Conséquence GRAVE ici (contrairement à l'ACE bénigne de fs_acl) :
  * la salle resterait SANS INTERNET. Le retrait PROPRE passe donc par « Autorisé »
@@ -45,17 +45,17 @@ use Illuminate\Support\Facades\Schema;
  * admin. Le `warning` de la capacité ET la doc contrat le disent en toutes
  * lettres.
  *
- * ── PROXYS D'ÉTABLISSEMENT ───────────────────────────────────────────────────
+ * **PROXYS D'ÉTABLISSEMENT**
  * Un proxy LAN re-donne Internet malgré la coupure (le trafic sort par une
  * adresse privée autorisée) — à couper le cas échéant via une règle `explicit`
  * dédiée ciblant l'adresse PUBLIQUE du proxy (l'authoring `explicit` refuse les
- * plages privées, Q3). Documenté au `warning`.
+ * plages privées). Documenté au `warning`.
  *
- * ── PAS DE CIBLAGE PAR UTILISATEUR (Q4) ──────────────────────────────────────
+ * **PAS DE CIBLAGE PAR UTILISATEUR**
  * Mécanisme portée MACHINE : « couper Internet » se cible par parc/salle. Un
  * override UserGroup/User serait SANS EFFET (limitation Windows assumée).
  *
- * ── DESCRIPTION ≤ 255 (piège #12) ────────────────────────────────────────────
+ * **DESCRIPTION ≤ 255**
  * `capabilities.description`/`label` sont des varchar(255) PG : un dépassement
  * passe en SQLite de test et explose en 22001 sur /vm. `warning` est un TEXT
  * (pas de limite dure) — rester concis quand même.

@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// Handler `drives` (aggregate / scope session) — Story 27.2. Logique PURE,
+// Handler `drives` (aggregate / scope session) —. Logique PURE,
 // OS-agnostique (les montages réels sont injectés via DriveOps) → testée sur
 // l'hôte ; agent/windows ne fait que câbler `net use` / WNetAddConnection2.
 //
@@ -16,17 +16,17 @@ import (
 //   - apply : monter les manquants + démonter les gérés sortis des règles.
 //     IDEMPOTENT (deux passes sur état stable = aucune écriture).
 //
-// MARQUEUR de périmètre (décision n° 8) : seules les lettres montées par l'agent
+// MARQUEUR de périmètre : seules les lettres montées par l'agent
 // (vers un partage SambaEdu) sont gérées. Un lecteur monté par l'utilisateur
 // (lettre occupée par un montage hors périmètre, ou une lettre cible déjà prise
 // par un montage user) est IGNORÉ via Blocked() — ni démonté, ni ré-monté : les
-// autres lecteurs convergent quand même (iso shortcuts/printers 27.1/27.2).
+// autres lecteurs convergent quand même (iso shortcuts/printers).
 //
 // L'UNC (`\\<se4fs>\Classe_<name>\<user>\`) est résolu CÔTÉ SERVEUR (projection
 // des classes du user, MVP-A) ; l'agent substitue seulement les tokens locaux
 // (`<se4fs>`, `<user>`). L'agent reste bête : aucune logique métier de classe.
 //
-// ISOLATION des erreurs (AC4) : serveur de fichiers injoignable au montage →
+// ISOLATION des erreurs : serveur de fichiers injoignable au montage →
 // l'op renvoie une erreur → le moteur rend {status: error, detail} pour le SEUL
 // type `drives` ; les autres types continuent. Retry au cycle suivant.
 
@@ -184,7 +184,7 @@ func (h *DrivesHandler) Apply(items []StateItem) error {
 	for _, letter := range letters {
 		t := desired[letter]
 		// Montage utilisateur (homonyme hors périmètre) : on ne l'écrase JAMAIS
-		// (décision n° 8). On saute (les autres convergent quand même).
+		// On saute (les autres convergent quand même).
 		blocked, err := h.Ops.Blocked(letter)
 		if err != nil {
 			return err

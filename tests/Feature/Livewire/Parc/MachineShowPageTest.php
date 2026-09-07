@@ -35,12 +35,12 @@ use Tests\TestCase;
 /**
  * Tests Feature du composant Livewire `pages::parc.machines.[id].index`.
  *
- * Couvre les ACs de la story 4-2 :
- *   AC2 — feedback immédiat (statusRunning = true dès le call executeMachinePowerAction)
- *   AC3 — polling readiness détecte la machine up → toast succès + arrêt du poll
- *   AC4 — timeout après MACHINE_READINESS_TIMEOUT_SECONDS (120s par défaut)
- *   AC5 — erreur synchrone (MAC invalide, machine non trouvée) → pas de polling résiduel
- *   AC6 — extinction forcée dispatchée avec $force=true et loggée comme shutdown-force
+ * Couvre les ACs de la-2 :
+ * Feedback immédiat (statusRunning = true dès le call executeMachinePowerAction)
+ * Polling readiness détecte la machine up → toast succès + arrêt du poll
+ * timeout après MACHINE_READINESS_TIMEOUT_SECONDS (120s par défaut)
+ * Erreur synchrone (MAC invalide, machine non trouvée) → pas de polling résiduel
+ * extinction forcée dispatchée avec $force=true et loggée comme shutdown-force
  *   Idempotence du poll quand aucune action n'est en cours.
  */
 class MachineShowPageTest extends TestCase
@@ -86,7 +86,7 @@ class MachineShowPageTest extends TestCase
         parent::tearDown();
     }
 
-    // ─── Helpers ────────────────────────────────────────────────────────────
+    // Helpers
 
     private function createTablesIfNeeded(): void
     {
@@ -102,8 +102,8 @@ class MachineShowPageTest extends TestCase
                 $table->timestamp('date_rapport_poste')->nullable();
                 $table->string('ad_dn')->nullable();
                 $table->string('ad_guid')->nullable();
-                // Story 23.2 / 24.7 — colonnes du canal agent (la card Agent + la
-                // conformité 24.7 les lisent au render).
+                // Colonnes du canal agent (la card Agent + la
+                // conformité les lisent au render).
                 $table->string('agent_token_hash', 64)->nullable();
                 $table->timestamp('agent_token_rotated_at')->nullable();
                 $table->timestamp('agent_last_checkin_at')->nullable();
@@ -116,7 +116,7 @@ class MachineShowPageTest extends TestCase
             $this->createdTables = true;
         }
 
-        // Story 24.7 — tables D3 (24.1) lues par ConformityService.
+        // Tables lues par ConformityService.
         if (!Schema::hasTable('agent_resource_states')) {
             Schema::create('agent_resource_states', function (Blueprint $table) {
                 $table->id();
@@ -228,7 +228,7 @@ class MachineShowPageTest extends TestCase
             $this->createdTables = true;
         }
 
-        // Story 37.1 (review #7) — le résumé de déploiement (toujours rendu) eager-load
+        // Le résumé de déploiement (toujours rendu) eager-load
         // `application` : sans cette table, un WorkstationApplicationStatus casse le render.
         if (!Schema::hasTable('applications')) {
             Schema::create('applications', function (Blueprint $table) {
@@ -242,7 +242,7 @@ class MachineShowPageTest extends TestCase
             $this->createdTables = true;
         }
 
-        // Story 15.4 — la fiche machine lit `$workstation->wpkgOptions()` au render.
+        // La fiche machine lit `$workstation->wpkgOptions` au render.
         if (!Schema::hasTable('wpkg_workstation_options')) {
             Schema::create('wpkg_workstation_options', function (Blueprint $table) {
                 $table->id();
@@ -347,13 +347,11 @@ class MachineShowPageTest extends TestCase
         return $mock;
     }
 
-    // ─── Tests ──────────────────────────────────────────────────────────────
-    //
-    // Depuis la correction review #1 (2026-04-20), executeMachinePowerAction()
-    // ne passe PLUS par WorkstationGroupService::executeMachineAction. Il crée
-    // une ligne MachinePowerActionTask + dispatche un DispatchMachinePowerActionJob.
-    // Les tests assertent donc sur l'état DB + Queue::fake() plutôt que sur le
-    // mock du service.
+    // `executeMachinePowerAction()` ne passe PAS par
+    // WorkstationGroupService::executeMachineAction : il crée une ligne
+    // MachinePowerActionTask + dispatche un DispatchMachinePowerActionJob. Les
+    // tests assertent donc sur l'état DB + Queue::fake() plutôt que sur le mock
+    // du service.
 
     public function test_unknown_machine_redirects_to_parc_index(): void
     {
@@ -370,7 +368,7 @@ class MachineShowPageTest extends TestCase
 
     public function test_wake_action_emits_toast_and_starts_polling(): void
     {
-        // AC2 — statusRunning doit passer à true immédiatement, un toast succès
+        // StatusRunning doit passer à true immédiatement, un toast succès
         // est émis, et une MachinePowerActionTask est créée + un job dispatché.
         Queue::fake();
 
@@ -396,7 +394,7 @@ class MachineShowPageTest extends TestCase
 
     public function test_restart_action_initializes_waiting_down_phase(): void
     {
-        // Review #2 — une action restart doit créer la task avec
+        // Une action restart doit créer la task avec
         // restart_phase = 'waiting-down' pour que le polling attende
         // d'abord que la machine cesse de répondre avant de chercher son retour.
         Queue::fake();
@@ -419,7 +417,7 @@ class MachineShowPageTest extends TestCase
 
     public function test_restart_polling_transitions_from_waiting_down_to_waiting_up(): void
     {
-        // Review #2 — on simule le ping qui retourne false (machine éteinte) :
+        // On simule le ping qui retourne false (machine éteinte) :
         // la task doit passer de 'waiting-down' à 'waiting-up' SANS émettre
         // de toast succès (le redémarrage n'est pas encore terminé).
         Queue::fake();
@@ -450,7 +448,7 @@ class MachineShowPageTest extends TestCase
 
     public function test_restart_polling_completes_when_machine_reboots(): void
     {
-        // Review #2 — depuis 'waiting-up', dès que le ping détecte un OS
+        // Depuis 'waiting-up', dès que le ping détecte un OS
         // (machine de retour), la task passe completed, toast succès,
         // polling stoppé.
         Queue::fake();
@@ -482,7 +480,7 @@ class MachineShowPageTest extends TestCase
 
     public function test_poll_readiness_detects_machine_online_and_stops_polling(): void
     {
-        // AC3 — quand la machine est up (ping retourne 'linux'/'windows'),
+        // Quand la machine est up (ping retourne 'linux'/'windows'),
         // statusRunning repasse à false, task marquée completed, toast succès.
         Queue::fake();
 
@@ -509,7 +507,7 @@ class MachineShowPageTest extends TestCase
 
     public function test_poll_readiness_times_out_after_configured_duration(): void
     {
-        // AC4 — au-delà du timeout (120s par défaut), le poll arrête + toast warning
+        // Au-delà du timeout (120s par défaut), le poll arrête + toast warning
         // + ligne `machine_boot_logs` avec error_flags=1 + task marquée failed.
         Queue::fake();
         Config::set('parc.machine_readiness_timeout_seconds', 120);
@@ -569,7 +567,7 @@ class MachineShowPageTest extends TestCase
 
     public function test_poll_readiness_stops_when_task_is_marked_failed(): void
     {
-        // Review #1 — si le job async a marqué la task comme failed (ex: MAC
+        // Si le job async a marqué la task comme failed (ex: MAC
         // invalide, exception), le polling doit couper immédiatement en
         // affichant le error_message remonté par le job.
         Queue::fake();
@@ -598,7 +596,7 @@ class MachineShowPageTest extends TestCase
 
     public function test_dispatch_blocked_while_action_in_progress(): void
     {
-        // Review #14 — un second click alors que statusRunning est true doit
+        // Un second click alors que statusRunning est true doit
         // être ignoré (toast warning + pas de nouvelle task).
         Queue::fake();
 
@@ -621,7 +619,7 @@ class MachineShowPageTest extends TestCase
 
     public function test_shutdown_force_action_creates_task_with_correct_action(): void
     {
-        // AC6 — le bouton "Forcer l'extinction" crée une task avec
+        // Le bouton "Forcer l'extinction" crée une task avec
         // action='shutdown-force' (et non 'shutdown').
         Queue::fake();
 
@@ -643,7 +641,7 @@ class MachineShowPageTest extends TestCase
 
     public function test_invalid_argument_exception_shows_error_toast_and_stops_polling(): void
     {
-        // AC5 cas extrême : action non supportée — le composant valide en amont
+        // Cas extrême : action non supportée — le composant valide en amont
         // et throw InvalidArgumentException, proprement récupérée.
         Queue::fake();
 
@@ -660,7 +658,7 @@ class MachineShowPageTest extends TestCase
         $this->assertEquals(0, MachinePowerActionTask::count());
     }
 
-    // ─── Story 24.7 — Conformité agent (AC2, AC4, AC5) ──────────────────────
+    // — Conformité agent
 
     private function makeEnrolledWorkstation(): Workstation
     {
@@ -686,7 +684,7 @@ class MachineShowPageTest extends TestCase
 
     public function test_machine_page_shows_reported_state_by_type(): void
     {
-        // AC2 — la card Agent (étendue) montre l'état rapporté par type, daté.
+        // La card Agent (étendue) montre l'état rapporté par type, daté.
         $ws = $this->makeEnrolledWorkstation();
         $this->mockGroupService($ws);
         $this->seedState($ws, 'wallpaper', AgentResourceStatus::Compliant);
@@ -702,7 +700,7 @@ class MachineShowPageTest extends TestCase
 
     public function test_machine_page_lists_recent_events(): void
     {
-        // AC2 — sous-section « Derniers événements » datés.
+        // Sous-section « Derniers événements » datés.
         $ws = $this->makeEnrolledWorkstation();
         $this->mockGroupService($ws);
         AgentReportEvent::create([
@@ -721,7 +719,7 @@ class MachineShowPageTest extends TestCase
 
     public function test_machine_page_shows_how_long_a_drift_has_been_held(): void
     {
-        // La politique STRICT (27.8) rapporte `drift` même quand l'Apply répare
+        // La politique STRICT rapporte `drift` même quand l'Apply répare
         // aussitôt : le statut seul ne dit pas si l'écart est transitoire ou
         // installé. La colonne « Depuis » porte cette distinction, à partir de
         // la dernière TRANSITION vers le statut courant.
@@ -745,8 +743,8 @@ class MachineShowPageTest extends TestCase
     }
 
     /**
-     * Accorde `computer.control` (le gate de forceSyncWorkstation, review
-     * 24.7 #1). Le défaut `$user = null` rend la closure guest-friendly :
+     * Accorde `computer.control` (le gate de `forceSyncWorkstation`).
+     * Le défaut `$user = null` rend la closure guest-friendly :
      * cette suite ne s'authentifie pas (sinon Gate::before n'est pas appelé).
      */
     private function grantComputerControl(): void
@@ -756,7 +754,7 @@ class MachineShowPageTest extends TestCase
 
     public function test_force_sync_posts_a_pending_request(): void
     {
-        // AC5 — clic « Forcer la synchro » → agent_sync_requested_at posé + toast.
+        // Clic « Forcer la synchro » → agent_sync_requested_at posé + toast.
         $this->grantComputerControl();
         $ws = $this->makeEnrolledWorkstation();
         $this->mockGroupService($ws);
@@ -773,8 +771,8 @@ class MachineShowPageTest extends TestCase
 
     public function test_force_sync_rejected_for_non_enrolled_workstation(): void
     {
-        // AC5 / piège 6 — bouton garde serveur : poste non enrôlé → erreur,
-        // aucune demande posée.
+        // Garde serveur du bouton : poste non enrôlé → erreur, aucune demande
+        // posée.
         $this->grantComputerControl();
         $ws = $this->makeWorkstation(); // pas enrôlé
         $this->mockGroupService($ws);
@@ -788,7 +786,7 @@ class MachineShowPageTest extends TestCase
 
     public function test_force_sync_denied_without_computer_control(): void
     {
-        // Review 24.7 #1 — sans le gate `computer.control` (page accessible
+        // Sans le gate `computer.control` (page accessible
         // en lecture), l'action est refusée et aucune demande n'est posée.
         $ws = $this->makeEnrolledWorkstation();
         $this->mockGroupService($ws);
@@ -838,7 +836,7 @@ class MachineShowPageTest extends TestCase
 
     public function test_drift_returns_to_compliant_on_reingest(): void
     {
-        // AC4 — deux ingestions successives (drift puis compliant) via le
+        // Deux ingestions successives (drift puis compliant) via le
         // ReportIngestService réel → la vue passe de l'exception à l'absence.
         $ws = $this->makeEnrolledWorkstation();
         $this->mockGroupService($ws);
@@ -852,7 +850,6 @@ class MachineShowPageTest extends TestCase
             ]],
         ];
 
-        // 1) drift
         $ingest->ingest($ws, $report('drift', str_repeat('d', 64)));
         Livewire::test('pages::parc.machines.[id].index', ['id' => $ws->id])
             ->call('setTab', 'agent') // la card Agent vit dans l'onglet « Agent »
@@ -865,14 +862,12 @@ class MachineShowPageTest extends TestCase
             ->assertDontSee('En écart');
     }
 
-    // ─── Story 37.1 — Câblage de l'onglet « État cible » (review #1 + #7) ────
-
     public function test_state_tab_wires_desired_state_component(): void
     {
-        // Review #1 — câblage réel : `setTab('state')` autorisé + directive
+        // Câblage réel : `setTab('state')` autorisé + directive
         // @elseif ($tab === 'state') monte le SFC `desired-state-tab`. #[Lazy] ⇒
         // le rendu ne contient que le placeholder (« État cible du poste »).
-        // Review #7 — la branche `state` est PLATE : sur tab=state, aucune autre
+        // La branche `state` est PLATE : sur tab=state, aucune autre
         // branche ne doit fuiter. On cible le CORPS de la card « Groupes logiques »
         // (désormais dans l'onglet dédié), pas son libellé d'onglet toujours visible.
         $ws = $this->makeWorkstation();
@@ -887,10 +882,10 @@ class MachineShowPageTest extends TestCase
 
     public function test_state_tab_renders_even_with_deployment_statuses(): void
     {
-        // Review #7 — cas régressif : sur un poste AYANT des statuts de déploiement
-        // (deploy non vide), l'ancien câblage imbriquait `state` dans le @if
-        // déploiement ⇒ l'état cible n'était JAMAIS atteint. La branche plate le
-        // rend désormais quel que soit l'état du déploiement.
+        // Cas régressif : sur un poste AYANT des statuts de déploiement (deploy
+        // non vide), imbriquer `state` dans le @if déploiement rendrait l'état
+        // cible inatteignable. La branche plate le rend quel que soit l'état du
+        // déploiement.
         $ws = $this->makeWorkstation();
         $this->mockGroupService($ws);
 

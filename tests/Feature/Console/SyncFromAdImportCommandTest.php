@@ -170,7 +170,7 @@ class SyncFromAdImportCommandTest extends TestCase
         $this->assertNotContains('user_groups', $this->callOrder);
     }
 
-    // ── Helpers ──────────────────────────────────────────────────────────
+    // Helpers
 
     /**
      * Mocke un service NON-final via Mockery (sous-classe → passe instanceof partout,
@@ -286,7 +286,7 @@ class SyncFromAdImportCommandTest extends TestCase
     /**
      * Mocke RightsMigrationService en capturant l'argument dryRun de migrate().
      *
-     * @return Closure(): ?bool  retourne la dernière valeur de dryRun captée
+     * @return Closure(): ?bool retourne la dernière valeur de dryRun captée
      */
     private function bindRightsMigrationCapture(): Closure
     {

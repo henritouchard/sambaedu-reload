@@ -60,7 +60,6 @@ class WpkgReportSeeder extends Seeder
                 $roll = rand(1, 100);
 
                 if ($roll <= 70) {
-                    // 70% installed
                     $status  = 'installed';
                     $message = null;
                 } elseif ($roll <= 85) {
@@ -68,7 +67,6 @@ class WpkgReportSeeder extends Seeder
                     $status  = 'not-installed';
                     $message = null;
                 } elseif ($roll <= 94) {
-                    // 9% error
                     $status  = 'error';
                     $message = self::ERROR_MESSAGES[array_rand(self::ERROR_MESSAGES)];
                 } else {

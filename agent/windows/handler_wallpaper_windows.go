@@ -13,8 +13,8 @@ import (
 	"sambaedu/agent/shared"
 )
 
-// Handler `wallpaper` (exclusive / default / session) — Story 24.6, portage
-// de handlers/Wallpaper.ps1 (24.4). Exécuté par le COMPAGNON (droits user —
+// Handler `wallpaper` (exclusive / default / session), portage
+// de handlers/Wallpaper.ps1. Exécuté par le COMPAGNON (droits user
 // le wallpaper Windows est per-user : HKCU + SystemParametersInfo). Le
 // handler ne contient QUE le test/apply spécifique OS : la machine d'états
 // §5 vit dans le moteur (shared/engine.go), la résolution de l'asset dans
@@ -22,11 +22,11 @@ import (
 //
 //   - test  : HKCU\Control Panel\Desktop\WallPaper pointe-t-il vers
 //     assets\<filename> attendu ? Comparaison CASE-INSENSITIVE (sémantique
-//     chemins Windows) + normalisation NFC (piège n° 9 — les filenames sont
+//     chemins Windows) + normalisation NFC (les filenames sont
 //     hex ASCII mais la valeur registre peut venir d'ailleurs) ;
 //   - apply : valeurs registre (style `fill` : WallpaperStyle=10,
 //     TileWallpaper=0) + SystemParametersInfoW(SPI_SETDESKWALLPAPER,
-//     UPDATEINIFILE|SENDCHANGE) en FFI Win32 SANS cgo (AC epic — user32.dll
+//     UPDATEINIFILE|SENDCHANGE) en FFI Win32 SANS cgo (user32.dll
 //     via NewLazySystemDLL, jamais de shell-out ici). IDEMPOTENT : mêmes
 //     écritures = même état, rejouable sans effet cumulatif.
 //
@@ -39,7 +39,7 @@ import (
 //     résorbé au passage suivant (le download est fait au cycle/logon).
 //
 // Le téléchargement n'est JAMAIS fait ici : le compagnon n'a ni réseau ni
-// token (frontière 24.3) — le cache d'assets est alimenté par SYSTEM
+// token (frontière) — le cache d'assets est alimenté par SYSTEM
 // (SHA-256 vérifié), lisible user (ACL Users:R à la création).
 
 const wallpaperRegistryKey = `Control Panel\Desktop`
@@ -92,7 +92,7 @@ func (h *wallpaperHandler) Test(items []shared.StateItem) (bool, error) {
 		return false, nil
 	}
 
-	// NFC (piège n° 9) + case-insensitive (sémantique chemins Windows).
+	// NFC + case-insensitive (sémantique chemins Windows).
 	return strings.EqualFold(norm.NFC.String(current), norm.NFC.String(target)), nil
 }
 
@@ -119,7 +119,7 @@ func (h *wallpaperHandler) Apply(items []shared.StateItem) error {
 	}
 	defer key.Close()
 
-	// Style `fill` (décision 24.4 n° 8) : WallpaperStyle=10, TileWallpaper=0.
+	// Style `fill` : WallpaperStyle=10, TileWallpaper=0.
 	for name, value := range map[string]string{
 		"WallpaperStyle": "10",
 		"TileWallpaper":  "0",

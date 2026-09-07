@@ -19,7 +19,7 @@ use Tests\TestCase;
 use Tests\Traits\CreatesPermissionSchema;
 
 /**
- * Story 7.2 (AC5) — MachinePolicy.
+ * MachinePolicy.
  *
  * Le scoping via `WorkstationGroup` (parent N:N) est central. On teste :
  *  - droit global → accès à toute machine

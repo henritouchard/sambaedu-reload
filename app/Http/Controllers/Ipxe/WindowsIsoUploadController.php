@@ -170,8 +170,6 @@ class WindowsIsoUploadController extends Controller
         return $this->ok((int) $meta['received'], $complete);
     }
 
-    // ---- Helpers -----------------------------------------------------------
-
     private function ensureTmpDir(): ?string
     {
         $dir = rtrim((string) config('ipxe.iso_management.upload_tmp_path', storage_path('install/iso/.uploads')), '/');

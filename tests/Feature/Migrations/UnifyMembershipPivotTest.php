@@ -11,9 +11,9 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 4.11 — Migration `unify_workstation_membership_pivot`.
+ * Migration `unify_workstation_membership_pivot`.
  *
- * Couvre AC1 : backfill FK → pivot idempotent, drop colonne, `down()`
+ * Couvre : backfill FK → pivot idempotent, drop colonne, `down`
  * restaure colonne + données depuis le pivot.
  */
 class UnifyMembershipPivotTest extends TestCase

@@ -12,7 +12,7 @@ use Tests\TestCase;
 use Tests\Support\IpxeAuthTestHelper;
 
 /**
- * Story 3.3 — AC9.2 / T6.4.
+ * T6.4.
  *
  * Tests Feature de la route native `GET|POST /ipxe/enrollment/byod`.
  *
@@ -73,7 +73,7 @@ class IpxeEnrollmentByodEndpointTest extends TestCase
     }
 
     /**
-     * Q1 (review 3.3) : iso-legacy `enregistrement_byod.php:72-81` — un poste
+     * Iso-legacy `enregistrement_byod.php:72-81` — un poste
      * déjà connu en AD (présent dans `workstations`) ne peut PAS BYOD. On
      * doit retourner "ERREUR ! acces refuse" + chain boot, et NE PAS créer
      * de MachineBootLog (le rejet est audit-only via Log warning).

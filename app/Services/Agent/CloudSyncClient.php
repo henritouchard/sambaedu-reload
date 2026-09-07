@@ -15,10 +15,9 @@ use DOMElement;
 use InvalidArgumentException;
 
 /**
- * Story 63.5 — LE CLIENT DE SYNCHRONISATION EST UNE APPLICATION DU CATALOGUE,
+ * LE CLIENT DE SYNCHRONISATION EST UNE APPLICATION DU CATALOGUE,
  * DÉSIGNÉE, JAMAIS UN PAQUET DEVINÉ.
  *
- * ---------------------------------------------------------------------------
  * **« UN TUYAU, DEUX OUTILS » — ce service n'installe RIEN, et ne désinstalle
  * RIEN.** Il répond à une seule question : *quelle application du catalogue
  * doit entrer dans l'ensemble cible des applications d'un poste parce que
@@ -26,8 +25,8 @@ use InvalidArgumentException;
  * L'installation reste le fait de WPKG, moteur déclaratif non absorbé ; l'agent
  * n'unifie que le TRANSPORT (le déclenchement). Franchir cette frontière —
  * ouvrir ici un second moteur de paquets, ou un handler d'installation — serait
- * une régression d'architecture, et le début de l'Epic 59 (plan d'installation
- * multiformat), qui n'est pas au périmètre.
+ * une régression d'architecture, et le début d'un plan d'installation
+ * multiformat qui n'est pas au périmètre.
  *
  * **SE5 NE CONNAÎT AUCUN `app_id` DE CLIENT.** Le catalogue d'applications est
  * sous autorité amont : un dépôt imposé désinstalle en cascade tout ce qui n'y
@@ -37,7 +36,6 @@ use InvalidArgumentException;
  * client ({@see FilePolicyService} clés `nextcloud_client_app_id` /
  * `opencloud_client_app_id`). Sans désignation, la position « par le client de
  * synchronisation » est ABSENTE de l'écran, avec son motif.
- * ---------------------------------------------------------------------------
  *
  * **LA GARDE EST REJOUÉE CÔTÉ SERVICE.** Doctrine littérale de
  * {@see \App\Services\Filesystem\Backend\FileBackendSelection} (cité en FQCN :
@@ -50,7 +48,7 @@ use InvalidArgumentException;
  * (`applications.xml`) — pas qu'elle est **complète**. Un `<remove>` peut
  * parfaitement laisser derrière lui un profil `%APPDATA%`, une tâche au logon,
  * une clé `Run` ou un service. Ce que la recette nettoie réellement ne se
- * constate que sur un poste, et c'est l'objet du runbook QA de la story. La
+ * constate que sur un poste, et c'est l'objet du runbook QA. La
  * garde vaut néanmoins d'exister : désigner un paquet sans aucune
  * désinstallation, c'est promettre une convergence qu'on ne peut pas tenir.
  * Précédent maison assumé : la validation prédictive des associations natives —
@@ -63,7 +61,6 @@ use InvalidArgumentException;
  * dépôt pour un réglage global est la RELECTURE, et `Cache::lock()` est de toute
  * façon inutilisable sous APCu.
  *
- * ---------------------------------------------------------------------------
  * ⚠️ **LA BORNE {@see self::MIN_AGENT_VERSION}, ET CE QUI CASSE EN DESSOUS.**
  *
  * La convergence du RETRAIT n'est pas un vœu : elle est acquise dans l'agent
@@ -83,9 +80,8 @@ use InvalidArgumentException;
  * jour de son parc.
  *
  * ⚠️ La documentation du contrat a longtemps affirmé le contraire (*« il ne la
- * désinstalle pas de lui-même »*). Elle était périmée ; elle est corrigée par
- * cette story. **Le code de l'agent fait autorité.**
- * ---------------------------------------------------------------------------
+ * désinstalle pas de lui-même »*). Elle était périmée ; elle est corrigée ici.
+ * **Le code de l'agent fait autorité.**
  */
 final class CloudSyncClient
 {
@@ -223,7 +219,6 @@ final class CloudSyncClient
      * L'`app_id` à UNIONNER à l'ensemble cible des applications d'un poste, ou
      * `null` — c'est LE point de contact avec la compilation d'état.
      *
-     * ---------------------------------------------------------------------------
      * ⚠️ **LA COMPILATION NE REJOUE PAS LA GARDE DE SAISIE, ET C'EST DÉLIBÉRÉ.**
      *
      * Elle ne retient que le STRUCTUREL : une désignation existe pour le cloud
@@ -245,13 +240,12 @@ final class CloudSyncClient
      * parc**, pour le réinstaller à la passe suivante. Une garde qui protège un
      * formulaire n'a pas à pouvoir désinstaller un parc : la compilation projette
      * la **décision persistée**, la posabilité est une propriété de l'**écriture**.
-     * ---------------------------------------------------------------------------
      *
      * Court-circuits, dans cet ordre, et pour un coût croissant :
      *  1. aucun cloud actif ⇒ `null`, ZÉRO requête ;
      *  2. chemin d'accès `web` (le DÉFAUT) ⇒ `null`, aucune requête sur
      *     `applications` — l'ensemble cible reste byte-identique à celui d'avant
-     *     cette story, et le golden d'état ne bouge pas ;
+     *     ce chemin, et le golden d'état ne bouge pas ;
      *  3. aucune désignation ⇒ `null`, toujours aucune requête sur `applications` ;
      *  4. désignation qui ne résout AUCUNE ligne de catalogue ⇒ `null` : il n'y
      *     aurait ni `name` à hydrater, ni `sourceId`, et le provider n'émettrait

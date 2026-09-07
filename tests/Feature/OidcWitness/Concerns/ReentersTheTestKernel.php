@@ -13,7 +13,7 @@ use GuzzleHttp\Psr7\Response as PsrResponse;
 use Psr\Http\Message\RequestInterface;
 
 /**
- * Story 55.3 — **Comment tester un appel HTTP vers soi-même sur l'hôte.**
+ * **Comment tester un appel HTTP vers soi-même sur l'hôte.**
  *
  * En production, le témoin appelle `{issuer}/oidc/token` par HTTP réel : SE5
  * s'appelle lui-même à travers Apache, et le pool FPM multi-workers l'absorbe

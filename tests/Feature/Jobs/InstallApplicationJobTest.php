@@ -21,7 +21,7 @@ use Tests\TestCase;
 use Tests\Traits\CreatesAppStoreSchema;
 
 /**
- * Story 8.2.7 (AC4, AC7) — Tests du Job d'installation en tâche de fond.
+ * Tests du Job d'installation en tâche de fond.
  *
  * Couvre :
  *  - implémentation ShouldQueue + tries/backoff/timeout + WithoutOverlapping ;

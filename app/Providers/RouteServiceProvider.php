@@ -28,7 +28,7 @@ class RouteServiceProvider extends ServiceProvider
             return Limit::perMinute(60)->by($request->user()?->id ?: $request->ip());
         });
 
-        // Story 8.4 — DDNS piloté par DHCP. Seau DÉDIÉ : l'appelant unique est
+        // DDNS piloté par DHCP. Seau DÉDIÉ : l'appelant unique est
         // le serveur lui-même (dhcpd co-localisé), donc un limiteur anonyme
         // partagerait sa clé (domaine|IP) avec les autres routes machine et
         // plafonnerait le parc entier. Seuil large : au retour d'une coupure,
@@ -36,7 +36,7 @@ class RouteServiceProvider extends ServiceProvider
         // sur un `delete` n'est jamais rejoué (aucun renouvellement derrière).
         RateLimiter::for('ddns', fn (Request $request) => Limit::perMinute(2000)->by('ddns'));
 
-        // Story 56.4 (review #3) — API extensions. MÊME motif que `ddns` :
+        // API extensions. MÊME motif que `ddns` :
         // toutes les extensions `app` tournent sur CET hôte, derrière le
         // reverse-proxy Apache — leurs appels arrivent donc tous de la même IP.
         // Le limiteur anonyme aurait fait partager un unique seau de 60/min à

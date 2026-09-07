@@ -15,15 +15,13 @@ use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 4-2 — correction review #1 (NFR2 async).
- *
  * Exécute l'action power (wake / shutdown / shutdown-force / restart) sur une
  * machine en arrière-plan, met à jour `machine_power_action_tasks` à chaque
  * transition d'état (queued → dispatched → running → completed|failed).
  *
  * Le composant Livewire MachineShow crée la ligne `machine_power_action_tasks`
  * en status=queued, dispatche ce job, et retourne immédiatement un toast
- * "Action lancée" (< 500 ms) — d'où le respect de NFR2. Le polling
+ * "Action lancée" (< 500 ms). Le polling
  * `wire:poll.{N}s="pollMachineReadiness"` consomme ensuite l'état de la task
  * pour afficher la progression et détecter la completion.
  *
@@ -140,7 +138,7 @@ class DispatchMachinePowerActionJob implements ShouldQueue
             //
             // → On laisse donc le status à "running" et on renseigne le `result`.
             //   Le composant Livewire marquera la task `completed` depuis
-            //   `pollMachineReadiness()` une fois l'état confirmé côté réseau.
+            //  `pollMachineReadiness()` une fois l'état confirmé côté réseau.
             //
             // Exception : si le service a échoué d'emblée (MAC invalide,
             // shutdown sur machine off, etc.), on marque failed tout de suite

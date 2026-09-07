@@ -9,8 +9,8 @@ import (
 	"strings"
 )
 
-// Orchestration du provisioning Rainmeter côté SERVICE SYSTEM (Story 27.1bis,
-// volets 1 & 3 ; Story 25.6 — embed→servi + checksum→manifest). Calquée sur
+// Orchestration du provisioning Rainmeter côté SERVICE SYSTEM
+// (skin servie plutôt qu'embarquée, checksum lu du manifest). Calquée sur
 // SyncWallpaperAssets (assets.go) : manifest → download authentifié → vérif
 // SHA-256 AVANT extraction/écriture → extraction portable dans un dossier ACL →
 // pose de la skin (UTF-16 LE + BOM) + Rainmeter.ini durci → ACL Users:R sur
@@ -18,15 +18,15 @@ import (
 // no-op. Un échec ne casse JAMAIS le cycle machine (rattrapage au prochain
 // passage — comme le sync wallpaper). Appelé au BOOTSTRAP du cycle SYSTEM
 // (RunCycle), JAMAIS depuis un handler runtime (contrainte « handler jamais
-// installeur » — D3).
+// installeur »).
 //
-// Story 25.6 : l'autorité du hash du portable ET la skin viennent désormais du
+// L'autorité du hash du portable ET la skin viennent désormais du
 // SERVEUR (manifest tool/skin + serving skin authentifié), plus d'une constante
 // figée ni d'un embed go:embed. Outil désactivé/absent du manifest → no-op
-// gracieux (D4) ; skin introuvable serveur → skin non (re)posée, le reste
+// gracieux ; skin introuvable serveur → skin non (re)posée, le reste
 // converge (Rainmeter.ini durci + ACL restent posés).
 //
-// NFR7 : aucune dépendance AD ici (download via le Client bearer, comme tout le
+// Aucune dépendance AD ici (download via le Client bearer, comme tout le
 // canal SYSTEM).
 
 // SyncRainmeterTool pose Rainmeter portable + sa config verrouillée selon le
@@ -34,12 +34,12 @@ import (
 //
 //  1. MANIFEST : GET /api/v1/agent/tools-manifest (token'd). Serveur injoignable
 //     ou réponse non exploitable → no-op gracieux (rattrapage au prochain
-//     cycle ; Rainmeter absent reste gracieux, invariant 24.4/24.6).
+//     cycle ; Rainmeter absent reste gracieux, invariant).
 //  2. PORTABLE (install-if-absent) : si l'outil est ACTIF dans le manifest
 //     (`tool != nil`) ET Rainmeter pas encore installé → download de l'artefact
 //     dédié (route /tools/{filename}), vérif SHA-256 = `tool.sha256` AVANT
 //     extraction, extraction ACL. Outil absent/désactivé → provisioning sauté
-//     (D4 : on ne désinstalle jamais l'existant).
+//     (on ne désinstalle jamais l'existant).
 //  3. SKIN : download de la skin (route /overlay-skin), vérif SHA-256 =
 //     `skin.sha256` AVANT écriture, conversion UTF-16 LE + BOM, pose si
 //     divergente (idempotence par contenu).
@@ -118,17 +118,17 @@ func (a *Agent) fetchRainmeterManifest(cfg Config) (*rainmeterManifest, bool) {
 // provisionRainmeterPortable : download + vérif hash + extraction, seulement si
 // l'outil est ACTIF dans le manifest (tool != nil) et Rainmeter pas encore
 // installé. Outil absent/désactivé = provisioning désactivé (no-op gracieux,
-// D4 — on ne désinstalle jamais l'existant).
+// on ne désinstalle jamais l'existant).
 func (a *Agent) provisionRainmeterPortable(cfg Config, tool *rainmeterToolEntry) {
-	// D4 EN PREMIER : sans outil actif au manifest, il n'y a aucune autorité
+	// Sans outil actif au manifest, il n'y a aucune autorité
 	// serveur à laquelle comparer — et on ne désinstalle JAMAIS l'existant.
 	if tool == nil {
-		a.Log.Debugf("Outil Rainmeter absent ou désactivé du manifest : provisioning sauté (Rainmeter absent reste gracieux, D4).")
+		a.Log.Debugf("Outil Rainmeter absent ou désactivé du manifest : provisioning sauté (Rainmeter absent reste gracieux).")
 
 		return
 	}
 	// Comparaison de VERSION, et non simple présence : le marqueur porte le
-	// SHA-256 de l'artefact posé (écrit plus bas, autorité serveur D6). Tester
+	// SHA-256 de l'artefact posé (écrit plus bas, autorité serveur). Tester
 	// sa seule existence — ce que faisait `RainmeterInstalled()` ici — rendait
 	// toute mise à jour de l'outil INDÉLIVRABLE : réuploader un portable neuf
 	// n'atteignait jamais un poste déjà provisionné, en silence. Marqueur
@@ -184,7 +184,7 @@ func (a *Agent) provisionRainmeterPortable(cfg Config, tool *rainmeterToolEntry)
 			return
 		}
 		// Extraction vers un dossier TEMPORAIRE puis rename atomique du dossier
-		// en place (#10) : une extraction interrompue ne pollue jamais la racine
+		// en place : une extraction interrompue ne pollue jamais la racine
 		// définitive — soit l'arbre complet apparaît d'un coup, soit rien.
 		if err := a.extractRainmeterAtomic(resp.Body); err != nil {
 			a.Log.Warningf("Extraction du portable Rainmeter en échec : %v — retry au prochain cycle.", err)
@@ -200,9 +200,9 @@ func (a *Agent) provisionRainmeterPortable(cfg Config, tool *rainmeterToolEntry)
 			}
 		}
 		// Marqueur d'extraction complète écrit en DERNIER, APRÈS extraction +
-		// ACL (#10) : c'est lui — pas Rainmeter.exe — qui fait foi de
+		// ACL : c'est lui — pas Rainmeter.exe — qui fait foi de
 		// l'idempotence (RainmeterInstalled). On y inscrit le SHA-256 servi
-		// (autorité serveur, D6) pour la traçabilité de la version posée.
+		// (autorité serveur) pour la traçabilité de la version posée.
 		if err := WriteFileAtomic(a.Rainmeter.InstalledMarkerPath(), []byte(tool.SHA256)); err != nil {
 			a.Log.Warningf("Pose du marqueur d'installation Rainmeter en échec : %v — retry au prochain cycle.", err)
 
@@ -221,7 +221,7 @@ func (a *Agent) provisionRainmeterPortable(cfg Config, tool *rainmeterToolEntry)
 }
 
 // extractRainmeterAtomic extrait le portable vers un dossier TEMPORAIRE sibling
-// puis bascule son contenu dans la racine définitive (#10). Une extraction
+// puis bascule son contenu dans la racine définitive. Une extraction
 // interrompue reste confinée au temporaire (purgé) — la racine n'accueille
 // jamais un arbre partiel. Le merge top-level préserve la config éventuellement
 // déjà posée (Skins/SambaEduOverlay, Rainmeter.ini durci) : on ne déplace que
@@ -244,15 +244,15 @@ func (a *Agent) extractRainmeterAtomic(archive []byte) error {
 		return err
 	}
 
-	// MODE INSTALLÉ (Story 27.1ter) : on retire le Rainmeter.ini embarqué par le
+	// MODE INSTALLÉ : on retire le Rainmeter.ini embarqué par le
 	// portable DANS LE TEMPORAIRE, AVANT la bascule — ainsi l'arbre définitif ne
 	// reçoit JAMAIS de Rainmeter.ini racine, même transitoirement. Sinon il
 	// existerait une fenêtre entre la bascule et la suppression d'ensureRainmeterConfig
 	// où un Rainmeter.exe lancé verrait son Rainmeter.ini voisin → MODE PORTABLE →
-	// modales « not writable »/« Safe Start » (review 27.1ter F3). Seul le .ini AUX
+	// modales « not writable »/« Safe Start » (review F3). Seul le.ini AUX
 	// CÔTÉS de l'exe (racine) force le portable — c'est le seul à éliminer.
 	// ensureRainmeterConfig garde sa suppression idempotente pour le cas « upgrade
-	// d'une install 27.1bis antérieure » (.ini déjà présent dans la racine, hors
+	// d'une install antérieure » (.ini déjà présent dans la racine, hors
 	// extraction).
 	if err := os.Remove(filepath.Join(tmp, rainmeterSettingsFile)); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("retrait du Rainmeter.ini portable (temporaire) : %w", err)
@@ -280,15 +280,15 @@ func (a *Agent) extractRainmeterAtomic(archive []byte) error {
 }
 
 // ensureRainmeterConfig : télécharge la skin (vérif SHA-256 AVANT écriture,
-// conversion UTF-16 LE + BOM à la pose — Story 25.6, plus d'embed) + GARANTIT
-// l'absence de tout Rainmeter.ini sous ProgramData (Story 27.1ter — mode
+// conversion UTF-16 LE + BOM à la pose, plus d'embed) + GARANTIT
+// L'absence de tout Rainmeter.ini sous ProgramData (mode
 // installé : les settings partent en %APPDATA%, posés par le compagnon).
 // Toujours appelée. Skin absente/illisible serveur (skin == nil) ou download en
 // échec → skin non (re)posée, MAIS la suppression du .ini résiduel + l'ACL
 // restent appliquées (le verrouillage ne dépend pas de la skin). ACL Users:R sur
 // la racine.
 func (a *Agent) ensureRainmeterConfig(cfg Config, skinEntry *rainmeterSkinEntry) {
-	// Skin (UTF-16 LE + BOM) — téléchargée et vérifiée (D1) au lieu d'embarquée.
+	// Skin (UTF-16 LE + BOM) — téléchargée et vérifiée au lieu d'embarquée.
 	if skinEntry == nil {
 		a.Log.Debugf("Skin d'overlay absente du manifest serveur : pose de skin sautée (Rainmeter.ini durci + ACL restent posés).")
 	} else if skinUTF8, ok := a.fetchOverlaySkin(cfg, skinEntry); ok {
@@ -306,14 +306,14 @@ func (a *Agent) ensureRainmeterConfig(cfg Config, skinEntry *rainmeterSkinEntry)
 		}
 	}
 
-	// MODE INSTALLÉ (Story 27.1ter) : on N'ÉCRIT PLUS le Rainmeter.ini durci sous
+	// MODE INSTALLÉ : on N'ÉCRIT PLUS le Rainmeter.ini durci sous
 	// ProgramData. Les settings partent en %APPDATA%\Rainmeter\ (writable, posés
 	// par le COMPAGNON en droits user) — la présence d'un Rainmeter.ini AUX CÔTÉS
 	// de Rainmeter.exe forcerait le MODE PORTABLE et ramènerait les modales « not
 	// writable » / « Safe Start » sur un user standard (ProgramData en RX).
 	// On SUPPRIME donc, de façon IDEMPOTENTE, tout Rainmeter.ini résiduel du
 	// dossier racine ProgramData : celui embarqué par le zip portable ET un ancien
-	// durci posé par une install 27.1bis antérieure. Son absence garantit le mode
+	// durci posé par une install antérieure. Son absence garantit le mode
 	// installé → Rainmeter lit %APPDATA%\Rainmeter\Rainmeter.ini (writable) et
 	// charge la skin verrouillée via SkinPath.
 	residualIni := a.Rainmeter.SettingsPath()
@@ -325,7 +325,7 @@ func (a *Agent) ensureRainmeterConfig(cfg Config, skinEntry *rainmeterSkinEntry)
 
 	// ACL Users:R sur la racine Rainmeter (couvre skin + Rainmeter.ini —
 	// (OI)(CI) propage). Posée à CHAQUE passage, pas seulement si le contenu a
-	// changé (#3) : icacls est idempotent, et un drift d'ACL introduit hors de
+	// changé : icacls est idempotent, et un drift d'ACL introduit hors de
 	// notre écriture (élève admin local, restauration, GPO) est ainsi recorrigé
 	// même quand skin et Rainmeter.ini sont déjà conformes. nil = no-op (tests
 	// hôte).

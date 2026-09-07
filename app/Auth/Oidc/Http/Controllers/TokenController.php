@@ -17,7 +17,7 @@ use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
- * Story 55.1 — `POST /oidc/token` : l'échange SERVEUR-À-SERVEUR.
+ * `POST /oidc/token` : l'échange SERVEUR-À-SERVEUR.
  *
  * Le client confidentiel présente son secret, le code reçu par redirection et
  * son `code_verifier` PKCE ; il obtient un id_token signé et un access_token
@@ -32,7 +32,6 @@ use Throwable;
  * est un serveur, pas un navigateur ; il n'a pas de cookie et un jeton CSRF
  * n'aurait aucun sens. L'authentification EST le secret du client.
  *
- * ══════════════════════════════════════════════════════════════════════════
  *  ⚠️ EXCEPTION ASSUMÉE AU FORMAT DE RÉPONSE MAISON
  *
  *  Ce contrôleur ne renvoie PAS le `{success, message, …}` documenté dans
@@ -41,8 +40,7 @@ use Throwable;
  *  `{error, error_description}`), parce que son interlocuteur est un client
  *  OIDC STANDARD — potentiellement une bibliothèque tierce que nous n'écrivons
  *  pas — et non le front SE5. C'est aussi ce qui rendra la bascule vers
- *  Keycloak (NFR12) invisible pour les extensions.
- * ══════════════════════════════════════════════════════════════════════════
+ *  Keycloak invisible pour les extensions.
  *
  * **Les codes d'erreur fins restent dans le journal.** La réponse ne distingue
  * jamais « code inconnu », « code expiré », « code déjà consommé » ni
@@ -50,7 +48,7 @@ use Throwable;
  * description. Un attaquant ne doit pas pouvoir savoir qu'il a trouvé un code
  * valide mais périmé — ni qu'un compte a été supprimé.
  *
- * **Story 55.2 — les claims métier.** L'utilisateur est résolu depuis le code
+ * **les claims métier.** L'utilisateur est résolu depuis le code
  * consommé (`user_id`), ses claims sont filtrés par le scope LIÉ AU CODE, et
  * l'émetteur les ajoute SOUS les claims standards (inécrasables).
  * ⚠️ `name`, `groups` et le `sub` sont de la PII : ils ne sont JAMAIS
@@ -67,7 +65,7 @@ class TokenController extends Controller
 
     public function __invoke(Request $request): JsonResponse
     {
-        // ── 1. Authentification du client ────────────────────────────────
+        // 1. Authentification du client
         [$clientId, $clientSecret, $usedBasic] = $this->extractClientCredentials($request);
 
         $client = $this->clients->authenticate($clientId, $clientSecret);
@@ -82,7 +80,6 @@ class TokenController extends Controller
                 : $response;
         }
 
-        // ── 2. Le grant ──────────────────────────────────────────────────
         $grantType = (string) $request->input('grant_type', '');
         if ($grantType !== 'authorization_code') {
             $this->logRejection(OidcErrorCodes::UNSUPPORTED_GRANT_TYPE, $clientId, ['grant_type' => $grantType]);
@@ -90,7 +87,7 @@ class TokenController extends Controller
             return $this->error('unsupported_grant_type', 'Only authorization_code is supported.', 400);
         }
 
-        // ── 3. L'échange ─────────────────────────────────────────────────
+        // 3. L'échange
         $verdict = $this->authorization->consumeCode(
             $client,
             (string) $request->input('code', ''),
@@ -112,7 +109,7 @@ class TokenController extends Controller
 
         $record = $verdict['record'];
 
-        // ── 4. L'utilisateur, puis ses claims (Story 55.2) ───────────────
+        // 4. L'utilisateur, puis ses claims
         // ⚠️ Résolution par `user_id`, JAMAIS par `user_login` : ce dernier est
         // le `sub` PUBLIÉ (une valeur de contrat), pas une clé de jointure —
         // s'en servir créerait une adhérence au choix actuel du sujet.
@@ -138,7 +135,7 @@ class TokenController extends Controller
             );
         }
 
-        // Correctif review 55.2 — un compte DÉSACTIVÉ n'obtient pas d'identité,
+        // Correctif review — un compte DÉSACTIVÉ n'obtient pas d'identité,
         // au même titre qu'un compte supprimé. Symétrie avec la révocation d'un
         // client, vérifiée plus haut : sans ce contrôle, une désactivation faite
         // pendant la fenêtre de 60 s du code émettait quand même un id_token ET
@@ -157,7 +154,7 @@ class TokenController extends Controller
             );
         }
 
-        // ── Story 56.4 — LE DOWNSCOPING (RFC 6749 §3.3) ──────────────────
+        // — LE DOWNSCOPING (RFC 6749 §3.3)
         //
         // Le code d'autorisation porte le scope DEMANDÉ (validé contre le
         // catalogue fermé à l'autorisation). Ce qui est ÉMIS, lui, est borné
@@ -170,7 +167,7 @@ class TokenController extends Controller
         // révocation mordrait à un endroit et pas à l'autre.
         //
         // Pourquoi RÉDUIRE et non refuser `invalid_scope` : révoquer une DONNÉE
-        // (FR23) ne doit pas provoquer une panne de SSO. Le fail-closed du
+        // ne doit pas provoquer une panne de SSO. Le fail-closed du
         // projet vise le scope INCONNU — toujours refusé à l'autorisation. Le
         // non-accordé est réduit, et la réduction est ANNONCÉE par le paramètre
         // `scope` de la réponse : c'est le mécanisme standard, que tout client
@@ -181,7 +178,7 @@ class TokenController extends Controller
         // CODE — jamais d'un scope renvoyé au token endpoint par le client).
         $businessClaims = OidcClaimsResolver::claimsFor($user, $effectiveScope);
 
-        // ── 5. L'émission ────────────────────────────────────────────────
+        // 5. L'émission
         try {
             $idToken = $this->issuer->issueIdToken(
                 $client,
@@ -222,7 +219,7 @@ class TokenController extends Controller
             // le serveur DOIT l'annoncer ici. C'est le canal par lequel une
             // extension apprend ses scopes réels — raison pour laquelle aucune
             // variable d'environnement ne les fige côté extension (décision
-            // 56.4 n° 5 : une valeur statique mentirait dès la 1ʳᵉ révocation).
+            // une valeur statique mentirait dès la 1ʳᵉ révocation).
             'scope' => $effectiveScope,
         ])->withHeaders([
             'Cache-Control' => 'no-store',

@@ -82,7 +82,7 @@ class ContractAssignmentReconcilerTest extends TestCase
         ], $attrs));
     }
 
-    // ── Applications ─────────────────────────────────────────────────────────
+    // Applications
 
     #[Test]
     public function assigns_an_ordered_application_to_every_group_carrying_the_label(): void
@@ -146,7 +146,7 @@ class ContractAssignmentReconcilerTest extends TestCase
         self::assertDatabaseCount('application_workstation_group', 0);
     }
 
-    // ── Capacités ────────────────────────────────────────────────────────────
+    // Capacités
 
     #[Test]
     public function assigns_an_imposed_capability_to_the_labeled_group(): void
@@ -182,7 +182,7 @@ class ContractAssignmentReconcilerTest extends TestCase
         self::assertSame('on', $capability->refresh()->default_value);
     }
 
-    // ── Fonds d'écran ────────────────────────────────────────────────────────
+    // Fonds d'écran
 
     #[Test]
     public function assigns_an_imposed_wallpaper_to_the_labeled_group(): void
@@ -245,7 +245,7 @@ class ContractAssignmentReconcilerTest extends TestCase
         self::assertDatabaseCount('wallpapers', 0);
     }
 
-    // ── Fonds de verrouillage ────────────────────────────────────────────────
+    // Fonds de verrouillage
 
     #[Test]
     public function assigns_an_imposed_lockscreen_to_the_labeled_group(): void
@@ -333,7 +333,7 @@ class ContractAssignmentReconcilerTest extends TestCase
         ]);
     }
 
-    // ── Le prune ne déborde jamais ───────────────────────────────────────────
+    // Le prune ne déborde jamais
 
     #[Test]
     public function never_removes_an_assignment_the_administrator_made(): void
@@ -528,7 +528,7 @@ class ContractAssignmentReconcilerTest extends TestCase
         ]);
     }
 
-    // ── Le verdict rendu au canal ③ ──────────────────────────────────────────
+    // Le verdict rendu au canal ③
 
     #[Test]
     public function stamps_applied_on_an_item_it_could_place(): void

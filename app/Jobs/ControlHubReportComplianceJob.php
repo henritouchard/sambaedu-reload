@@ -13,7 +13,7 @@ use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 39.2 (canal ③) — Job FIN d'émission du rapport de conformité amont.
+ * Job FIN d'émission du rapport de conformité amont.
  *
  * Se contente d'appeler {@see ControlHubComplianceReportService::emit()} : toute la
  * logique (construction d'enveloppe, gardes NFR-A1, POST HTTPS) vit dans le service.
@@ -52,10 +52,10 @@ class ControlHubReportComplianceJob implements ShouldQueue
             'items' => $result['items'] ?? null,
         ]);
 
-        // Review 39.2 #1 — `ControlHubApiClient` avale les exceptions HTTP et renvoie
+        // `ControlHubApiClient` avale les exceptions HTTP et renvoie
         // un `ApiResponse::failed()` : sans relever ici, `handle()` se termine
         // normalement → Laravel considère le job réussi et `$tries` ne s'arme JAMAIS
-        // (retry AC7 mort). On relève DONC sur échec HTTP transitoire pour engager le
+        // (retry mort). On relève DONC sur échec HTTP transitoire pour engager le
         // retry natif (backoff ci-dessus). Ré-émission SÛRE : le rapport est
         // état-intégral idempotent + garde de fraîcheur `reported_at` côté amont
         // (NFR-A2). Les gardes NFR-A1 (`no_active_contract`/`no_active_connection`/

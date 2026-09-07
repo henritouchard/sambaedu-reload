@@ -18,21 +18,20 @@ use Illuminate\Support\Collection;
 
 /**
  * Type `wallpaper` (contrat §7) — projection en lecture seule de la
- * bibliothèque (`wallpapers` × `wallpaper_assets`) vers des candidats d'état
- * (Story 23.4, AC4).
+ * bibliothèque (`wallpapers` × `wallpaper_assets`) vers des candidats d'état.
  *
  * La requête s'inspire de `WallpaperResolver::fetchAssignments()` mais la
- * classe legacy n'est ni réutilisée ni modifiée (piège n° 1) : elle applique
- * SA précédence 7 niveaux et dépend d'APCu — elle reste le résolveur du canal
- * legacy jusqu'à extinction (Epic 27). Ici : zéro précédence, zéro tri par
- * maille — étiquetage des candidats et c'est tout (D2 = compilateur).
+ * classe legacy n'est ni réutilisée ni modifiée : elle applique SA précédence
+ * 7 niveaux et dépend d'APCu — elle reste le résolveur du canal legacy jusqu'à
+ * extinction. Ici : zéro précédence, zéro tri par maille — étiquetage des
+ * candidats et c'est tout, la précédence reste au compilateur.
  *
- * Payload v1 (décision n° 5) : `{asset, checksum}` — `asset` = filename
+ * Payload v1 : `{asset, checksum}` — `asset` = filename
  * content-addressed de la biblio, `checksum` = SHA-256 du fichier (ce que le
  * handler comparera en `test`). Règle sans asset → `{asset: null,
  * checksum: null}` = « pas de fond imposé » EXPLICITE (contrat §8 — distinct
  * du type absent). L'URL de téléchargement viendra avec la route de serving
- * (champ mineur futur, 24.4). `lockscreen` = futur type séparé, hors scope.
+ * (champ mineur futur). `lockscreen` = futur type séparé, hors scope.
  */
 final class WallpaperStateProvider implements StateProvider
 {
@@ -129,7 +128,7 @@ final class WallpaperStateProvider implements StateProvider
             User::class => StateMaille::User,
             // Inatteignable via itemsFor() (le WHERE ne ramène que ces
             // owners) — garde-fou explicite si une morph map aliasée ou une
-            // donnée corrompue arrive un jour (review 23.4).
+            // donnée corrompue arrive un jour (review).
             default => throw new \LogicException(
                 "owner_type inattendu pour wallpaper #{$row->id} : {$row->owner_type}",
             ),

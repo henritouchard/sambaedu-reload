@@ -117,18 +117,12 @@ class ControlHubConnectionRepository
         return $connection ? $connection->isExpired() : true;
     }
 
-    /**
-     * Obtenir l'URL du webhook
-     */
     public function getWebhookUrl(?ControlHubConnection $connection = null): ?string
     {
         $connection = $connection ?? $this->getCurrentConnection();
         return $connection ? $connection->getWebhookUrl() : null;
     }
 
-    /**
-     * Obtenir l'URL du heartbeat
-     */
     public function getHeartbeatUrl(?ControlHubConnection $connection = null): ?string
     {
         $connection = $connection ?? $this->getCurrentConnection();

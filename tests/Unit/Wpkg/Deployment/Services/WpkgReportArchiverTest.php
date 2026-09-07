@@ -10,7 +10,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 15.5 / AC1.3 — Tests unit `WpkgReportArchiver`.
+ * Tests unit `WpkgReportArchiver`.
  */
 final class WpkgReportArchiverTest extends TestCase
 {

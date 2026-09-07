@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace App\Ipxe\Enums;
 
 /**
- * Story 3.3 — T1.4.
- *
  * Statuts retournés par {@see \App\Ipxe\Services\WorkstationEnrollmentService::enrollName()}.
  *
  * 6 cases stricts couvrant les 4 cas fonctionnels iso-legacy
@@ -14,7 +12,7 @@ namespace App\Ipxe\Enums;
  *
  *  - `CREATED`     : poste nouveau — Workstation::create + AD samba-tool computer create.
  *  - `RENAMED`     : poste existant — Workstation::save (nouveau nom) + AD rename via
- *                    {@see \App\Ldap\AdMachineManager::renameComputer()} (D14).
+ *    {@see \App\Ldap\AdMachineManager::renameComputer()}.
  *  - `SAME_NAME`   : poste existant avec le même nom déjà enregistré (idempotent).
  *  - `NAME_TAKEN`  : nouveau nom déjà occupé par un AUTRE poste.
  *  - `DB_ERROR`    : exception Eloquent durant create/save (transitoire).

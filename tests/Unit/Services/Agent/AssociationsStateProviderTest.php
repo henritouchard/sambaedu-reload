@@ -27,12 +27,12 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Tests Unit `AssociationsStateProvider` — Story 27.3bis (AC1, AC3, AC4).
+ * Tests Unit `AssociationsStateProvider`.
  *
  * Catalogue `file_associations` × pivot `file_association_assignables` → candidats
  * CONCRETS `{identifier, progid, type}` par maille, SANS hash ni SID (calculés
- * agent-side, piège n° 2). Exclusive PAR IDENTIFIANT, portée session (HKCU).
- * Lecture Postgres pure (NFR7). Invariant central : JAMAIS d'id de catalogue au
+ * agent-side). Exclusive PAR IDENTIFIANT, portée session (HKCU).
+ * Lecture Postgres pure. Invariant central : JAMAIS d'id de catalogue au
  * payload.
  */
 class AssociationsStateProviderTest extends TestCase
@@ -73,7 +73,7 @@ class AssociationsStateProviderTest extends TestCase
         return new AssociationsStateProvider();
     }
 
-    // ── Type / sémantique / portée ────────────────────────────────────────
+    // Type / sémantique / portée
 
     #[Test]
     public function provider_declares_associations_exclusive_session(): void
@@ -84,7 +84,7 @@ class AssociationsStateProviderTest extends TestCase
         self::assertSame(StateScope::Session, $p->scope());
     }
 
-    // ── AC1/AC3 — catalogue → item CONCRET sans hash/SID ──────────────────
+    // — catalogue → item CONCRET sans hash/SID
 
     #[Test]
     public function emits_concrete_payload_without_hash_sid_or_catalog_id(): void
@@ -101,7 +101,7 @@ class AssociationsStateProviderTest extends TestCase
         /** @var StateCandidate $c */
         $c = $items->first();
 
-        // Payload CONCRET, EXACTEMENT 3 clés (invariant central + piège n° 2).
+        // Payload CONCRET, EXACTEMENT 3 clés : ni hash ni SID, l'agent les calcule.
         self::assertSame(['identifier', 'progid', 'type'], array_keys($c->payload));
         self::assertSame('.pdf', $c->payload['identifier']);
         self::assertSame('Acrobat.Document.DC', $c->payload['progid']);
@@ -161,7 +161,7 @@ class AssociationsStateProviderTest extends TestCase
         self::assertSame(StateMaille::LogicalGroup, $c->maille);
     }
 
-    // ── exclusiveKey : identité = identifier, insensible à la casse ───────
+    // exclusiveKey : identité = identifier, insensible à la casse
 
     #[Test]
     public function exclusive_key_is_case_insensitive_identifier(): void
@@ -184,7 +184,7 @@ class AssociationsStateProviderTest extends TestCase
         );
     }
 
-    // ── AC4 — compilateur : exclusive PAR IDENTIFIANT (via le vrai provider) ─
+    // ── — compilateur : exclusive PAR IDENTIFIANT (via le vrai provider) ─
 
     #[Test]
     public function compiler_keeps_most_specific_maille_per_identifier(): void
@@ -235,13 +235,11 @@ class AssociationsStateProviderTest extends TestCase
         return new StateCompiler(new StateHasher(), [$this->provider()], new AgentTtlResolver());
     }
 
-    // ── NFR7 — lecture seule Postgres, zéro AD/APCu/samba ─────────────────
-
     #[Test]
     public function provider_source_has_no_ad_apcu_samba_dependency(): void
     {
         $src = file_get_contents(app_path('Services/Agent/Providers/AssociationsStateProvider.php'));
-        // On retire les commentaires/docblocks (NFR7 vise le CODE).
+        // On retire les commentaires/docblocks : la garantie porte sur le CODE.
         $codeOnly = preg_replace('#/\*.*?\*/#s', '', $src);
         $codeOnly = preg_replace('#//.*#', '', (string) $codeOnly);
 
@@ -254,7 +252,7 @@ class AssociationsStateProviderTest extends TestCase
         }
     }
 
-    // ── Ciblage multi-maille : poste + groupe user ────────────────────────
+    // Ciblage multi-maille : poste + groupe user
 
     #[Test]
     public function targets_workstation_and_user_group_mailles_too(): void

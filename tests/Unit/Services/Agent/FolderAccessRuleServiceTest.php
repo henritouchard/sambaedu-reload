@@ -19,7 +19,7 @@ use RuntimeException;
 use Tests\TestCase;
 
 /**
- * Story 36.4 (AC2) — Service : guard EXPLICITE (leçon review 36.1 #2b) + audit
+ * Service : guard EXPLICITE + audit
  * append-only + cycle de vie sûr (off réel / refus suppression active).
  */
 class FolderAccessRuleServiceTest extends TestCase
@@ -201,8 +201,8 @@ class FolderAccessRuleServiceTest extends TestCase
         $rule = $this->service()->create($this->payload($this->group()), null);
         $wg = WorkstationGroup::factory()->logical()->create();
 
-        // Contexte serveur/seed → méthodes SYSTÈME (correction review #3 : les
-        // méthodes UI `attachParc/detachParc` REFUSENT désormais un acteur null).
+        // Contexte serveur/seed → méthodes SYSTÈME : les méthodes UI
+        // `attachParc/detachParc` REFUSENT un acteur null.
         // Le contrôle scopé UI est testé séparément (policy test).
         $this->service()->attachParcAsSystem($rule, $wg);
         self::assertContains($wg->id, $rule->fresh()->assignedWorkstationGroupIds());
@@ -217,7 +217,7 @@ class FolderAccessRuleServiceTest extends TestCase
     #[Test]
     public function attaching_a_parc_from_ui_with_a_null_actor_is_refused(): void
     {
-        // Correction review #3 : la surface UI (`attachParc`) ne doit JAMAIS
+        // La surface UI (`attachParc`) ne doit JAMAIS
         // autoriser sur acteur null (bypass silencieux) — seule la voie SYSTÈME le
         // fait explicitement.
         $rule = $this->service()->create($this->payload($this->group()), null);

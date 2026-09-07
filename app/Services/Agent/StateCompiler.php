@@ -12,24 +12,23 @@ use App\Services\Agent\Contracts\StateProvider;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Compilation de l'état cible d'un (poste, user) — Story 23.4, la fonction
- * que le legacy n'a jamais matérialisée (Vérité #1 du brainstorming).
+ * Compilation de l'état cible d'un (poste, user), la fonction que le legacy
+ * n'a jamais matérialisée.
  *
- * **SEUL porteur de D2** : la précédence par spécificité, l'union aggregate
- * et l'arbitrage des conflits intra-maille vivent ici et nulle part ailleurs.
- * Un provider qui trie/filtre par maille est une violation bloquante
- * (architecture, Enforcement Guidelines).
+ * **SEUL porteur de la précédence** : la précédence par spécificité, l'union
+ * aggregate et l'arbitrage des conflits intra-maille vivent ici et nulle part
+ * ailleurs. Un provider qui trie/filtre par maille est une violation bloquante.
  *
- * Chaîne de spécificité complète (décision n° 1, extension iso-legacy de D2
- * qui ne figeait que la partie machine) — Story 27.3 (D-Q3) INVERSE
- * `WG logique`/`WG physique` GLOBALEMENT (le parc LOGIQUE est une sélection
- * délibérée de postes transverse aux salles → plus spécifique que la salle) :
+ * Chaîne de spécificité complète — le legacy ne figeait que la partie machine,
+ * et `WG logique`/`WG physique` sont INVERSÉS GLOBALEMENT (le parc LOGIQUE est
+ * une sélection délibérée de postes transverse aux salles → plus spécifique que
+ * la salle) :
  * `user > groupes user > poste > WG logique > WG physique > broadcast`.
  *
  * **Déterminisme** = exigence de contrat : deux compilations du même état à
  * des instants différents produisent le même `StateHasher::hashState()`
- * (c'est l'ETag de `GET /state`, story 23.5). D'où : ordre de sortie figé
- * (décision n° 9 — types asc par portée, `sourceId` asc intra-type aggregate),
+ * (c'est l'ETag de `GET /state`). D'où : ordre de sortie figé
+ * (types asc par portée, `sourceId` asc intra-type aggregate),
  * tiebreak `id` desc sur les conflits, seul `generated_at` est volatil.
  *
  * Lecture + calcul pur : ce service n'écrit RIEN (pas même dans `agent_*`).
@@ -42,10 +41,10 @@ final class StateCompiler
     public function __construct(
         private readonly StateHasher $hasher,
         private readonly array $providers,
-        // Story 43.3 — cadence de propagation PAR CONTEXTE (D1, FR-A4) :
-        // remplace la constante `ttl_seconds` par un résolveur dédié. D2
-        // (précédence) et `specificity()` restent INTOUCHÉS — ce résolveur ne
-        // participe à aucun arbitrage d'items, seulement à l'enveloppe.
+        // Cadence de propagation PAR CONTEXTE : remplace la constante
+        // `ttl_seconds` par un résolveur dédié. La précédence et
+        // `specificity()` restent INTOUCHÉES — ce résolveur ne participe à
+        // aucun arbitrage d'items, seulement à l'enveloppe.
         private readonly AgentTtlResolver $ttlResolver,
     ) {}
 
@@ -73,12 +72,12 @@ final class StateCompiler
         $state = [
             'schema' => StateContract::SCHEMA,
             'generated_at' => now()->utc()->toIso8601String(),
-            // Story 43.3 — TTL PAR CONTEXTE (D1, FR-A4) : court si le contexte
-            // est en « bascule sensible » (AgentTtlResolver::ttlSeconds()),
-            // défaut global sinon. Champ VOLATIL exclu du hash (AC3,
-            // StateHasher::VOLATILE_STATE_KEYS) : un changement de TTL seul
-            // (sans changement d'items) ne franchit pas le cache 304 — piège
-            // n°1, cf. docs/agent/state-endpoint.md § cadence.
+            // TTL PAR CONTEXTE : court si le contexte est en « bascule
+            // sensible » (AgentTtlResolver::ttlSeconds()), défaut global
+            // sinon. Champ VOLATIL exclu du hash
+            // (StateHasher::VOLATILE_STATE_KEYS) : un changement de TTL seul,
+            // sans changement d'items, ne franchit pas le cache 304
+            // (cf. docs/agent/state-endpoint.md § cadence).
             'ttl_seconds' => $this->ttlResolver->ttlSeconds($ctx),
             // Mode debug du poste (drapeau `workstations.debug`) : pilote le
             // comportement console du compagnon agent. Champ d'enveloppe (pas
@@ -99,7 +98,7 @@ final class StateCompiler
     }
 
     /**
-     * Hash d'état (= ETag de 23.5) du compilé — délégué au hasher du contrat,
+     * Hash d'état (= ETag) du compilé — délégué au hasher du contrat,
      * jamais de hash ad hoc.
      *
      * @param  array<string,mixed>  $state
@@ -157,9 +156,9 @@ final class StateCompiler
     }
 
     /**
-     * Items finals d'un provider : sélection D2 puis assemblage contrat
-     * (`{type, semantics, payload, hash}` — exactement 4 clés). Story 27.8 : la
-     * clé `mode` est retirée (STRICT inconditionnel — plus d'agrégation de mode).
+     * Items finals d'un provider : sélection par précédence puis assemblage
+     * contrat (`{type, semantics, payload, hash}` — exactement 4 clés). Il n'y
+     * a pas de clé `mode` : la convergence est STRICTE, inconditionnellement.
      *
      * @return list<array<string,mixed>>
      */
@@ -192,9 +191,8 @@ final class StateCompiler
 
     /**
      * Type aggregate = **union** des candidats de toutes les mailles
-     * applicables, ordre stable par `sourceId` asc (décision n° 9 — pour
-     * `overlay` : `id` asc des signaux), **dédoublonnée par contenu** (Story
-     * 27.1, décision n° 4).
+     * applicables, ordre stable par `sourceId` asc (pour `overlay` : `id` asc des
+     * signaux), **dédoublonnée par contenu**.
      *
      * Dédup : deux règles produisant le MÊME item (même payload) sur deux
      * mailles différentes — typiquement un raccourci assigné à la fois au parc
@@ -233,7 +231,7 @@ final class StateCompiler
     }
 
     /**
-     * Clé de contenu stable d'un payload (dédup aggregate, décision n° 4) :
+     * Clé de contenu stable d'un payload (dédup aggregate) :
      * la forme canonique JSON du hasher (tri récursif des clés) — deux payloads
      * identiques au tri des clés près produisent la même clé. Réutilise la
      * canonicalisation du contrat : aucune autre forme de hash ad hoc.
@@ -246,7 +244,7 @@ final class StateCompiler
     }
 
     /**
-     * Type exclusif. Deux régimes (Story 27.3) :
+     * Type exclusif. Deux régimes :
      *
      *  - **Défaut (wallpaper)** : UN SEUL item gagnant pour tout le type — la
      *    maille la plus spécifique gagne, conflit intra-maille → la plus récente.
@@ -255,10 +253,10 @@ final class StateCompiler
      *    ci-dessus s'applique INDÉPENDAMMENT à chaque groupe → la maille la plus
      *    spécifique gagne POUR CETTE CLÉ, et les clés distinctes s'accumulent
      *    toutes. Ordre de sortie stable (clés triées) pour le déterminisme de
-     *    l'ETag (23.5).
+     *  l'ETag.
      *
-     * D2 reste au compilateur : le provider ne fait QUE déclarer son
-     * `exclusiveKey()` ; la précédence/récence est arbitrée ici.
+     * Le provider ne fait QUE déclarer son `exclusiveKey()` ; la
+     * précédence/récence est arbitrée ici.
      *
      * @param  list<StateCandidate>  $candidates  non vide
      * @return list<StateCandidate>
@@ -294,9 +292,9 @@ final class StateCompiler
     /**
      * Élit le vainqueur d'un ENSEMBLE de candidats exclusifs (tout le type, ou
      * un groupe de clé) : la maille la plus spécifique gagne ; arbitrage au sein
-     * de cette maille (décision n° 2, AC3) :
+     * de cette maille :
      *
-     *   - **`physical_group` (hérédité physique, Story 27.x)** : le candidat le
+     * - **`physical_group` (hérédité physique)** : le candidat le
      *     plus PROCHE du poste gagne — profondeur la plus FAIBLE d'abord (l'enfant
      *     bat le parent dans la chaîne `parent_id`). Ce n'est PAS un conflit :
      *     c'est la résolution attendue de l'héritage → aucun warning. La récence
@@ -330,7 +328,7 @@ final class StateCompiler
         // Récence en précision microseconde (TZ-safe via getTimestamp) :
         // getTimestamp() seul tronque à la seconde et ferait gagner le
         // tiebreak `id` à tort entre deux règles modifiées dans la même
-        // seconde (review 23.4 — théorique avec timestamps(0), réel pour
+        // seconde (review — théorique avec timestamps(0), réel pour
         // tout futur provider dont le Carbon porte des microsecondes).
         $recency = static fn (StateCandidate $c): int => $c->updatedAt === null
             ? PHP_INT_MIN
@@ -378,34 +376,34 @@ final class StateCompiler
     }
 
     /**
-     * Rang de spécificité des mailles (décision n° 1) — 0 = la plus
-     * spécifique. Vit ICI et nulle part ailleurs : ni dans l'enum, ni dans
-     * les providers (sinon D2 fuit).
+     * Rang de spécificité des mailles — 0 = la plus spécifique. Vit ICI et
+     * nulle part ailleurs : ni dans l'enum, ni dans les providers, sinon la
+     * précédence fuit hors du compilateur.
      *
-     * Story 27.3 (D-Q3) — INVERSION GLOBALE `logique > physique` : le parc
+     * INVERSION GLOBALE `logique > physique` : le parc
      * LOGIQUE (sélection délibérée de postes, transverse aux salles) bat la
      * salle PHYSIQUE. `LogicalGroup` passe au rang 3, `PhysicalGroup` au rang 4.
      * S'applique à TOUS les types exclusifs (registry, wallpaper, et la
      * résolution du défaut `printers` côté provider est alignée séparément).
      *
-     * Story 28.3 — TIER AMONT : `Upstream` au rang -1 (STRICTEMENT < `User`,
+     * TIER AMONT : `Upstream` au rang -1 (STRICTEMENT < `User`,
      * donc plus spécifique que TOUTE maille locale). Conséquence : pour une même
      * clé exclusive, un item imposé par le contrat amont (controlHub) bat le
-     * réglage local (FR2) — sans aucune autre logique de sélection (D2 reste
-     * ICI seul, exigence epic « réutiliser specificity(), ne pas réinventer »).
+     * réglage local — sans aucune autre logique de sélection : on réutilise
+     * `specificity()`, on ne le réinvente pas.
      * Choix -1 (et non décalage +1 des autres) : diff minimal, invariant tenu
      * `specificity(Upstream) < specificity(User)`. C'est l'UNIQUE match()
      * exhaustif sur `StateMaille` : tout nouveau case DOIT être ajouté ici
-     * (sinon `UnhandledMatchError` en prod — garde-fou testé Story 28.3).
+     * (sinon `UnhandledMatchError` en prod — garde-fou testé).
      *
-     * Story 29.3 — TIER AMONT PERMISSIF : `UpstreamPermissive` au rang 6
+     * TIER AMONT PERMISSIF : `UpstreamPermissive` au rang 6
      * (STRICTEMENT > `Broadcast`, donc le MOINS spécifique de toute la chaîne).
      * Conséquence : un item `permissive` est un **plancher** que TOUTE maille
      * locale surcharge (défaut diffusé inclus) ; il ne gagne qu'en l'ABSENCE
-     * TOTALE de candidat local (FR4). `locked` reste INBATTABLE (`Upstream` rang
+     * TOTALE de candidat local. `locked` reste INBATTABLE (`Upstream` rang
      * -1, inchangé) : seul `permissive` est relaxé. La relaxation vit ICI SEUL
      * (le rang de la maille), JAMAIS via une branche ad hoc dans
-     * `resolveExclusiveWinner` (D2 ne fuit pas — exigence Story 29.3).
+     * `resolveExclusiveWinner`, pour que la précédence ne fuie pas.
      */
     private function specificity(StateMaille $maille): int
     {

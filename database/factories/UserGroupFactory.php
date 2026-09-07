@@ -25,7 +25,7 @@ class UserGroupFactory extends Factory
     }
 
     /**
-     * Story 49.1 (AC1) — état « ce groupe PORTE un profil de droits ».
+     * État « ce groupe PORTE un profil de droits ».
      *
      * L'appartenance à un groupe dans cet état matérialise le rôle Spatie chez
      * ses membres (réconciliation `GroupRightsProfileService`).

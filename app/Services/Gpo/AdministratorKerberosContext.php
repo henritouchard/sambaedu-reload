@@ -11,7 +11,7 @@ use RuntimeException;
 /**
  * Contexte Kerberos **Administrator** éphémère pour l'écriture SYSVOL.
  *
- * Story 38.4 (AC1/AC2) — extraction du mécanisme éprouvé (27.16) jusqu'ici
+ * Extraction du mécanisme éprouvé jusqu'ici
  * privé à {@see AgentBootstrapPublisher}, désormais MUTUALISÉ entre le port
  * natif d'`import_gpo` ({@see NativeGpoPublisher}) et le plan roaming
  * ({@see SysvolPolicyService}).
@@ -120,10 +120,6 @@ class AdministratorKerberosContext
             return '';
         }
     }
-
-    // -----------------------------------------------------------------------
-    // Internes — kinit / ccache (ports iso AgentBootstrapPublisher 27.16).
-    // -----------------------------------------------------------------------
 
     /**
      * `kinit Administrator` dans le ccache dédié. Le mot de passe est fourni

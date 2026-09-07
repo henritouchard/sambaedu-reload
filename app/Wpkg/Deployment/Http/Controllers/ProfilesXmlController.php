@@ -10,14 +10,13 @@ use Illuminate\Http\Response;
 
 /**
  * @legacy-port path="sambaedu/wpkg/profiles_xml_out.php"
- * @see _bmad-output/implementation-artifacts/15-2-generators-xml-ini-par-poste.md
  *
- * Story 15.2 / AC1.2-AC1.3 — Endpoint HTTP `profiles.xml?poste={hostname}`.
+ * Endpoint HTTP `profiles.xml?poste={hostname}`.
  *
  * Parité legacy stricte :
- *   - hostname inconnu → profile vide silencieux (pas de 404 — décision user #2).
- *   - postes désactivés → XML normal, pas de filtrage (décision user #1).
- *   - pas d'auth (décision user #3).
+ *   - hostname inconnu → profile vide silencieux (pas de 404).
+ *   - postes désactivés → XML normal, pas de filtrage.
+ *   - pas d'auth.
  *
  * Délègue le calcul des packages au `WorkstationPackagesResolver` (cache-aside
  * 1000s, équivalent legacy `info_poste_applications` + APCu).

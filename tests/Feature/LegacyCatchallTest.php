@@ -37,7 +37,7 @@ class LegacyCatchallTest extends TestCase
         if (! Schema::hasTable('legacy_catchall_logs')) {
             Schema::create('legacy_catchall_logs', function (Blueprint $table) {
                 $table->id();
-                // Story 38.2 — colonnes additives (observabilité tombstones).
+                // Colonnes additives (observabilité tombstones).
                 $table->string('source', 16)->default('catchall')->index();
                 $table->string('method', 10);
                 $table->string('path', 2048);
@@ -61,7 +61,7 @@ class LegacyCatchallTest extends TestCase
     }
 
     /**
-     * AC1 — Route legacy existante → contenu servi via proxy + log en DB
+     * Route legacy existante → contenu servi via proxy + log en DB
      */
     public function test_legacy_php_route_is_served_and_logged(): void
     {
@@ -86,7 +86,7 @@ class LegacyCatchallTest extends TestCase
     }
 
     /**
-     * AC2 — Route bloquée + LEGACY_BLOCK_MIGRATED_ROUTES=true → redirect vers SER + pas de log
+     * Route bloquée + LEGACY_BLOCK_MIGRATED_ROUTES=true → redirect vers SER + pas de log
      */
     public function test_blocked_route_redirects_to_ser_and_does_not_log(): void
     {
@@ -112,7 +112,7 @@ class LegacyCatchallTest extends TestCase
      */
     public function test_blocked_script_route_with_noop_returns_comment_not_redirect(): void
     {
-        // Path SYNTHÉTIQUE (story 38.2) : `gpo/shortcuts_out.php` matche désormais
+        // Path SYNTHÉTIQUE : `gpo/shortcuts_out.php` matche désormais
         // le tombstone natif AVANT le catchall — on exerce la convention `noop:`
         // générique sur un path fictif qui atteint bien le catchall.
         Config::set('sambaedu.blocked_legacy_routes', [
@@ -127,7 +127,7 @@ class LegacyCatchallTest extends TestCase
     }
 
     /**
-     * AC7 (review 38.1 #4) — la convention `noop:` est indifférente à l'état
+     * La convention `noop:` est indifférente à l'état
      * du FS legacy : même réponse inerte avec `legacy_path` absent (null).
      */
     public function test_blocked_script_route_noop_still_works_with_missing_legacy_path(): void
@@ -160,7 +160,7 @@ class LegacyCatchallTest extends TestCase
     }
 
     /**
-     * AC3 — Route bloquée + LEGACY_BLOCK_MIGRATED_ROUTES=false → contenu legacy servi via proxy
+     * Route bloquée + LEGACY_BLOCK_MIGRATED_ROUTES=false → contenu legacy servi via proxy
      */
     public function test_blocked_route_with_blocking_disabled_serves_legacy(): void
     {
@@ -184,7 +184,7 @@ class LegacyCatchallTest extends TestCase
     }
 
     /**
-     * Story 38.1 (D4) — LEGACY_PATH invalide (dossier inexistant) → 404 loggé,
+     * LEGACY_PATH invalide (dossier inexistant) → 404 loggé,
      * plus jamais 500. Le monitoring d'extinction (legacy_catchall_logs) reste
      * fonctionnel sans le FS legacy.
      */
@@ -203,7 +203,7 @@ class LegacyCatchallTest extends TestCase
     }
 
     /**
-     * Story 38.1 (D4) — LEGACY_PATH absent (null) → 404 loggé, plus jamais 500.
+     * LEGACY_PATH absent (null) → 404 loggé, plus jamais 500.
      */
     public function test_missing_legacy_path_returns_404_and_is_logged(): void
     {
@@ -220,7 +220,7 @@ class LegacyCatchallTest extends TestCase
     }
 
     /**
-     * Story 38.1 (D4) — LEGACY_PATH absent + log_404=false → 404 sans ligne DB
+     * LEGACY_PATH absent + log_404=false → 404 sans ligne DB
      * (le drapeau LEGACY_LOG_404 gouverne aussi ce chemin dégradé).
      */
     public function test_missing_legacy_path_with_log_404_disabled_returns_404_without_log(): void
@@ -236,8 +236,8 @@ class LegacyCatchallTest extends TestCase
     }
 
     /**
-     * Story 38.1 (D4) — les early-returns du catchall (ici la redirection native
-     * gpo/no_roam.php → page admin, story 1bis.18f) précèdent la résolution FS et
+     * Les early-returns du catchall (ici la redirection native
+     * gpo/no_roam.php → page admin.18f) précèdent la résolution FS et
      * restent fonctionnels même avec legacy_path absent.
      */
     public function test_early_return_redirect_still_works_with_missing_legacy_path(): void

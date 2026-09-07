@@ -13,14 +13,14 @@ import (
 	"sambaedu/agent/shared"
 )
 
-// Câblage Windows du handler `shortcuts` (Story 27.1, décision n° 7) — création
+// Câblage Windows du handler `shortcuts` — création
 // du `.lnk` via COM IShellLink EN GO NATIF (PAS de shell-out PowerShell). Une
 // seule fonction createShortcut(...) appelée en boucle ; zéro dépendance
 // ajoutée (COM via golang.org/x/sys/windows + syscall vtable, comme le reste de
 // l'agent câble Win32 sans cgo).
 //
 // Exécuté par le COMPAGNON (droits user) : les `.lnk` sont per-user (bureau
-// local, Startup, Quick Launch). Le marqueur de périmètre (décision n° 5) est
+// local, Startup, Quick Launch). Le marqueur de périmètre est
 // écrit dans le champ Description du raccourci (SetDescription) =
 // shared.ShortcutManagedMarker — seuls les `.lnk` portant ce marqueur sont
 // listés/supprimés, JAMAIS un raccourci créé par l'utilisateur.
@@ -29,8 +29,6 @@ import (
 // ici (login courant, nom du serveur de fichiers) — l'intelligence métier
 // (shared_local vs personal_local → quel chemin) est restée côté serveur
 // (provider), l'agent ne fait que matérialiser.
-
-// --- GUIDs COM (CLSID_ShellLink, IID_IShellLinkW, IID_IPersistFile) ---------
 
 var (
 	clsidShellLink  = windows.GUID{Data1: 0x00021401, Data2: 0x0000, Data3: 0x0000, Data4: [8]byte{0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46}}
@@ -106,22 +104,21 @@ type iPersistFile struct {
 type shortcutOps struct {
 	log *shared.Logger
 	// iconsDir : cache local des icônes UPLOADÉES content-addressed
-	// (C:\ProgramData\SambaEdu\Agent\icons, Story 27.7). Le SERVICE SYSTEM les
+	// (C:\ProgramData\SambaEdu\Agent\icons). Le SERVICE SYSTEM les
 	// pré-télécharge (SyncShortcutIcons) ; le compagnon (ici) pointe
 	// l'IconLocation dessus. Vide (tests) = pas de résolution d'asset → on
 	// retombe sur l'icône brute.
 	iconsDir string
 }
 
-// effectiveIcon résout l'IconLocation à poser sur le `.lnk` (Story 27.7).
+// EffectiveIcon résout l'IconLocation à poser sur le `.lnk`.
 //
 //   - icône UPLOADÉE (spec.IconAsset non vide) ET le `.ico` local content-
 //     addressed est présent (pré-téléchargé par SyncShortcutIcons) → on pointe
 //     sur le chemin LOCAL absolu (index 0). Plus de « feuille blanche ».
 //   - icône uploadée dont le `.ico` local manque encore (pas téléchargé /
 //     checksum KO côté sync) → IconLocation VIDE (icône défaut Windows),
-//     JAMAIS un chemin irrésoluble. Le drift est rattrapé au cycle suivant
-//     (sous-décision F, piège n° 7).
+//     JAMAIS un chemin irrésoluble. Le drift est rattrapé au cycle suivant.
 //   - icône RÉELLE (chemin `firefox.exe,0`, IconAsset vide) → la même valeur
 //     brute qu'avant (tokens substitués, ParseIconLocation gère `,index`).
 func (o *shortcutOps) effectiveIcon(spec shared.ShortcutSpec) string {
@@ -139,23 +136,23 @@ func (o *shortcutOps) effectiveIcon(spec shared.ShortcutSpec) string {
 func (o *shortcutOps) PlaceDir(spec shared.ShortcutSpec) (string, error) {
 	switch spec.Place {
 	case "desktop":
-		// Cible desktop normale : le chemin est résolu SERVEUR (Bug C) et porté
-		// par desktop_path. Probe de balayage (review #2 — managedDirs sans règle
+		// Cible desktop normale : le chemin est résolu SERVEUR et porté
+		// par desktop_path. Probe de balayage (managedDirs sans règle
 		// desktop) : desktop_path vide → on résout le bureau STANDARD local pour
 		// nettoyer les orphelins gérés. Ne JAMAIS poser un `.lnk` sur cette probe
 		// (desiredSet n'émet que des specs avec desktop_path non vide).
 		//
-		// Story 27.21 (option A) : la MÊME porte sert au Bureau RÉSEAU tokenisé.
+		// La MÊME porte sert au Bureau RÉSEAU tokenisé.
 		// Ce chemin ne vit PLUS dans une constante d'agent — c'est le SERVEUR qui
 		// le NOMME via `desktop_sweep_paths` (il connaît seul l'environnement du
-		// parc, cf. finding #1) ; l'agent le reçoit dans le payload et le résout
+		// parc) ; l'agent le reçoit dans le payload et le résout
 		// ICI par la substitution de tokens UNIQUE (SubstituteServerTokens),
 		// jamais une 2ᵉ implémentation.
 		dir := substituteTokens(spec.DesktopPath)
 		if dir == "" {
 			return standardDesktopDir()
 		}
-		// Fail-soft (27.21) : un UNC dont `<se4fs>` n'a pas pu être substitué
+		// Fail-soft : un UNC dont `<se4fs>` n'a pas pu être substitué
 		// (poste hors-domaine, ni SE4FS ni LOGONSERVER) donnerait `\\\users\…` —
 		// on refuse l'emplacement. managedDirs IGNORE la probe non résoluble
 		// (aucune erreur fatale, les autres emplacements convergent) ; une vraie
@@ -186,7 +183,7 @@ func (o *shortcutOps) PlaceDir(spec shared.ShortcutSpec) (string, error) {
 
 // standardDesktopDir : bureau STANDARD local (`%USERPROFILE%\Desktop`) —
 // utilisé UNIQUEMENT pour le balayage des orphelins gérés quand plus aucune
-// règle desktop ne fournit le chemin serveur (review #2). Jamais pour poser un
+// règle desktop ne fournit le chemin serveur. Jamais pour poser un
 // `.lnk` (le placement obéit toujours au desktop_path serveur). Erreur si
 // %USERPROFILE% absent.
 func standardDesktopDir() (string, error) {
@@ -216,7 +213,7 @@ func substituteTokens(path string) string {
 	}
 	// Cœur PUR unique de la substitution `<user>`/`<se4fs>` (shared) — le MÊME
 	// helper est appelé par le service SYSTEM au logon (app_profile), avec
-	// l'identité de la SESSION au lieu de l'environnement du service (36.5).
+	// l'identité de la SESSION au lieu de l'environnement du service.
 	path = shared.SubstituteServerTokens(path, user, se4fs)
 
 	return expandWindowsEnv(path)
@@ -253,7 +250,7 @@ func (o *shortcutOps) ListManaged(dirs []string) ([]string, error) {
 			// Toute AUTRE erreur (partage injoignable, ACL, DNS, pare-feu) est
 			// une chose différente : le balayage n'a PAS eu lieu alors que des
 			// `.lnk` gérés y subsistent peut-être. Sans trace, `Test` rapporte
-			// `compliant` et les fantômes persistent invisibles (review 27.21 #4).
+			// `compliant` et les fantômes persistent invisibles.
 			if !os.IsNotExist(err) {
 				o.logf("Emplacement %s non balayé (%v) : les raccourcis gérés qui s'y trouveraient ne seront PAS nettoyés à cette passe", dir, err)
 			}
@@ -294,16 +291,16 @@ func (o *shortcutOps) Matches(path string, spec shared.ShortcutSpec) (bool, erro
 	}
 	if desc != shared.ShortcutManagedMarker {
 		// Homonyme utilisateur (sans marqueur) au chemin d'une cible. On retourne
-		// (false, nil) — JAMAIS une erreur (review #1 : une erreur passait TOUT le
-		// type en `error`, annulant la convergence pour un seul raccourci créé par
-		// un prof). Le handler partagé consulte Blocked() AVANT Matches : il saute
-		// ce chemin sans l'écraser (décision n° 5). Le (false, nil) ici n'est donc
+		// (false, nil) — JAMAIS une erreur : une erreur passerait TOUT le type
+		// en `error`, annulant la convergence pour un seul raccourci créé par
+		// un prof. Le handler partagé consulte Blocked() AVANT Matches : il saute
+		// ce chemin sans l'écraser. Le (false, nil) ici n'est donc
 		// jamais suivi d'un Create sur un fichier user.
 		return false, nil
 	}
 
-	// L'icône cible est résolue (asset local content-addressed OU chemin réel,
-	// Story 27.7) PUIS décomposée en (chemin, index) — la même convention
+	// L'icône cible est résolue (asset local content-addressed OU chemin réel)
+	// PUIS décomposée en (chemin, index) — la même convention
 	// `chemin,index` que celle posée par createShortcut. On compare chemin ET
 	// index au `.lnk` relu, sinon le `,0` de la spec ne matche jamais le chemin
 	// nu relu → réécriture à chaque passe (idempotence cassée). Une icône
@@ -314,8 +311,8 @@ func (o *shortcutOps) Matches(path string, spec shared.ShortcutSpec) (bool, erro
 	specIconPath, specIconIndex := shared.ParseIconLocation(o.effectiveIcon(spec))
 	iconMatches := strings.EqualFold(icon, specIconPath) && iconIndex == specIconIndex
 
-	// `args` est comparé sensible à la casse et SANS substitution de tokens
-	// (review #M4) : latent, aucun payload `args` ne porte de token aujourd'hui.
+	// `args` est comparé sensible à la casse et SANS substitution de tokens :
+	// aucun payload `args` ne porte de token aujourd'hui.
 	// Si un jour un `args` contenait `<user>`/`%VAR%`, il faudrait substituer ici
 	// comme pour target/icon, sinon perte d'idempotence (réécriture à chaque passe).
 	return strings.EqualFold(target, substituteTokens(spec.Target)) &&
@@ -323,7 +320,7 @@ func (o *shortcutOps) Matches(path string, spec shared.ShortcutSpec) (bool, erro
 		iconMatches, nil
 }
 
-// Blocked : un `.lnk` NON géré occupe-t-il `path` ? (décision n° 5, review #1).
+// Blocked : un `.lnk` NON géré occupe-t-il `path` ?
 // Absent / géré = false. Homonyme utilisateur = true → le handler partagé saute
 // ce chemin (ni écrasé, ni supprimé). Illisible = false (prudence : on ne touche
 // pas ce qu'on ne comprend pas — il restera tel quel).
@@ -380,8 +377,6 @@ func (o *shortcutOps) isManaged(path string) (bool, error) {
 	return desc == shared.ShortcutManagedMarker, nil
 }
 
-// --- COM helpers ------------------------------------------------------------
-
 // withShellLink initialise COM, crée un IShellLink, charge le fichier si
 // `loadPath` non vide, exécute fn, libère tout. Centralise CoInitialize/Release
 // (jamais de fuite de référence).
@@ -426,8 +421,8 @@ func withShellLink(loadPath string, fn func(sl *iShellLink, pf *iPersistFile) er
 			return err
 		}
 		// IPersistFile::Load(pszFileName, dwMode=0=STGM_READ). `this` =
-		// unsafe.Pointer(pf), harmonisé avec Save (review #3 — `pf` et `pfPtr`
-		// pointent la même adresse ; on dérive le `this` depuis `pf` des deux côtés).
+		// unsafe.Pointer(pf), harmonisé avec Save (`pf` et `pfPtr` pointent la
+		// même adresse ; on dérive le `this` depuis `pf` des deux côtés).
 		hr, _, _ = syscall.SyscallN(pf.vtbl.Load, uintptr(unsafe.Pointer(pf)), uintptr(unsafe.Pointer(p)), 0)
 		if int32(hr) < 0 {
 			return fmt.Errorf("IPersistFile::Load(%s) en échec (hr=0x%x)", loadPath, uint32(hr))
@@ -442,7 +437,7 @@ func release(releaseFn uintptr, ptr unsafe.Pointer) {
 }
 
 // createShortcut : écrit un `.lnk` (target/args/icon/description) — la SEULE
-// fonction de création, appelée en boucle (décision n° 7).
+// fonction de création, appelée en boucle.
 func createShortcut(path, target, args, icon, description string) error {
 	return withShellLink("", func(sl *iShellLink, pf *iPersistFile) error {
 		if err := setStr(sl.vtbl.SetPath, sl, target); err != nil {
@@ -462,7 +457,7 @@ func createShortcut(path, target, args, icon, description string) error {
 			// L'icône suit la convention `chemin,index` (ex. `firefox.exe,0`) :
 			// on la décompose pour SetIconLocation(path, index), sinon le `,0`
 			// est pris comme partie du chemin → fichier introuvable → icône
-			// « feuille blanche » (bug terrain 27.1).
+			// « feuille blanche » (bug terrain).
 			iconPath, iconIndex := shared.ParseIconLocation(icon)
 			if err := setIconLocation(sl, iconPath, iconIndex); err != nil {
 				return fmt.Errorf("SetIconLocation : %w", err)
@@ -474,9 +469,9 @@ func createShortcut(path, target, args, icon, description string) error {
 			return err
 		}
 		// IPersistFile::Save(pszFileName, fRemember=TRUE). `this` = unsafe.Pointer(pf),
-		// harmonisé avec Load (review #3 — pf et pfPtr pointent la même adresse ;
-		// `pfPtr` n'est pas dans la portée de ce closure, on dérive donc le `this`
-		// depuis `pf` des deux côtés ; changement non fonctionnel).
+		// harmonisé avec Load (pf et pfPtr pointent la même adresse ; `pfPtr`
+		// n'est pas dans la portée de ce closure, on dérive donc le `this`
+		// depuis `pf` des deux côtés).
 		hr, _, _ := syscall.SyscallN(pf.vtbl.Save, uintptr(unsafe.Pointer(pf)), uintptr(unsafe.Pointer(p)), 1)
 		if int32(hr) < 0 {
 			return fmt.Errorf("IPersistFile::Save(%s) en échec (hr=0x%x)", path, uint32(hr))

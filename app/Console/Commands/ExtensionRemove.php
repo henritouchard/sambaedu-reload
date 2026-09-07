@@ -10,7 +10,7 @@ use App\Services\Extensions\ExtensionInstallService;
 use Illuminate\Console\Command;
 
 /**
- * Story 56.2 (AC5, FR10 volet `app`) — `php artisan ext:remove <key>`.
+ * `php artisan ext:remove <key>`.
  *
  * Façade CLI de {@see ExtensionInstallService::remove()}. Strictement l'ordre
  * inverse de l'installation, chaque étape tolérante à l'absent : la commande
@@ -18,9 +18,8 @@ use Illuminate\Console\Command;
  * état dégradé — elle se rejoue sans risque.
  *
  * ⚠️ Une extension de type `link` est REFUSÉE avec un message qui pointe la
- * bibliothèque : le volet `link` de FR10 est déjà livré par la Story 54.2, et
- * le dupliquer ici créerait deux chemins d'audit pour le même acte
- * (décision 56.2 #4).
+ * bibliothèque : le volet `link` y est déjà livré, et le dupliquer ici
+ * créerait deux chemins d'audit pour le même acte.
  *
  * Codes retour : `0` succès ou no-op signalé, `1` refus ou échec.
  */
@@ -89,8 +88,8 @@ class ExtensionRemove extends Command
     /**
      * @param  list<string>  $steps
      *
-     * ⚠️ Story 56.3 — map remontée dans {@see ExtensionInstallService::stepLabels()},
-     * libellés verbatim : sortie inchangée (leçon review 56.1 #3).
+     * ⚠️ — map remontée dans {@see ExtensionInstallService::stepLabels},
+     * libellés verbatim : sortie inchangée.
      */
     private function renderSteps(array $steps): void
     {

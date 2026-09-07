@@ -9,7 +9,7 @@ use Illuminate\Console\Command;
 use Throwable;
 
 /**
- * Story 55.1 — Task 6.
+ * Task 6.
  *
  * `php artisan oidc:client:revoke <client_id>`
  *

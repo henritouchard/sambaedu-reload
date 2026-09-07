@@ -29,8 +29,7 @@ class AppCustomization extends Model
 
     /**
      * Identifiant de type de ressource figé du canal agent desired-state
-     * (contrat §7, NFR12 — DÉJÀ réservé). Story 27.4 : la table métier
-     * `app_customizations` (story 4.8) est la SOURCE LUE par
+     * (contrat §7). La table métier `app_customizations` est la SOURCE LUE par
      * {@see \App\Services\Agent\Providers\AppConfigStateProvider} ; ce type
      * projette les policies résolues `policies.json` (Firefox/Thunderbird)
      * vers le handler agent. Iso `Wallpaper::TYPE_WALLPAPER` /

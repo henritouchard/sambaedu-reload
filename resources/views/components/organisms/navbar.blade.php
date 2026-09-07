@@ -16,7 +16,7 @@
 
         <x-atoms.theme-toggle size="md" position="relative" />
 
-        {{-- Aide (52.8) : rendu SEULEMENT si la doc est publiée — pas de lien mort (FR-D13).
+        {{-- Aide : rendu SEULEMENT si la doc est publiée — pas de lien mort (FR-D13).
              Un is_file() par rendu : stat local négligeable, pas de cache applicatif. --}}
         @if (is_file(config('sambaedu.doc.index_file')))
             <a href="/doc/" target="_blank" rel="noopener" class="btn btn-ghost btn-circle"

@@ -8,13 +8,13 @@ use App\Enums\PlanAnchor;
 use App\Exceptions\Filesystem\PlanResolutionException;
 
 /**
- * Story 60.1 — PLAN de fichiers résolu : ce que la recette dit, une fois appliquée
+ * PLAN de fichiers résolu : ce que la recette dit, une fois appliquée
  * à un groupe et à ses appartenances.
  *
  * **Neutre.** Le plan ne contient ni mode POSIX, ni ligne d'ACL, ni nom de groupe
  * Unix, ni chemin absolu. Il dit QUOI (une ZONE logique, des chemins relatifs, des
  * sujets par identité interne, un accès `ro|rw`, des plafonds, une clôture) ; il ne
- * dit jamais COMMENT. C'est la ligne de coupe de l'epic, et elle passe AVANT la
+ * dit jamais COMMENT. C'est la ligne de coupe, et elle passe AVANT la
  * dérivation des ACL. Deux gardes la tiennent : un test d'architecture scanne les
  * imports de ce namespace, un test de garde scanne la sérialisation. Le premier
  * est un scan textuel — il attrape l'étourderie (un `use` de commodité), pas une
@@ -24,7 +24,7 @@ use App\Exceptions\Filesystem\PlanResolutionException;
  * **Comparable.** Deux résolutions du même état produisent la MÊME sérialisation,
  * octet pour octet : nœuds triés par chemin résolu, octrois triés par (type de
  * sujet, identité, rôle d'arête, accès), clôtures et rôles triés. Sans ce
- * déterminisme, la détection d'écart par comparaison (story 60.4) serait
+ * déterminisme, la détection d'écart par comparaison serait
  * mort-née.
  *
  * **`roles`** porte, pour chaque rôle de la recette, ses SUJETS résolus. Sans
@@ -39,23 +39,23 @@ final class FilePlan
      * Version du FORMAT de plan. Sérialisée : un plan relu par une version
      * ultérieure doit pouvoir se reconnaître avant de se comparer.
      *
-     * **Elle ne bouge PAS pour l'ancre de la story 60.5**, et c'est un choix. La
+     * **Elle ne bouge PAS pour l'ancre de la**, et c'est un choix. La
      * clé `anchor` est ADDITIVE et son absence a un sens EXACT — la zone par
      * défaut, celle de tous les plans écrits jusqu'ici. Un plan sérialisé avant
-     * 60.5 se relit donc sans perte et signifie exactement ce qu'il signifiait.
+     * Un plan antérieur se relit donc sans perte et signifie exactement ce qu'il signifiait.
      * Bumper la version aurait rendu illisibles des rapports en cache qui sont
      * parfaitement valides, pour ne rien protéger.
      *
-     * **Story 62.4 — elle passe à 2, et c'est une RUPTURE ASSUMÉE.** Les octrois
+     * **elle passe à 2, et c'est une RUPTURE ASSUMÉE.** Les octrois
      * ne portent plus un niveau d'accès scalaire (`access`) mais une LISTE DE
-     * VERBES (`verbs`). Contrairement à l'ancre de 60.5, l'absence de la nouvelle
+     * VERBES (`verbs`). Contrairement à l'ancre, l'absence de la nouvelle
      * clé n'a aucun sens exact : un plan de version 1 décrit des accès dont la
-     * traduction en verbes est une DÉCISION (Q3), pas une lecture. La faire à la
+     * traduction en verbes est une DÉCISION, pas une lecture. La faire à la
      * désérialisation la disséminerait dans le temps ; elle est jouée une fois, à
      * la migration des recettes stockées. Un plan de version 1 est donc refusé, et
      * la voie de sortie est de le re-résoudre depuis la source SQL — ce qui ne
      * coûte rien : aucun plan n'est persisté, seuls des RAPPORTS le sont (et un
-     * rapport ne porte pas de vocabulaire d'accès, vérifié story 62.4).
+     * rapport ne porte pas de vocabulaire d'accès, vérifié).
      */
     public const VERSION = 2;
 
@@ -63,7 +63,7 @@ final class FilePlan
     public readonly string $templateKey;
 
     /**
-     * Story 60.5 — ZONE logique du plan : un jeton NEUTRE d'un vocabulaire fermé,
+     * ZONE logique du plan : un jeton NEUTRE d'un vocabulaire fermé,
      * jamais un chemin. Seule la garde de chemin du backend sait le traduire.
      */
     public readonly PlanAnchor $anchor;
@@ -122,7 +122,7 @@ final class FilePlan
     }
 
     /**
-     * Story 60.3 — ORDRE CANONIQUE des nœuds : la racine d'abord, le reste par
+     * ORDRE CANONIQUE des nœuds : la racine d'abord, le reste par
      * chemin.
      *
      * Le tri par chemin seul mettrait presque toujours la racine en tête (« . »
@@ -158,7 +158,7 @@ final class FilePlan
     }
 
     /**
-     * Story 60.3 — chemins de TOUS les nœuds, dans l'ordre canonique.
+     * Chemins de TOUS les nœuds, dans l'ordre canonique.
      *
      * C'est le PÉRIMÈTRE contre lequel un rapport de backend se valide : couvrir
      * exactement ces chemins, ni plus ni moins.
@@ -171,7 +171,7 @@ final class FilePlan
     }
 
     /**
-     * Story 60.3 — chemins des nœuds PORTANT UN PLAFOND, dans l'ordre canonique.
+     * Chemins des nœuds PORTANT UN PLAFOND, dans l'ordre canonique.
      *
      * Périmètre de la réponse au plafond : un plan sans plafond donne une liste
      * vide, et un rapport vide y est parfaitement VALIDE — il n'y avait rien à
@@ -244,7 +244,7 @@ final class FilePlan
         }
 
         // L'ancre est ADDITIVE : absente, elle vaut la zone par défaut (le sens
-        // exact de tous les plans écrits avant la story 60.5). PRÉSENTE mais hors
+        // exact de tous les plans écrits avant la). PRÉSENTE mais hors
         // vocabulaire, elle est REFUSÉE — se rabattre sur le défaut ferait
         // silencieusement relire un plan dans la mauvaise zone, c'est-à-dire au
         // mauvais endroit du disque.

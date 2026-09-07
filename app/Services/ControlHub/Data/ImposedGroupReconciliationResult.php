@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Services\ControlHub\Data;
 
 /**
- * Story 30.3 — DTO de résultat de la réconciliation des groupes imposés par le
+ * DTO de résultat de la réconciliation des groupes imposés par le
  * contrat amont (controlHub).
  *
  * Retourné par {@see \App\Services\ControlHub\ImposedWorkstationGroupReconciler::reconcile()}.
@@ -18,7 +18,7 @@ namespace App\Services\ControlHub\Data;
  *  - `released`  : WorkstationGroup non-imposés dont le verrou amont a été levé (sans suppression).
  *  - `errors`    : messages d'échec par groupe (la boucle n'abandonne pas).
  *
- * ⚠️ GARDE-FOU R3 : vocabulaire « amont » exclusivement, terme prohibé proscrit. [Source: prd-contrat-manage-se5.md#R3]
+ * ⚠️ GARDE-FOU R3 : vocabulaire « amont » exclusivement, terme prohibé proscrit.
  */
 class ImposedGroupReconciliationResult
 {

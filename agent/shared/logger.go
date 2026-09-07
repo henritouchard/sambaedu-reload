@@ -9,10 +9,10 @@ import (
 	"time"
 )
 
-// Logger : log local structuré `[ISO 8601] [LEVEL] message` — iso-24.2.
+// Logger : log local structuré `[ISO 8601] [LEVEL] message`.
 // Rotation QUOTIDIENNE (agent.log d'un jour précédent → agent-YYYY-MM-DD.log),
 // rétention 7 jours. Trace locale de la boucle : le serveur ne voit que les
-// rapports. Zéro dépendance externe (stdlib seule, décision n° 8).
+// rapports. Zéro dépendance externe (stdlib seule).
 type Logger struct {
 	// Dir : répertoire des logs (logs\ sous la racine agent). Créé à la
 	// première écriture, ACL posée via SetACL (nil = no-op, tests).
@@ -20,7 +20,7 @@ type Logger struct {
 	SetACL func(path string) error
 
 	// FileName : nom du fichier courant (défaut agent.log). Le compagnon
-	// 24.6 réutilise CE logger avec racine per-user + companion.log —
+	// Le compagnon réutilise CE logger avec racine per-user + companion.log —
 	// format/rotation/rétention identiques (archives <base>-YYYY-MM-DD.log).
 	FileName string
 
@@ -43,7 +43,7 @@ type Logger struct {
 const logFileName = "agent.log"
 
 // fileName / archivePrefix : agent.log → agent-YYYY-MM-DD.log ;
-// companion.log → companion-YYYY-MM-DD.log (iso-24.3).
+// companion.log → companion-YYYY-MM-DD.log.
 func (l *Logger) fileName() string {
 	if l.FileName == "" {
 		return logFileName
@@ -128,7 +128,7 @@ func (l *Logger) ensureDirLocked() error {
 }
 
 // rotateLocked : agent.log d'un jour précédent → agent-YYYY-MM-DD.log, puis
-// purge des archives au-delà de la rétention (iso-24.2).
+// purge des archives au-delà de la rétention.
 func (l *Logger) rotateLocked() {
 	current := filepath.Join(l.Dir, l.fileName())
 	info, err := os.Stat(current)

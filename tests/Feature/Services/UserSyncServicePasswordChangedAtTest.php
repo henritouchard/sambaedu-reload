@@ -19,11 +19,10 @@ use Tests\TestCase;
 /**
  * Tests Feature — synchro password_changed_at dans UserSyncService.
  *
- * Couvre AC14 (Tâche 4.4) :
+ * Couvre (Tâche) :
  *   - ldapUserToAdData lit pwdlastset et le convertit en ?Carbon dans le DTO
  *   - upsertUser écrit password_changed_at pour les cas FILETIME : 0, valide, -1
  *
- * Story 14.4 — AC3 / AC14
  */
 class UserSyncServicePasswordChangedAtTest extends TestCase
 {
@@ -46,10 +45,6 @@ class UserSyncServicePasswordChangedAtTest extends TestCase
         Schema::dropIfExists('sync_cursors');
         parent::tearDown();
     }
-
-    // =========================================================================
-    // ldapUserToAdData — lecture pwdLastSet dans le DTO
-    // =========================================================================
 
     #[Test]
     public function ldap_user_to_ad_data_sets_password_changed_at_null_when_pwdlastset_zero(): void
@@ -113,7 +108,7 @@ class UserSyncServicePasswordChangedAtTest extends TestCase
     }
 
     /**
-     * Post-review #1 / #5 — Cas Carbon (LdapRecord auto-cast) :
+     * Cas Carbon (LdapRecord auto-cast) :
      * pwdlastset retourné comme Carbon → mapping vers -1 → now() best-effort.
      * Vérifie le pipeline complet ldapUserToAdData → DTO Carbon non NULL.
      */
@@ -138,10 +133,6 @@ class UserSyncServicePasswordChangedAtTest extends TestCase
         $this->assertTrue($adUser->passwordChangedAt->gte($before));
         $this->assertTrue($adUser->passwordChangedAt->lte($after));
     }
-
-    // =========================================================================
-    // upsertUser — écriture password_changed_at en BDD
-    // =========================================================================
 
     #[Test]
     public function upsert_user_writes_password_changed_at_null_when_zero(): void
@@ -206,7 +197,7 @@ class UserSyncServicePasswordChangedAtTest extends TestCase
     }
 
     /**
-     * Post-review #2 — Bug critique : upsertUser ne doit PAS écraser la date SQL
+     * upsertUser ne doit PAS écraser la date SQL
      * existante avec NULL si l'AD répond null (ex: pwdLastSet absent/filtré).
      *
      * Scénario reproduit : user s'est loggé hier (date SQL persistée par
@@ -248,8 +239,8 @@ class UserSyncServicePasswordChangedAtTest extends TestCase
     }
 
     /**
-     * Post-review #2 — corollaire : si l'AD répond une vraie valeur, elle
-     * écrase bien la date existante (sync = source de vérité D6 quand AD répond).
+     * Corollaire : si l'AD répond une vraie valeur, elle écrase bien la date
+     * existante (la sync fait autorité quand l'AD répond).
      */
     #[Test]
     public function upsert_user_overwrites_password_changed_at_when_ad_returns_value(): void
@@ -281,10 +272,6 @@ class UserSyncServicePasswordChangedAtTest extends TestCase
             'La valeur AD doit écraser la date SQL quand elle est non-null (D6)'
         );
     }
-
-    // =========================================================================
-    // Helpers
-    // =========================================================================
 
     /**
      * @param array<int,string> $memberOf
@@ -350,7 +337,6 @@ class UserSyncServicePasswordChangedAtTest extends TestCase
             $table->unsignedInteger('ad_rights_bitmask')->default(0);
             $table->timestamp('ad_synced_at')->nullable();
             $table->timestamp('pwd_reset_at')->nullable();
-            // Story 14.4 — AC1
             $table->timestamp('password_changed_at')->nullable();
             $table->json('quota_snapshot')->nullable();
             $table->timestamps();

@@ -14,7 +14,6 @@ use Tests\TestCase;
 use Tests\Traits\CreatesPermissionSchema;
 
 /**
- * Story 7.2 — AC4.
  *
  * Rapatriement non-destructif des profils LDAP custom via
  * `PermissionService::importCustomProfilesFromAd()`.
@@ -195,7 +194,7 @@ class SyncFromAdCustomProfilesTest extends TestCase
     }
 
     /**
-     * Review 7.2 #2 — Un profil custom avec bit 0x800 (ComputerInstall) sans
+     * Un profil custom avec bit 0x800 (ComputerInstall) sans
      * la totalité du composite SE_COMPUTER_ADMIN ne doit PAS recevoir
      * `app.customize`. Sinon, un profil partiel "parc light" recevrait à tort
      * le droit de personnaliser les apps (Firefox/Thunderbird).
@@ -222,9 +221,9 @@ class SyncFromAdCustomProfilesTest extends TestCase
     }
 
     /**
-     * Review 7.2 #2 — Pendant de ci-dessus : un profil avec le composite
+     * Pendant du cas ci-dessus : un profil avec le composite
      * ComputerAdmin complet (0xEF00) doit bien recevoir `app.customize`
-     * (iso-convention matrice §11 pour SE_COMPUTER_ADMIN).
+     * (iso-convention pour SE_COMPUTER_ADMIN).
      */
     public function test_custom_profile_with_full_computer_admin_gets_app_customize(): void
     {

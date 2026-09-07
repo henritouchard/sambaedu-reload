@@ -12,7 +12,7 @@ use Tests\Support\WpkgSchemaBootstrapper;
 use Tests\TestCase;
 
 /**
- * Story 15.2 / AC4.3, AC7.5 — Listener regen `.ini` sur WorkstationOptionsChanged.
+ * Listener regen `.ini` sur WorkstationOptionsChanged.
  */
 class RegenerateWorkstationIniOnOptionsChangedTest extends TestCase
 {

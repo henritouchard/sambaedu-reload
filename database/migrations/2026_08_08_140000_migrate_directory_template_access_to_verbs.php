@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 62.4 — LES RECETTES PASSENT AUX QUATRE VERBES. Une fois, ici, jamais
+ * LES RECETTES PASSENT AUX QUATRE VERBES. Une fois, ici, jamais
  * ailleurs.
  *
  * **Ce que cette migration fait.** Elle réécrit les deux endroits d'une recette
@@ -17,20 +17,20 @@ use Illuminate\Support\Facades\Log;
  * `nodes_spec[].grants[].access` (les octrois d'un arbre) — en remplaçant la clé
  * `access` par la clé `verbs`, dont la valeur est une LISTE.
  *
- * **Le mappage, et pourquoi celui-là** (décision Henri Q3 = A, 2026-08-08) :
+ * **Le mappage, et pourquoi celui-là** :
  *
  *  | avant  | après                                     |
  *  |--------|-------------------------------------------|
  *  | `ro`   | `['lire']`                                |
  *  | `rw`   | `['lire','editer','creer','supprimer']`   |
  *
- * C'est le SEUL mappage qui ne retire d'accès à personne. La doctrine de l'epic
- * est additive : une migration qui aurait profité du vocabulaire plus fin pour
+ * C'est le SEUL mappage qui ne retire d'accès à personne. La doctrine est
+ * additive : une migration qui aurait profité du vocabulaire plus fin pour
  * resserrer les droits (« lecture/écriture, mais sans suppression ») aurait changé
  * le comportement d'instances en place SANS que personne ne l'ait demandé, et le
  * jour du déploiement, pas au moment où quelqu'un l'aurait décidé. La contrepartie
  * — des recettes maximalement permissives — est écrite au docblock du seeder et se
- * raffine à l'écran (story 62.6).
+ * raffine à l'écran.
  *
  * **La preuve que rien ne bouge sur le disque** n'est pas ici : elle est dans les
  * référentiels figés du backend, qui compilent `['lire']` vers exactement l'entrée
@@ -40,7 +40,7 @@ use Illuminate\Support\Facades\Log;
  *
  * **Pourquoi la conversion ne vit PAS dans la désérialisation.** L'accepter à la
  * relecture l'aurait fait vivre indéfiniment, et laissé deux vocabulaires
- * coexister dans les JSON stockés — ce que le garde-fou d'epic interdit
+ * coexister dans les JSON stockés — ce que le garde-fou interdit
  * explicitement. Le vocabulaire de clés FERMÉ des octrois de nœud
  * ({@see \App\Models\DirectoryTemplate::TREE_GRANT_KEYS}) rend d'ailleurs une
  * recette non migrée BRUYANTE : elle est refusée avec « champ inconnu », jamais lue
@@ -143,10 +143,10 @@ return new class extends Migration
             $verbs = self::UP[$access] ?? null;
 
             if ($verbs === null) {
-                // Review 62.4 #5 — le repli sur « lire » restait la bonne réponse
+                // Le repli sur « lire » reste la bonne réponse
                 // (il RETIRE plutôt qu'il n'accorde : jamais un gain d'accès sur
                 // une donnée qu'on ne comprend pas), mais il était MUET. Or toute
-                // cette story tient sur « jamais une conversion silencieuse » : une
+                // cette migration tient sur « jamais une conversion silencieuse » : une
                 // valeur d'accès qui n'est ni `ro` ni `rw` est une donnée corrompue,
                 // et son passage à « lire » seul est précisément le genre de perte
                 // qu'on doit pouvoir retrouver dans un journal après coup.

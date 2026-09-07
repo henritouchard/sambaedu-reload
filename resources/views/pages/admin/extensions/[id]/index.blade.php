@@ -15,29 +15,29 @@ use Livewire\Attributes\Title;
 use Livewire\Component;
 
 /**
- * Story 54.1 (AC1) / 54.2 (AC1-AC2) — /admin/extensions/{id} : FICHE d'une
+ * Admin/extensions/{id} : FICHE d'une
  * extension.
  *
  * Tout ce qui est affiché — version, description, scopes DEMANDÉS,
  * dépendances, URL d'entrée, visibilité — provient du **manifest**, seul
- * contrat public du système d'extensions (FR5).
+ * contrat public du système d'extensions.
  *
  * Les listes vides sont rendues PROPREMENT (« Aucun scope demandé », « Aucune
  * dépendance ») : jamais une section cassée.
  *
- * ⚠️ Les `scopes` du manifest sont une INFORMATION admin (FR3) : ce que
- * l'extension DEMANDE. **Story 56.4** ajoute le second volet — ce qui lui est
+ * ⚠️ Les `scopes` du manifest sont une INFORMATION admin : ce que
+ * l'extension DEMANDE. La fiche affiche le second volet — ce qui lui est
  * réellement ACCORDÉ (`granted_scopes`, l'état du client OIDC actif), avec un
  * bouton de révocation par scope. Les deux ne doivent jamais être confondus :
  * l'écart entre les deux listes est précisément l'information utile.
- * Les rôles de visibilité sont STOCKÉS ici, RÉSOLUS par le lanceur en 54.3.
+ * Les rôles de visibilité sont STOCKÉS ici, RÉSOLUS par le lanceur.
  *
- * Story 54.2 ajoute « Intégrer » / « Désinstaller » dans `<x-slot:actions>`
+ * Ajoute « Intégrer » / « Désinstaller » dans `<x-slot:actions>`
  * pour le type `link` uniquement (patron `app-profiles/index.blade.php:319`),
  * avec la même modale de confirmation que la bibliothèque. `$id` est
  * `#[Locked]` — les actions s'appuient dessus, JAMAIS sur un id client.
  *
- * **Story 56.3 — le cycle `app` (FR6/FR11)** : « Intégrer », « Mettre à jour »
+ * **Cycle `app`** : « Intégrer », « Mettre à jour »
  * et « Désinstaller » apparaissent aussi pour le type `app`, derrière LA MÊME
  * modale de confirmation que la bibliothèque (un seul fichier,
  * `_partials/app-operation-modal`), et s'exécutent en tâche de fond via
@@ -48,7 +48,7 @@ use Livewire\Component;
  *
  * Le cycle `link` est INCHANGÉ, verbatim.
  *
- * **Story 56.5 — carte « Santé » (FR34)** : pour une `app` réellement installée
+ * **Carte « Santé »** : pour une `app` réellement installée
  * seulement (rien à sonder ailleurs). Elle affiche l'état PERSISTÉ par
  * `ext:health:check` — joignabilité, fraîcheur de la mesure, versions, dernier
  * incident — et un bouton « Sonder maintenant » qui, lui, mesure en direct et
@@ -75,7 +75,7 @@ new #[Title('Extension')] class extends Component {
     /** Modale d'avertissement « source non officielle » (Story 56.1, AC2). */
     public bool $isThirdPartyWarningOpen = false;
 
-    // ── Story 56.3 — cycle `app` en tâche de fond ───────────────────────
+    // — cycle `app` en tâche de fond
 
     /** Modale unique de confirmation des opérations `app` (3 usages). */
     public bool $isAppOperationOpen = false;
@@ -111,7 +111,7 @@ new #[Title('Extension')] class extends Component {
 
     public string $trackedRunStatus = '';
 
-    // ── Story 56.4 — révocation d'un scope accordé ──────────────────────
+    // — révocation d'un scope accordé
 
     /** Modale de confirmation de la révocation d'un scope. */
     public bool $isRevokeScopeOpen = false;
@@ -133,7 +133,7 @@ new #[Title('Extension')] class extends Component {
         $this->loadRun();
     }
 
-    // ── AC1 — Intégrer (direct, un clic) ────────────────────────────────
+    // — Intégrer (direct, un clic)
 
     public function integrate(): void
     {
@@ -150,7 +150,7 @@ new #[Title('Extension')] class extends Component {
 
         if (! $result['changed']) {
             // Le no-op signale un écran périmé (second admin, onglet dupliqué) :
-            // rafraîchir, sinon le toast et la fiche se contredisent (review #2).
+            // rafraîchir, sinon le toast et la fiche se contredisent.
             $this->toastInfo('Cette extension est déjà intégrée.');
             $this->refreshAfterAction();
 
@@ -161,7 +161,7 @@ new #[Title('Extension')] class extends Component {
         $this->toastSuccess('Extension intégrée.');
     }
 
-    // ── Story 56.1 AC2 — Intégrer une extension TIERCE (avertissement) ──
+    // — Intégrer une extension TIERCE (avertissement)
 
     /**
      * Ouvre l'avertissement de provenance. L'officialité est relue depuis la
@@ -200,7 +200,7 @@ new #[Title('Extension')] class extends Component {
         $this->isThirdPartyWarningOpen = false;
     }
 
-    // ── AC2 — Désinstaller (confirmation par modale) ────────────────────
+    // — Désinstaller (confirmation par modale)
 
     public function askUninstall(): void
     {
@@ -240,9 +240,7 @@ new #[Title('Extension')] class extends Component {
         $this->isUninstallOpen = false;
     }
 
-    // ══════════════════════════════════════════════════════════════════════
-    // Story 56.3 — opérations `app` (installation, mise à jour, retrait)
-    // ══════════════════════════════════════════════════════════════════════
+    // Opérations `app` (installation, mise à jour, retrait)
 
     /**
      * Ouvre la modale de confirmation. La cible est la fiche courante,
@@ -320,9 +318,7 @@ new #[Title('Extension')] class extends Component {
         $this->appTarget = [];
     }
 
-    // ══════════════════════════════════════════════════════════════════════
-    // Story 56.4 — révoquer un scope accordé (FR23)
-    // ══════════════════════════════════════════════════════════════════════
+    // Révoquer un scope accordé.
 
     /**
      * Ouvre la confirmation. Le scope est mémorisé côté serveur, et vérifié
@@ -378,7 +374,7 @@ new #[Title('Extension')] class extends Component {
         if (! $result['changed']) {
             // No-op ou refus : dans les deux cas l'écran doit repartir de
             // l'état réel — un toast qui contredirait la page serait pire que
-            // pas de toast (patron review 54.2 #2).
+            // pas de toast.
             $this->toastInfo(match ($result['status']) {
                 ExtensionScopeService::STATUS_UNSUPPORTED => 'Ce scope n\'est pas révocable.',
                 ExtensionScopeService::STATUS_NO_CLIENT => 'Cette extension n\'a plus de client OIDC actif : il n\'y a rien à révoquer.',
@@ -394,7 +390,7 @@ new #[Title('Extension')] class extends Component {
     }
 
     /**
-     * ⚠️ Garde présente ICI aussi, contrairement aux autres `close*()` de cette
+     * ⚠️ Garde présente ICI aussi, contrairement aux autres `close*` de cette
      * page : les leurs ne font que fermer une modale, celle-ci efface EN PLUS
      * la cible mémorisée côté serveur. Aucun état d'une révocation ne doit être
      * pilotable par quelqu'un qui n'a pas le droit de révoquer.
@@ -433,7 +429,7 @@ new #[Title('Extension')] class extends Component {
         if ($status === ExtensionInstallRun::STATUS_SUCCESS) {
             $this->trackedRunId = 0;
 
-            // Même règle que la bibliothèque (review 56.3 #3) : un no-op propre
+            // Même règle que la bibliothèque : un no-op propre
             // s'annonce en « info », jamais en « terminée ».
             if (($this->run['changed'] ?? true) === false) {
                 $this->toastInfo('Rien à faire : l\'extension était déjà dans l\'état demandé.');
@@ -452,12 +448,12 @@ new #[Title('Extension')] class extends Component {
         }
     }
 
-    // ── Story 56.5 — sonder la santé À LA DEMANDE ───────────────────────
+    // — sonder la santé À LA DEMANDE
 
     /**
      * Sonde le backend MAINTENANT et persiste le résultat.
      *
-     * C'est le SEUL chemin de sonde à la demande — jamais le rendu (NFR9 : la
+     * C'est le SEUL chemin de sonde à la demande — jamais le rendu (la
      * fiche, comme la navbar, LIT l'état persisté). Ce bouton existe parce qu'un
      * admin qui vient de redémarrer un service ne doit pas attendre 5 minutes
      * pour le constater.
@@ -536,7 +532,7 @@ new #[Title('Extension')] class extends Component {
     }
 
     /**
-     * Rafraîchit la fiche après un no-op ou un refus (review #2).
+     * Rafraîchit la fiche après un no-op ou un refus.
      *
      * Ces deux chemins ne surviennent que lorsque l'écran est PÉRIMÉ. Si
      * l'extension existe encore, on remet la fiche en phase avec la base. Si
@@ -563,7 +559,7 @@ new #[Title('Extension')] class extends Component {
     :back="route('admin.extensions')" back-text="Retour à la bibliothèque">
 
     @php
-        // Story 56.3 — le verrou du moteur est GLOBAL : une opération en cours
+        // Le verrou du moteur est GLOBAL : une opération en cours
         // ailleurs gèle aussi les boutons de cette fiche.
         $busy = $activeRun !== null;
         $isRunning = $run !== null && $run['is_active'];
@@ -582,7 +578,7 @@ new #[Title('Extension')] class extends Component {
         <x-slot:actions>
             @if ($extension['type'] === 'link')
                 @if ($extension['status'] === 'available')
-                    {{-- Officielle : un clic (54.2 inchangé). Tierce : avertissement d'abord. --}}
+                    {{-- Officielle : un clic. Tierce : avertissement d'abord. --}}
                     <button type="button" class="btn btn-primary"
                         wire:click="{{ $extension['source_is_official'] ? 'integrate' : 'askIntegrate' }}"
                         data-testid="integrate-action">
@@ -594,7 +590,7 @@ new #[Title('Extension')] class extends Component {
                     </button>
                 @endif
             @elseif (! $isRunning)
-                {{-- Story 56.3 — cycle `app` : les mêmes gestes, en tâche de fond. --}}
+                {{-- Cycle `app` : les mêmes gestes, en tâche de fond. --}}
                 @if ($canInstall)
                     <button type="button" class="btn btn-primary" @disabled($busy)
                         wire:click="askAppOperation('install')" data-testid="app-install-action">
@@ -703,7 +699,7 @@ new #[Title('Extension')] class extends Component {
             </div>
         @endif
 
-        {{-- ============ Provenance non officielle (56.1 AC2, FR4/UX-DR4) ============ --}}
+        {{-- Provenance non officielle --}}
         @unless ($extension['source_is_official'])
             <div class="alert alert-warning shadow-sm" data-testid="third-party-alert">
                 <i class="fa-solid fa-triangle-exclamation"></i>
@@ -820,7 +816,7 @@ new #[Title('Extension')] class extends Component {
             </a>
         </div>
 
-        {{-- ===================== Santé (56.5, FR34) ===================== --}}
+        {{-- Santé --}}
         @if ($extension['health_monitored'] ?? false)
             @php
                 // Trois états, JAMAIS deux : « ok », « indisponible », et
@@ -870,7 +866,7 @@ new #[Title('Extension')] class extends Component {
                             <span class="font-mono" data-testid="health-installed-version">
                                 {{ ($extension['installed_version'] ?? '') !== '' ? $extension['installed_version'] : '—' }}
                             </span>
-                            {{-- Badge « mise à jour disponible » RÉUTILISÉ de 56.3 : la
+                            {{-- Badge « mise à jour disponible » RÉUTILISÉ : la
                                  règle n'est pas recalculée ici (review 56.1 #3). --}}
                             @if (($extension['update_available'] ?? false))
                                 <span class="badge badge-sm badge-info gap-1" data-testid="health-update-badge">
@@ -1040,7 +1036,7 @@ new #[Title('Extension')] class extends Component {
         </div>
     </div>
 
-    {{-- ===================== Modale : confirmer la désinstallation (AC2) ===================== --}}
+    {{-- ===================== Modale : confirmer la désinstallation ===================== --}}
     <x-molecules.modal wire:model="isUninstallOpen" size="max-w-lg" height="h-auto"
         close-method="closeUninstall" title="Désinstaller l'extension" icon="fa-trash-can text-error">
 
@@ -1064,7 +1060,7 @@ new #[Title('Extension')] class extends Component {
         </x-slot:footer>
     </x-molecules.modal>
 
-    {{-- ============ Modale : avertissement de source tierce (56.1 AC2) ============ --}}
+    {{-- ============ Modale : avertissement de source tierce ============ --}}
     <x-molecules.modal wire:model="isThirdPartyWarningOpen" size="max-w-lg" height="h-auto"
         close-method="closeThirdPartyWarning" title="Source non officielle"
         icon="fa-triangle-exclamation text-warning">
@@ -1090,7 +1086,7 @@ new #[Title('Extension')] class extends Component {
         </x-slot:footer>
     </x-molecules.modal>
 
-    {{-- ========== Modale : révoquer une autorisation (56.4, FR23) ========== --}}
+    {{-- Modale : révoquer une autorisation --}}
     <x-molecules.modal wire:model="isRevokeScopeOpen" size="max-w-lg" height="h-auto"
         close-method="closeRevokeScope" title="Révoquer une autorisation"
         icon="fa-shield-halved text-error">
@@ -1120,6 +1116,6 @@ new #[Title('Extension')] class extends Component {
         </x-slot:footer>
     </x-molecules.modal>
 
-    {{-- ===== Story 56.3 — confirmation des opérations `app` (3 usages) ===== --}}
+    {{-- ===== — confirmation des opérations `app` (3 usages) ===== --}}
     @include('pages.admin.extensions._partials.app-operation-modal')
 </x-organisms.page>

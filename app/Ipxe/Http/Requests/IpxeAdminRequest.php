@@ -7,14 +7,12 @@ namespace App\Ipxe\Http\Requests;
 use Illuminate\Foundation\Http\FormRequest;
 
 /**
- * Story 3.2 — AC2.2.
- *
  * Validation permissive du body de `GET|POST /ipxe/admin`. Règles iso
- * `IpxeBootRequest` (3.1) — le firmware iPXE pose des params variés et la
+ * `IpxeBootRequest` — le firmware iPXE pose des params variés et la
  * validation business est déléguée aux normalizers.
  *
  * `authorize()` retourne `true` — l'auth est portée par le middleware
- * `auth.v1.lan-only` (D3).
+ * `auth.v1.lan-only`.
  */
 class IpxeAdminRequest extends FormRequest
 {

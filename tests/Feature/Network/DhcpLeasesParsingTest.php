@@ -12,7 +12,7 @@ use Tests\TestCase;
 use Tests\Traits\CreatesDhcpSchema;
 
 /**
- * Story 8.1 — Test Feature parsing leases (`/var/lib/dhcp/dhcpd.leases`).
+ * Test Feature parsing leases (`/var/lib/dhcp/dhcpd.leases`).
  *
  * Couvre :
  *  - parsing fixture réelle (binding state filter + dédup par IP) ;
@@ -74,7 +74,7 @@ class DhcpLeasesParsingTest extends TestCase
     }
 
     /**
-     * Review code 8.1 #10 — un body de bail peut contenir une option ISC avec
+     * Un body de bail peut contenir une option ISC avec
      * des accolades imbriquées (`set` blocks, `vendor-class-identifier {…}`).
      * Le parseur doit compter les `{`/`}` pour trouver la fermeture au bon
      * niveau, plutôt que de couper sur le premier `}` rencontré.

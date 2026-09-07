@@ -9,9 +9,9 @@ use RuntimeException;
 use Throwable;
 
 /**
- * Story 55.3 — Exception du vérificateur client d'id_token.
+ * Exception du vérificateur client d'id_token.
  *
- * Calque littéral d'`InvalidFederatedJwtException` (Epic 20) : un code STABLE
+ * Calque littéral d'`InvalidFederatedJwtException` : un code STABLE
  * du catalogue {@see WitnessErrorCodes}, un message technique qui ne sort jamais
  * à l'écran, et rien du jeton lui-même.
  */

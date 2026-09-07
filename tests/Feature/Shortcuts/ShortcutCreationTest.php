@@ -73,10 +73,6 @@ class ShortcutCreationTest extends TestCase
         }
     }
 
-    // =========================================================================
-    // HELPERS
-    // =========================================================================
-
     private function createLocalShortcut(string $name, array $overrides = []): Shortcut
     {
         return Shortcut::create(array_merge([
@@ -86,10 +82,6 @@ class ShortcutCreationTest extends TestCase
             'is_global' => false,
         ], $overrides));
     }
-
-    // =========================================================================
-    // CREATION TESTS
-    // =========================================================================
 
     #[Test]
     public function create_shortcut_with_minimal_fields(): void
@@ -151,11 +143,9 @@ class ShortcutCreationTest extends TestCase
         $this->assertEquals('startup', $shortcut->place);
         $this->assertFalse($shortcut->is_global);
 
-        // Windows
         $this->assertEquals('C:\\Program Files\\LibreOffice\\program\\swriter.exe', $shortcut->windows_link);
         $this->assertEquals('C:\\Users\\$user\\Documents', $shortcut->windows_path);
 
-        // Linux
         $this->assertEquals('/usr/bin/libreoffice', $shortcut->linux_link);
         $this->assertEquals('--writer', $shortcut->linux_args);
         $this->assertEquals('libreoffice-writer', $shortcut->linux_startupwmclass);
@@ -230,10 +220,6 @@ class ShortcutCreationTest extends TestCase
         $this->assertNull($shortcut->ad_user_groups);
     }
 
-    // =========================================================================
-    // PERSISTENCE TESTS
-    // =========================================================================
-
     #[Test]
     public function shortcut_persists_in_database(): void
     {
@@ -273,10 +259,6 @@ class ShortcutCreationTest extends TestCase
         $this->assertNotNull($found);
         $this->assertEquals('Firefox', $found->name);
     }
-
-    // =========================================================================
-    // UPDATE TESTS
-    // =========================================================================
 
     #[Test]
     public function update_shortcut_fields(): void
@@ -330,10 +312,6 @@ class ShortcutCreationTest extends TestCase
         $this->assertEquals([], $shortcut->ad_user_groups);
     }
 
-    // =========================================================================
-    // DELETE TESTS
-    // =========================================================================
-
     #[Test]
     public function delete_shortcut(): void
     {
@@ -345,10 +323,6 @@ class ShortcutCreationTest extends TestCase
         $this->assertNull(Shortcut::find($id));
         $this->assertDatabaseMissing('shortcuts', ['id' => $id]);
     }
-
-    // =========================================================================
-    // SCOPE TESTS
-    // =========================================================================
 
     #[Test]
     public function scope_local_excludes_global(): void
@@ -385,10 +359,6 @@ class ShortcutCreationTest extends TestCase
         $this->assertCount(1, Shortcut::byPlace('startup')->get());
         $this->assertCount(1, Shortcut::byPlace('taskbar')->get());
     }
-
-    // =========================================================================
-    // MODEL METHODS TESTS
-    // =========================================================================
 
     #[Test]
     public function windows_config_returns_correct_array(): void
@@ -448,10 +418,6 @@ class ShortcutCreationTest extends TestCase
         $this->assertEquals('Firefox', $legacy['linux']['startupwmclass']);
     }
 
-    // =========================================================================
-    // FULL CREATION FLOW (simulates Livewire save logic)
-    // =========================================================================
-
     #[Test]
     public function full_creation_flow_simulates_livewire_save(): void
     {
@@ -504,7 +470,6 @@ class ShortcutCreationTest extends TestCase
     #[Test]
     public function full_update_flow_simulates_livewire_save(): void
     {
-        // Create
         $shortcut = $this->createLocalShortcut('Firefox', [
             'windows_link' => 'C:\\firefox.exe',
             'linux_link' => '/usr/bin/firefox',

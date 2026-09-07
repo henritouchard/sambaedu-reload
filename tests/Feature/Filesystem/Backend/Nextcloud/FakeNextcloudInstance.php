@@ -8,10 +8,10 @@ use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 
 /**
- * Story 61.3 — UNE INSTANCE EN MÉMOIRE, qui rejoue les CORPS MESURÉS.
+ * UNE INSTANCE EN MÉMOIRE, qui rejoue les CORPS MESURÉS.
  *
  * **Pourquoi un double avec un état, et pas une pile de réponses figées.** Les
- * propriétés que cette story doit prouver sont des propriétés de SÉQUENCE :
+ * propriétés à prouver sont des propriétés de SÉQUENCE :
  * l'idempotence d'un second passage, l'adoption d'un dossier existant, la survie
  * d'un accès après pose, le retrait d'une règle à la main. Une pile de réponses les
  * rendrait toutes vraies par construction — le double serait vert parce qu'on lui a
@@ -46,7 +46,7 @@ final class FakeNextcloudInstance
 
     /**
      * Principaux dont les règles sont **ACCEPTÉES SANS EFFET** — le mode de rupture
-     * MESURÉ au sondage d'ouverture d'epic : l'instruction est reçue en succès, et
+     * MESURÉ au sondage d'ouverture : l'instruction est reçue en succès, et
      * la relecture rend un accès là où on demandait zéro. C'est exactement ce que la
      * relecture après écriture existe pour constater.
      *
@@ -122,10 +122,6 @@ final class FakeNextcloudInstance
         $this->calls = [];
     }
 
-    // =========================================================================
-    // Routage
-    // =========================================================================
-
     private function handle(Request $request)
     {
         $method = $request->method();
@@ -154,10 +150,6 @@ final class FakeNextcloudInstance
         return Http::response(self::ocs(404, [], 'route inconnue du double'), 200);
     }
 
-    // =========================================================================
-    // Dossiers d'équipe
-    // =========================================================================
-
     private function folders(string $method, string $path, array $form)
     {
         $tail = trim((string) substr($path, (int) strpos($path, '/folders') + strlen('/folders')), '/');
@@ -166,7 +158,7 @@ final class FakeNextcloudInstance
         if ($segments === []) {
             if ($method === 'GET') {
                 // Le point de montage revient AVEC une barre oblique de tête que
-                // personne n'a écrite : deuxième occurrence du piège dans l'epic.
+                // personne n'a écrite : deuxième occurrence du piège.
                 $out = [];
                 foreach ($this->folders as $folder) {
                     $out[(string) $folder['id']] = ['mount_point' => '/' . $folder['mount_point']] + $folder;
@@ -247,10 +239,6 @@ final class FakeNextcloudInstance
         return Http::response(self::ocs(400, [], 'requête inattendue'), 200);
     }
 
-    // =========================================================================
-    // Groupes et comptes
-    // =========================================================================
-
     private function cloudGroups(string $method, string $path, array $form)
     {
         $tail = trim((string) substr($path, (int) strpos($path, '/cloud/groups') + strlen('/cloud/groups')), '/');
@@ -303,10 +291,6 @@ final class FakeNextcloudInstance
 
         return Http::response(self::ocs(100), 200);
     }
-
-    // =========================================================================
-    // WebDAV
-    // =========================================================================
 
     private function dav(string $method, string $path, string $body)
     {

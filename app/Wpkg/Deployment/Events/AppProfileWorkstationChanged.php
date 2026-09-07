@@ -7,8 +7,8 @@ namespace App\Wpkg\Deployment\Events;
 use Illuminate\Foundation\Events\Dispatchable;
 
 /**
- * Story 15.2 / AC4.1 — AppProfile attaché/détaché directement à un poste.
- * Émetteurs : Story 15.4 (HORS scope ici).
+ * AppProfile attaché/détaché directement à un poste.
+ * Émetteurs : (HORS scope ici).
  */
 final readonly class AppProfileWorkstationChanged
 {

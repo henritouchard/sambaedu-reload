@@ -10,20 +10,20 @@ use App\Exceptions\Filesystem\FileLocationException;
 use App\Models\SystemSetting;
 
 /**
- * Story 63.1 — LE FOYER DES DEUX EMPLACEMENTS ET DU CLOUD ACTIF.
+ * LE FOYER DES DEUX EMPLACEMENTS ET DU CLOUD ACTIF.
  *
  * Ne fait QU'UNE chose : lire et écrire une ligne de réglage
  * ({@see SystemSetting}, clé {@see self::SETTING_KEY}). Aucun appel HTTP,
  * aucune sonde, aucun accès disque, aucune UI, aucun appel à un backend de
  * fichiers, à `NetworkShareService`, à `AclService` ou à `ShareService` —
- * c'est ce que l'AC5 exige, et c'est ce qui permet à ce service de rester
+ * C'est ce que l' exige, et c'est ce qui permet à ce service de rester
  * scanné (et de passer) par `PlanNamespaceIsolationTest`.
  *
  * **Clé distincte de `files.policy`** (`\App\Services\FilePolicyService`, cité
  * en FQCN et non importé : ce service ne dépend de lui ni à la compilation ni
  * à l'exécution), qui reste intacte et continue de gouverner exactement ce
- * qu'il gouverne aujourd'hui — cette story pose le nouveau modèle À CÔTÉ, elle
- * ne l'éteint pas.
+ * qu'il gouverne aujourd'hui : le nouveau modèle se pose À CÔTÉ, il ne l'éteint
+ * pas.
  *
  * **La garde de cohérence de {@see FileLocations::make()} est rejouée ICI, à
  * la LECTURE, pas seulement à l'écriture** : une ligne de `system_settings`

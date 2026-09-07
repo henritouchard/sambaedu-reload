@@ -21,9 +21,9 @@ use Mockery;
 use Tests\TestCase;
 
 /**
- * Tests unitaires du pipeline async de `WorkstationGroupService` (story 4-3).
+ * Tests unitaires du pipeline async de `WorkstationGroupService` (-3).
  *
- * Couvre AC8 : dispatch 1 job par machine, contrat typé préservé, idempotence,
+ * Couvre : dispatch 1 job par machine, contrat typé préservé, idempotence,
  * normalisation des IDs, flux synchrone `remote` conservé.
  *
  * Le service étant couplé à l'ORM Eloquent (création `MachinePowerActionTask`),
@@ -167,7 +167,7 @@ class WorkstationGroupServicePowerActionTest extends TestCase
         return [$group, $machines];
     }
 
-    // ─── Tests ──────────────────────────────────────────────────────────────
+    // Tests
 
     public function test_execute_group_machines_action_dispatches_one_job_per_machine(): void
     {
@@ -252,7 +252,7 @@ class WorkstationGroupServicePowerActionTest extends TestCase
 
     public function test_execute_group_machines_action_filters_machines_with_active_tasks(): void
     {
-        // AC7 — idempotence : une machine qui a déjà une task en ACTIVE_STATUSES
+        // Idempotence : une machine qui a déjà une task en ACTIVE_STATUSES
         // est filtrée du dispatch et apparaît en failed_count avec code=409.
         Queue::fake();
 

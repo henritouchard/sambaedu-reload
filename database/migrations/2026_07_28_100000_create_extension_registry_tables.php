@@ -8,18 +8,18 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 54.1 — Registre local des EXTENSIONS SE5 (socle de l'Epic 54).
+ * Registre local des EXTENSIONS SE5.
  *
  * Deux tables, une seule migration (une migration par feature) :
  *
  *  - `extension_sources` : d'OÙ viennent les extensions. Le modèle multi-sources
  *    (AR7) est posé DÈS LE SOCLE — l'UI d'ajout de source, les sources distantes
- *    et les signatures arrivent en Epic 56, mais les colonnes existent maintenant
- *    pour ne pas imposer une migration de rupture. Une seule ligne en 54.1 : la
+ * et les signatures arrivent en, mais les colonnes existent maintenant
+ *  pour ne pas imposer une migration de rupture. Une seule ligne : la
  *    source `bundled` (manifests embarqués dans le dépôt).
  *  - `extensions` : le catalogue proprement dit, une ligne par manifest chargé.
  *
- * DÉCISIONS DE CONCEPTION (figées par la story) :
+ * DÉCISIONS DE CONCEPTION :
  *
  *  1. **`manifest` = source de vérité de la fiche.** Le manifest complet est
  *     stocké en JSON (`jsonb` sous PostgreSQL, `json` sous SQLite — patron
@@ -40,14 +40,13 @@ use Illuminate\Support\Facades\Schema;
  *     `ExtensionStatus`) — convention maison, un ALTER TYPE PostgreSQL est un
  *     coût inutile.
  *  5. **`status` a un DÉFAUT DB `'available'`** : la synchro bundled n'écrit
- *     JAMAIS cette colonne (AC2 — une extension intégrée n'est jamais
+ * JAMAIS cette colonne (une extension intégrée n'est jamais
  *     dé-intégrée par un rechargement de catalogue). Elle n'est mutée qu'en
- *     Story 54.2.
  *  6. **`is_official` ≠ `kind`** : `kind` est le TRANSPORT (embarquée/distante),
- *     `is_official` la CONFIANCE (FR4, consommée en Epic 56). Deux axes
+ * `is_official` la CONFIANCE. Deux axes
  *     distincts, volontairement séparés.
  *
- * ⚠️ ISOLEMENT (NFR14) : aucune de ces tables n'a de FK, de listener ou de
+ * ⚠️ ISOLEMENT : aucune de ces tables n'a de FK, de listener ou de
  * service commun avec les tables `controlhub_contract*`. La sync amont
  * (ingestion → 3 listeners → `ImposedDepotReconciler` → rupture/manifeste) ne
  * doit JAMAIS les toucher — c'est prouvé et verrouillé par
@@ -79,13 +78,14 @@ return new class extends Migration
                 $table->string('kind', 16)->default('bundled');
 
                 // Point d'accès de la source. VIDE pour bundled (les manifests
-                // sont sur le disque du serveur). Jamais nullable (piège #3).
+                // sont sur le disque du serveur). Jamais nullable : `''` et `null`
+                // se distingueraient sans rien apporter.
                 $table->string('url', 512)->default('');
 
-                // Provenance/confiance (FR4) — consommée en Epic 56.
+                // Provenance/confiance.
                 $table->boolean('is_official')->default(true);
 
-                // Désactivation d'une source sans la supprimer (Epic 56).
+                // Désactivation d'une source sans la supprimer.
                 $table->boolean('enabled')->default(true);
 
                 if ($driver === 'pgsql') {
@@ -110,7 +110,7 @@ return new class extends Migration
                 // `id` du manifest (ex. `doc`) — slug validé applicativement.
                 $table->string('key', 64);
 
-                // Dénormalisations du manifest pour la LISTE (décision #1).
+                // Dénormalisations du manifest pour la LISTE.
                 $table->string('name');
                 $table->string('version', 32)->default('');
                 $table->string('publisher')->default('');
@@ -121,10 +121,10 @@ return new class extends Migration
                 $table->string('type', 16);
 
                 // Cast \App\Enums\ExtensionStatus. Défaut DB : la synchro
-                // bundled n'écrit jamais cette colonne (décision #5).
+                // bundled n'écrit jamais cette colonne.
                 $table->string('status', 16)->default('available');
 
-                // Manifest COMPLET = source de vérité de la fiche (décision #1).
+                // Manifest COMPLET = source de vérité de la fiche.
                 if ($driver === 'pgsql') {
                     $table->jsonb('manifest');
                 } else {
@@ -137,7 +137,7 @@ return new class extends Migration
                     $table->timestamps();
                 }
 
-                // Clé d'upsert idempotent de la synchro (décision #2).
+                // Clé d'upsert idempotent de la synchro.
                 $table->unique(['extension_source_id', 'key'], 'ext_natural_key');
             });
         }

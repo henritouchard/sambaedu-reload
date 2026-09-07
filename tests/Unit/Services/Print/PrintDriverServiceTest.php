@@ -15,11 +15,11 @@ use Tests\Support\FakeCommandRunner;
 use Tests\TestCase;
 
 /**
- * Story 6.2 — Tests Unit du Service PrintDriverService.
+ * Tests Unit du Service PrintDriverService.
  *
  * Couvre :
  *  - Validation regex (driver name / hostname pivot / architecture / file name),
- *    AC9 defense in depth.
+ * defense in depth.
  *  - Parsing `rpcclient enumdrivers` (legacy printers.inc.php:478).
  *  - Parsing `rpcclient getdriver` (legacy printers.inc.php:47-58) avec
  *    cas spécial `(null)` → `"NULL"` string littéral, et Dependentfiles multi.
@@ -33,7 +33,7 @@ use Tests\TestCase;
  *  - 3 data-providers sécurité (driver_name / pivot_hostname / file_name)
  *    avec ≥ 8 payloads malicieux chacun.
  *
- * Pas de DB / Eloquent ici — shellout pur (cf. CupsPrinterServiceTest 6.1).
+ * Pas de DB / Eloquent ici — shellout pur (cf. CupsPrinterServiceTest).
  */
 class PrintDriverServiceTest extends TestCase
 {
@@ -52,10 +52,6 @@ class PrintDriverServiceTest extends TestCase
     {
         return base_path('tests/fixtures/samba/' . $name);
     }
-
-    // ========================================================================
-    // VALIDATION (AC9)
-    // ========================================================================
 
     #[Test]
     public function it_accepts_valid_driver_names(): void
@@ -92,7 +88,7 @@ class PrintDriverServiceTest extends TestCase
             'unc_inject' => ['\\\\evil\\share'],
             'angle' => ['HP<x>'],
             'tab' => ["HP\tx"],
-            // Fix #19 — payloads sécurité supplémentaires.
+            // Payloads sécurité supplémentaires.
             'unicode_fullwidth_solidus' => ["HP\xEF\xBC\x8Ftest"], // U+FF0F
             'crlf_combined' => ["HP\r\nrm"],
             'url_encoded_null' => ['HP%00rm'],
@@ -133,22 +129,18 @@ class PrintDriverServiceTest extends TestCase
             'null_byte' => ["w10\0rm"],
             'unc' => ['\\\\evil'],
             'underscore_invalid' => ['w10_pivot'],
-            // Fix #19 — payloads sécurité supplémentaires.
+            // Payloads sécurité supplémentaires.
             'unicode_fullwidth_solidus' => ["w10\xEF\xBC\x8F"],
             'crlf_combined' => ["w10\r\nrm"],
             'homoglyph_cyrillic' => ["\xD0\xA1\xD0\x95"], // С + Е cyrilliques
         ];
     }
 
-    // ========================================================================
-    // validateCupsName — distinct de validatePivotHostname (Fix #1)
-    // ========================================================================
-
     #[Test]
     public function validate_cups_name_accepts_underscore_in_printer_names(): void
     {
-        // Fix #1 — les noms d'imprimantes CUPS autorisent l'underscore
-        // (cohérent CupsPrinterService::NAME_REGEX 6.1), contrairement
+        // Les noms d'imprimantes CUPS autorisent l'underscore
+        // (cohérent CupsPrinterService::NAME_REGEX), contrairement
         // au strict NetBIOS du HOSTNAME_REGEX.
         $this->service->validateCupsName('imp_mine');
         $this->service->validateCupsName('imp_other');
@@ -174,7 +166,7 @@ class PrintDriverServiceTest extends TestCase
     #[Test]
     public function get_driver_for_printer_accepts_underscore_cups_name(): void
     {
-        // Fix #1 — régression : getprinter pour `imp_mine` ne doit pas
+        // Non-régression : getprinter pour `imp_mine` ne doit pas
         // lever InvalidArgumentException sur la validation de nom.
         $this->runner->whenContains('getprinter "imp_mine"', '', 1, 'WERR_INVALID_PRINTER_NAME');
         // Pas d'exception attendue (le getprinter retourne null sur WERR_INVALID_PRINTER_NAME).
@@ -233,10 +225,6 @@ class PrintDriverServiceTest extends TestCase
         ];
     }
 
-    // ========================================================================
-    // SANTÉ
-    // ========================================================================
-
     #[Test]
     public function is_samba_healthy_returns_true_on_srvinfo_rc_0(): void
     {
@@ -264,10 +252,6 @@ class PrintDriverServiceTest extends TestCase
         $this->runner->whenContains('smbclient -L', '', 1, 'Connection to W10PIVOT failed');
         $this->assertFalse($this->service->isPivotReachable('W10PIVOT'));
     }
-
-    // ========================================================================
-    // LECTURE
-    // ========================================================================
 
     #[Test]
     public function list_all_drivers_parses_enumdrivers_output_into_typed_array(): void
@@ -354,10 +338,6 @@ class PrintDriverServiceTest extends TestCase
         $this->assertSame('cups-pdf', $result['smb_name']);
         $this->assertSame('Generic / Generic PostScript Printer', $result['smb_driver']);
     }
-
-    // ========================================================================
-    // MUTATIONS
-    // ========================================================================
 
     #[Test]
     public function copy_driver_file_executes_smbclient_get_then_chown_with_escaped_arguments(): void
@@ -495,10 +475,6 @@ class PrintDriverServiceTest extends TestCase
         $this->assertNull($rm, 'Aucun unlink ne doit être lancé si deldriver fail');
     }
 
-    // ========================================================================
-    // MAPPING ERREURS
-    // ========================================================================
-
     #[Test]
     public function rpcclient_kerberos_failure_throws_kerberos_ticket_exception(): void
     {
@@ -538,7 +514,7 @@ class PrintDriverServiceTest extends TestCase
     #[Test]
     public function kerberos_no_logon_servers_throws_kerberos_ticket_exception(): void
     {
-        // Fix #4 — `NT_STATUS_NO_LOGON_SERVERS` est une variante CIFS-side
+        // `NT_STATUS_NO_LOGON_SERVERS` est une variante CIFS-side
         // d'un KDC injoignable, doit déclencher `KerberosTicketException`
         // (pas `PrintDriverException` générique).
         $this->runner->whenContains('enumdrivers', '', 1, 'NT_STATUS_NO_LOGON_SERVERS');
@@ -550,7 +526,7 @@ class PrintDriverServiceTest extends TestCase
     #[Test]
     public function get_driver_definition_handles_path_without_unc_prefix(): void
     {
-        // Fix #17 — le legacy autorise les valeurs `Datafile: [PSCRIPT.PPD]`
+        // Le legacy autorise les valeurs `Datafile: [PSCRIPT.PPD]`
         // sans préfixe UNC `\\se4fs\print$\x64\3\`. Le regex
         // `(.*\\\\3\\\\)?` rend le préfixe optionnel.
         $output = "[Windows x64]\nPrinter Driver Info 3:\n"
@@ -574,7 +550,7 @@ class PrintDriverServiceTest extends TestCase
     #[Test]
     public function get_driver_for_printer_uses_non_greedy_split(): void
     {
-        // Fix #13 — split non-greedy sur exactement 3 champs séparés par
+        // Split non-greedy sur exactement 3 champs séparés par
         // virgule. Une ligne avec 4 virgules (driver_name contient
         // `Acme, Inc`) ne devrait PAS être mal parsée en gobant la
         // virgule dans smb_name (bug greedy).

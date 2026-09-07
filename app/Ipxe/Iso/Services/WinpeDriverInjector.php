@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
 
 /**
- * Story 3.10 — Injection automatique, idempotente et persistante des pilotes
+ * Injection automatique, idempotente et persistante des pilotes
  * réseau (NIC) dans le `boot.wim` WinPE servi aux postes.
  *
  * Cause racine (NE PAS re-débattre) : à partir de Win11 24H2, Microsoft a
@@ -26,12 +26,12 @@ use Illuminate\Support\Facades\Process;
  * cassé le lab le 2026-06-25). On rejoue donc l'injection juste après la copie
  * fraîche du `boot.wim` (l'extracteur appelle {@see inject()}).
  *
- * **Idempotence par construction (D4)** : chaque extraction copie un `boot.wim`
+ * **Idempotence par construction** : chaque extraction copie un `boot.wim`
  * pristine depuis l'ISO ; l'injection s'exécute toujours sur un wim vierge de
  * toute injection antérieure → `wimlib add` est déterministe, aucune logique de
  * diff requise.
  *
- * **No-op propre (D4)** : pack absent / vide / sans `.inf` → skip + log info,
+ * **No-op propre** : pack absent / vide / sans `.inf` → skip + log info,
  * le `boot.wim` reste le stock Microsoft intact (zéro régression pour les parcs
  * à NIC inbox).
  *
@@ -152,7 +152,7 @@ final class WinpeDriverInjector
      * Scanne le pack et retourne les familles non vides (au moins un `.inf`).
      *
      * PUBLIC : réutilisé par l'UI Livewire (`iso-windows`) pour afficher l'état
-     * exact du pack — source unique de vérité (D3, zéro duplication). L'UI et
+     * exact du pack — source unique de vérité, zéro duplication. L'UI et
      * l'injection comptent ainsi les `.inf` à l'identique (récursif +
      * insensible à la casse, donc les `*.INF` majuscules des packs Lenovo/Intel
      * sont comptés comme injectés).
@@ -218,7 +218,7 @@ final class WinpeDriverInjector
      * et lève {@see WinpeDriverInjectionException} (exit + stderr) si échec.
      *
      * Le binaire `wimlib-imagex` absent → exit 127 (ou erreur shell) → exception
-     * explicite (AC2.5). Calque du helper `runOrThrow` de l'extracteur.
+     * explicite. Calque du helper `runOrThrow` de l'extracteur.
      */
     private function runWimlibUpdate(string $bootWim, int $index, string $commandText, int $timeout, string $stage): void
     {

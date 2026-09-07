@@ -19,16 +19,16 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 30.3 — Garantie d'existence des groupes imposés par le contrat amont (controlHub).
+ * Garantie d'existence des groupes imposés par le contrat amont (controlHub).
  *
- * Couvre les AC :
- * - #1 création d'un groupe imposé absent (chemin parc → AD réutilisé)
- * - #2 confirmation idempotente d'un groupe existant (sans doublon) + adopt ROOT
- * - #3 idempotence sur 2 passes
- * - #4 verrou de suppression (deleteGroup throw + groupe persiste)
- * - #6 levée du verrou des groupes non-imposés (sans suppression)
- * - #7 standalone (no-op total)
- * - #8 R3 (introspection — aucun « central »)
+ * Couvre :
+ * - création d'un groupe imposé absent (chemin parc → AD réutilisé)
+ * - confirmation idempotente d'un groupe existant (sans doublon) + adopt ROOT
+ * - idempotence sur 2 passes
+ * - verrou de suppression (deleteGroup throw + groupe persiste)
+ * - levée du verrou des groupes non-imposés (sans suppression)
+ * - standalone (no-op total)
+ * - règle de nommage : aucun identifiant livré ne contient « central »
  *
  * ⚠️ Tests sur HÔTE (php8.4 + pdo_sqlite) — JAMAIS sur la VM.
  * ⚠️ Idempotence & verrou testés PAR COMPORTEMENT (compteurs / état), pas par
@@ -80,8 +80,6 @@ class ImposedWorkstationGroupReconcilerTest extends TestCase
         return $contract;
     }
 
-    // ── AC #1 — Création d'un groupe imposé absent ───────────────────────────
-
     #[Test]
     public function creates_an_absent_imposed_group_via_the_parc_path(): void
     {
@@ -98,7 +96,7 @@ class ImposedWorkstationGroupReconcilerTest extends TestCase
         self::assertSame('direction', $group->controlhub_label);
 
         self::assertSame(1, $result->created);
-        // Story 38.7 — un groupe imposé est LOGIQUE (is_physical = false) : purement
+        // Un groupe imposé est LOGIQUE (is_physical = false) : purement
         // SQL, l'observer ne dispatche plus aucun job AD (OU=Parcs en lecture seule).
         Queue::assertNotPushed(WorkstationGroupAdSyncJob::class);
     }
@@ -181,8 +179,6 @@ class ImposedWorkstationGroupReconcilerTest extends TestCase
         self::assertSame(LockReason::CONTROL_HUB->value, $group->locked);
     }
 
-    // ── AC #2 — Confirmation idempotente d'un groupe existant ─────────────────
-
     #[Test]
     public function confirms_an_existing_group_without_duplication(): void
     {
@@ -231,8 +227,6 @@ class ImposedWorkstationGroupReconcilerTest extends TestCase
         self::assertSame(0, $result->released);
     }
 
-    // ── AC #3 — Idempotence sur 2 passes ─────────────────────────────────────
-
     #[Test]
     public function second_pass_is_a_functional_no_op(): void
     {
@@ -247,8 +241,6 @@ class ImposedWorkstationGroupReconcilerTest extends TestCase
         self::assertSame([], $second->errors);
         self::assertSame(1, WorkstationGroup::where('name', 'bureau_direction')->count());
     }
-
-    // ── AC #4 — Verrou de suppression sous contrat ───────────────────────────
 
     #[Test]
     public function a_reconciled_imposed_group_cannot_be_deleted(): void
@@ -268,8 +260,6 @@ class ImposedWorkstationGroupReconcilerTest extends TestCase
         self::assertNotNull(WorkstationGroup::findByName('bureau_direction'));
     }
 
-    // ── AC #6 — Levée du verrou des groupes non-imposés ──────────────────────
-
     #[Test]
     public function releases_the_lock_of_a_no_longer_imposed_group_without_deleting_it(): void
     {
@@ -288,7 +278,7 @@ class ImposedWorkstationGroupReconcilerTest extends TestCase
         self::assertNotNull($released, 'Le groupe non-imposé ne doit PAS être supprimé.');
         self::assertNull($released->locked);
         self::assertFalse($released->managed_by_control_hub);
-        // Label « dangling » laissé tel quel (sans effet — cf. 30.4).
+        // Label « dangling » laissé tel quel (sans effet).
         self::assertSame('ancien-label', $released->controlhub_label);
         self::assertSame(1, $result->released);
     }
@@ -310,8 +300,6 @@ class ImposedWorkstationGroupReconcilerTest extends TestCase
         self::assertSame(LockReason::ROOT->value, $group->locked);
         self::assertFalse($group->managed_by_control_hub);
     }
-
-    // ── AC #7 — Standalone (no-op total) ─────────────────────────────────────
 
     #[Test]
     public function standalone_without_active_contract_is_a_total_no_op(): void
@@ -354,8 +342,6 @@ class ImposedWorkstationGroupReconcilerTest extends TestCase
         Queue::assertNothingPushed();
     }
 
-    // ── AC #8 — R3 (introspection) ───────────────────────────────────────────
-
     #[Test]
     public function r3_no_delivered_identifier_contains_central(): void
     {
@@ -371,7 +357,7 @@ class ImposedWorkstationGroupReconcilerTest extends TestCase
 
             $reflection = new \ReflectionClass($fqcn);
 
-            // R3 sur les LITTÉRAUX : le fichier source livré ne doit contenir aucun
+            // Règle de nommage sur les LITTÉRAUX : le fichier source livré ne doit contenir aucun
             // « central » (commentaires, messages FR, logs, identifiants compris).
             $path = $reflection->getFileName();
             self::assertIsString($path, "Chemin source introuvable pour {$fqcn}");

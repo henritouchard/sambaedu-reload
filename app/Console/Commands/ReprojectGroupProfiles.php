@@ -8,15 +8,15 @@ use App\Services\GroupRightsProfileService;
 use Illuminate\Console\Command;
 
 /**
- * Story 49.1 (AC4) — re-projection idempotente des profils de droits portés par
+ * Re-projection idempotente des profils de droits portés par
  * les groupes sur l'ensemble du parc.
  *
  * Trois usages :
  *  - **backfill au déploiement** : matérialise les rôles Spatie de tous les
  *    utilisateurs `source='ad'` à partir de leurs appartenances ;
  *  - **filet** des chemins qui n'émettent pas d'events pivot (writes bruts
- *    `DB::table('user_group_user')` des migrations 42.1 / `MergeLegacyUserGroups`,
- *    suppression en masse de groupes par `whereNotIn(...)->delete()`) ;
+ *  `DB::table('user_group_user')` des migrations / `MergeLegacyUserGroups`,
+ *  suppression en masse de groupes par `whereNotIn(...)->delete()`) ;
  *  - **réparation** après incident.
  *
  * L'opération multi-instance est une COMMANDE, jamais une procédure manuelle à
@@ -27,7 +27,7 @@ use Illuminate\Console\Command;
  * FAILURE pour que l'orchestration de déploiement la voie.
  *
  * **Aucune planification ici** (D10) : le fil de l'eau est événementiel
- * (observer pivot) et le `--mode=full` nocturne appartient à la Story 49.3.
+ * (observer pivot) et le `--mode=full` nocturne relève de la planification.
  */
 class ReprojectGroupProfiles extends Command
 {

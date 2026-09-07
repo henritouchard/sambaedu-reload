@@ -7,7 +7,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 62.3 — L'ARÊTE ENTRE LES DEUX CATALOGUES : quels rôles ont un sens dans
+ * L'ARÊTE ENTRE LES DEUX CATALOGUES : quels rôles ont un sens dans
  * un type de groupe, et comment ils s'y disent.
  *
  * **Cette migration crée la table, et RIEN D'AUTRE. Elle naît VIDE.**
@@ -20,7 +20,7 @@ use Illuminate\Support\Facades\Schema;
  *     rend TOUT le catalogue à un type SANS déclaration, et SEULEMENT les rôles
  *     déclarés à un type qui en a. Poser ces sept lignes FERME `classe`, `projet`
  *     et `equipe` en laissant ouverts tous les autres types. C'est iso au jour de
- *     la story — trois rôles au catalogue, et la garde D3 bloque déjà `owner` hors
+ *     jour de la migration — trois rôles au catalogue, et la garde bloque déjà `owner` hors
  *     classe — mais au premier rôle personnalisé créé par un administrateur, il
  *     serait attribuable partout SAUF dans les trois types les plus utilisés.
  *     Fermer un type est une DÉCISION ; une migration ne la prend pas à la place de
@@ -28,8 +28,7 @@ use Illuminate\Support\Facades\Schema;
  *  2. **SE5 est multi-vertical.** Une instance sans rapport avec une école n'a
  *     aucune raison de recevoir « Élève » et « Professeur principal ». Le
  *     vocabulaire scolaire est un PROFIL qu'on installe, pas un défaut qu'on subit
- *     — même geste que la décision de 2026-08-03 sur le seed `Profs`→`prof`
- *     (runbook « rights-management », scénario 19.12).
+ *     — même geste que le renoncement au seed `Profs`→`prof`.
  *
  * **Le profil scolaire s'installe donc à la demande**, par la commande
  * {@see \App\Console\Commands\CollegeSeedRoleXTypeCommand} :
@@ -48,7 +47,7 @@ use Illuminate\Support\Facades\Schema;
  * `member`, le défaut de tout rattachement, deviendrait inattribuable dans le
  * moindre projet.
  *
- * **Aucune clé étrangère** — cohérence d'epic (D2) : la référence est la CLÉ
+ * **Aucune clé étrangère**, par cohérence : la référence est la CLÉ
  * immuable, lisible en base, et les refus de retrait sont APPLICATIFS et NOMMÉS
  * (« 42 appartenances portent le rôle "Enseignant" dans des groupes de type
  * "classe" »), ce qu'un `RESTRICT` ne saurait pas formuler.

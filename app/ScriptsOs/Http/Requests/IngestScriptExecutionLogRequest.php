@@ -14,8 +14,6 @@ use Illuminate\Support\Carbon;
 use Illuminate\Validation\Rule;
 
 /**
- * Story 16.12 — AC2.2 / D3.
- *
  * FormRequest pour `POST /api/v1/script-execution-logs`. Validation stricte
  * du payload émis par le wrapper côté poste :
  *
@@ -28,7 +26,7 @@ use Illuminate\Validation\Rule;
  *        peut avoir un peu de retard, mais > 7j → log obsolète, on rejette)
  *
  * **Authz** : `authorize()` retourne `true` — l'authentification est gérée
- * par le middleware `auth.v1.workstation` en amont (16.10).
+ * par le middleware `auth.v1.workstation` en amont.
  */
 class IngestScriptExecutionLogRequest extends FormRequest
 {
@@ -55,12 +53,12 @@ class IngestScriptExecutionLogRequest extends FormRequest
             'stderr' => ['nullable', 'string', 'max:16384'],
             'started_at' => ['required', 'date'],
             'duration_ms' => ['required', 'integer', 'min:0', 'max:86400000'],
-            // Story 16.12 post-review Q3 (Opus-A) — `correlation_id` désormais
-            // **required** pour mitiger un replay JWT capturé sur LAN. Un
+            // `correlation_id` est **required** pour mitiger un replay JWT
+            // capturé sur le LAN. Un
             // attaquant qui modifie le correlation_id casse l'idempotence du
             // wrapper légitime → forcé à réutiliser celui capturé → dédupliqué
-            // par UNIQUE pgsql `sel_ws_corr_unique`. Le wrapper renderer 16.12
-            // génère **toujours** un UUID (D4) → transparent côté postes.
+            // par UNIQUE pgsql `sel_ws_corr_unique`. Le wrapper renderer
+            // génère **toujours** un UUID → transparent côté postes.
             'correlation_id' => ['required', 'uuid'],
         ];
     }

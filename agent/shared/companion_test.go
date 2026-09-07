@@ -95,7 +95,7 @@ func TestCompanionPassPartitionsAndDrops(t *testing.T) {
 
 func TestCompanionPassMachineScopeNeverDispatched(t *testing.T) {
 	// Un wallpaper en portée MACHINE n'est jamais traité par le compagnon
-	// (partition stricte, piège n° 3) — le scope est déclaré par type mais
+	// (partition stricte) — le scope est déclaré par type mais
 	// la partition se fait par PORTÉE de l'enveloppe.
 	h := &fakeHandler{}
 	c, store := newTestCompanion(t, h)
@@ -159,7 +159,7 @@ func TestCompanionPassUnknownMajorErrors(t *testing.T) {
 }
 
 func TestCompanionPassCorruptedAppliedStateRestartsWithoutMemory(t *testing.T) {
-	// applied-state corrompu = premier passage §5 → drift (STRICT, Story 27.8).
+	// Applied-state corrompu = premier passage §5 → drift (STRICT).
 	h := &fakeHandler{} // non conforme
 	c, store := newTestCompanion(t, h)
 	writeSessionCache(t, store, string(mustReadGolden(t)))
@@ -327,7 +327,7 @@ func TestCompanionRunLaunchesWatchdogBeforeCacheWait(t *testing.T) {
 	<-done
 }
 
-// TestCompanionRunWritesUserRainmeterIniBeforeWatchdog (Story 27.1ter) : le
+// TestCompanionRunWritesUserRainmeterIniBeforeWatchdog : le
 // compagnon écrit le Rainmeter.ini per-user (%APPDATA%) AVANT de lancer
 // Rainmeter par le watchdog — sinon Rainmeter lirait un .ini absent (Safe Start)
 // au premier lancement.
@@ -378,13 +378,11 @@ func TestCompanionRunWritesUserRainmeterIniBeforeWatchdog(t *testing.T) {
 	}
 }
 
-// --- Story 43.1 : échelle de rafraîchissement (fin de RunPass) ----------------
-
 // fakeRefreshOps : RefreshOps en mémoire — enregistre la SÉQUENCE des gestes
-// (AC5 : prouver « un seul geste par passe, le plus fort ») et simule l'échec.
-// Story 43.4 : `events` trace en PLUS l'ordre complet gestes + notice
-// (show_notice/dismiss) — `seq` reste la séquence 43.1 des gestes SEULS
-// (AC4 : la séquence observable du geste est inchangée, les assertions 43.1
+// ( : prouver « un seul geste par passe, le plus fort ») et simule l'échec.
+// `events` trace en PLUS l'ordre complet gestes + notice
+// (show_notice/dismiss) — `seq` reste la séquence des gestes SEULS
+// ( : la séquence observable du geste est inchangée, les assertions
 // restent byte-identiques).
 type fakeRefreshOps struct {
 	seq          []string // gestes seulement (43.1)
@@ -414,11 +412,11 @@ func (f *fakeRefreshOps) RestartExplorer() error {
 	return f.restartErr
 }
 
-// ShowRestartNotice (Story 43.4) : enregistre l'appel (events + libellé) et
+// ShowRestartNotice : enregistre l'appel (events + libellé) et
 // rend (shown, dismiss). shown=false quand noticeFails (fenêtre non affichée →
-// le compagnon ne paie pas le lead time, review 43.4 #2) ; le dismiss ne trace
+// le compagnon ne paie pas le lead time) ; le dismiss ne trace
 // que sa PREMIÈRE invocation (idempotence du contrat : double appel sans
-// effet). noticeFails simule le contrat D4 — échec de création ⇒ dismiss no-op,
+// effet). noticeFails simule le contrat — échec de création ⇒ dismiss no-op,
 // JAMAIS nil.
 func (f *fakeRefreshOps) ShowRestartNotice(text string) (bool, func()) {
 	f.noticeTexts = append(f.noticeTexts, text)
@@ -451,7 +449,7 @@ func newRefreshTestCompanion(t *testing.T) (*Companion, *Store, *fakeRegistryOps
 		"registry_list": &RegistryListHandler{Ops: regOps},
 	}
 	c.Refresh = refresh
-	// Story 43.4 : lead time de lecture réduit au minimum (le défaut ~2 s
+	// Lead time de lecture réduit au minimum (le défaut ~2 s
 	// ferait ramper la suite — defaultDuration traite <= 0 comme le défaut).
 	c.NoticeLeadTime = time.Millisecond
 
@@ -486,7 +484,7 @@ const registryNoDrivesPolicyBroadcast = `{"type":"registry","semantics":"exclusi
 	`","payload":{"hive":"HKCU","path":"Software\\P\\Explorer","name":"NoDrives","type":"REG_DWORD","value":1,"refresh":"policy_broadcast"}}`
 
 func TestCompanionRefreshStrongestGestureOnceAcrossHandlers(t *testing.T) {
-	// AC5 (a)+(c) : hints hétérogènes sur des items changés répartis sur DEUX
+	// (a)+(c) : hints hétérogènes sur des items changés répartis sur DEUX
 	// handlers (registry hint explorer_restart, registry_list hint
 	// shell_notify) ⇒ EXACTEMENT UN geste, le plus fort (explorer_restart).
 	c, store, _, refresh := newRefreshTestCompanion(t)
@@ -502,7 +500,7 @@ func TestCompanionRefreshStrongestGestureOnceAcrossHandlers(t *testing.T) {
 }
 
 func TestCompanionRefreshStablePassNoGesture(t *testing.T) {
-	// AC5 (b) : passe compliant/stable ⇒ ZÉRO geste, même avec un hint fort
+	// Passe compliant/stable ⇒ ZÉRO geste, même avec un hint fort
 	// sur l'item (le gate est le changement EFFECTIF, pas le hint).
 	c, store, regOps, refresh := newRefreshTestCompanion(t)
 	regOps.values[keyID("HKCU", `Software\P\Explorer`, "RestrictRun")] = RegistryValue{Kind: "REG_DWORD", Int: 1}
@@ -518,9 +516,9 @@ func TestCompanionRefreshStablePassNoGesture(t *testing.T) {
 }
 
 func TestCompanionRefreshFloorWithoutHintOrUnknownHint(t *testing.T) {
-	// AC5 (d) / AC4 : item HKCU changé SANS hint (lot vues Explorer : Hidden)
+	// Item HKCU changé SANS hint (lot vues Explorer : Hidden)
 	// + item au hint INCONNU ⇒ plancher shell_notify — la même séquence
-	// observable que le SHChangeNotify historique (non-régression D2).
+	// observable que le SHChangeNotify historique.
 	c, store, _, refresh := newRefreshTestCompanion(t)
 	writeSessionCache(t, store, refreshSessionState(registryHiddenNoHint, registryUnknownHint))
 
@@ -534,7 +532,7 @@ func TestCompanionRefreshFloorWithoutHintOrUnknownHint(t *testing.T) {
 }
 
 func TestCompanionRefreshNilOpsNoPanicAndDrainsAccumulation(t *testing.T) {
-	// AC5 (e) : Refresh nil ⇒ no-op SANS panique. Et l'accumulation des
+	// Refresh nil ⇒ no-op SANS panique. Et l'accumulation des
 	// handlers est DRAINÉE quand même : si l'ops apparaît ensuite, aucune
 	// passe STABLE ne produit de geste fantôme.
 	c, store, _, refresh := newRefreshTestCompanion(t)
@@ -558,9 +556,9 @@ func TestCompanionRefreshNilOpsNoPanicAndDrainsAccumulation(t *testing.T) {
 }
 
 func TestCompanionRefreshGestureFailureKeepsPassAndReportIntact(t *testing.T) {
-	// AC5 (f) / D4 : un geste en ÉCHEC = warning — la passe reste réussie, le
+	// Un geste en ÉCHEC = warning — la passe reste réussie, le
 	// drop est déposé avec ses statuts, l'applied-state est persisté (le geste
-	// part APRÈS, D5 — l'échec ne peut rien casser en amont).
+	// part APRÈS — l'échec ne peut rien casser en amont).
 	c, store, _, refresh := newRefreshTestCompanion(t)
 	refresh.restartErr = errors.New("explorer.exe introuvable")
 	writeSessionCache(t, store, refreshSessionState(registryRestrictRunExplorerRestart))
@@ -584,8 +582,6 @@ func TestCompanionRefreshGestureFailureKeepsPassAndReportIntact(t *testing.T) {
 		t.Fatalf("le geste a bien été TENTÉ : %v", refresh.seq)
 	}
 }
-
-// --- Story 35.7 (AC3) — partition par exécutant : skip des items `writer` ----
 
 func TestCompanionPassSkipsWriterMarkedItemsBeforeTheEngine(t *testing.T) {
 	// Un item marqué `writer: "system"` est ÉCARTÉ AVANT le moteur : AUCUNE
@@ -625,7 +621,7 @@ func TestCompanionPassSkipsWriterMarkedItemsBeforeTheEngine(t *testing.T) {
 }
 
 func TestCompanionPassSkipsUnknownWriterValuesWithoutError(t *testing.T) {
-	// Forward-compat (piège n°5) : une valeur `writer` FUTURE inconnue est
+	// Forward-compat : une valeur `writer` FUTURE inconnue est
 	// skippée sur PRÉSENCE du champ — sans erreur, sans op, passe nominale.
 	c, store, regOps, _ := newRefreshTestCompanion(t)
 	writeSessionCache(t, store, refreshSessionState(itemUnknownWriter, registryHiddenNoHint))
@@ -645,7 +641,7 @@ func TestCompanionPassSkipsUnknownWriterValuesWithoutError(t *testing.T) {
 func TestCompanionPassAllItemsDelegatedYieldsQuietEmptyPass(t *testing.T) {
 	// Cache dont TOUS les items registre sont délégués : le compagnon n'émet
 	// AUCUN statut pour ces types (ils ne passent plus par ses handlers) et
-	// l'échelle de rafraîchissement 43.1 ne reçoit RIEN (zéro geste).
+	// l'échelle de rafraîchissement ne reçoit RIEN (zéro geste).
 	c, store, regOps, refresh := newRefreshTestCompanion(t)
 	writeSessionCache(t, store, refreshSessionState(itemFlagWriter, itemListWriter))
 
@@ -685,7 +681,7 @@ func redriftKey(regOps *fakeRegistryOps, path, name string) {
 }
 
 func TestCompanionRefreshPolicyBroadcastGesture(t *testing.T) {
-	// Review 43.1 #2 : hint policy_broadcast sur item HKCU changé ⇒ séquence
+	// Hint policy_broadcast sur item HKCU changé ⇒ séquence
 	// EXACTEMENT [policy_broadcast] (le case médian de l'échelle exercé
 	// bout-en-bout par le compagnon).
 	c, store, _, refresh := newRefreshTestCompanion(t)
@@ -701,8 +697,8 @@ func TestCompanionRefreshPolicyBroadcastGesture(t *testing.T) {
 }
 
 func TestCompanionRefreshPolicyBroadcastFailureKeepsPassAndReportIntact(t *testing.T) {
-	// Review 43.1 #2 : broadcastErr non-nil ⇒ warning loggé, passe/drop/
-	// applied-state INTACTS (best-effort D4), jamais une erreur de passe.
+	// broadcastErr non-nil ⇒ warning loggé, passe/drop/
+	// applied-state INTACTS (best-effort), jamais une erreur de passe.
 	c, store, _, refresh := newRefreshTestCompanion(t)
 	logDir := t.TempDir()
 	c.Log = &Logger{Dir: logDir, FileName: "companion.log"}
@@ -730,7 +726,7 @@ func TestCompanionRefreshPolicyBroadcastFailureKeepsPassAndReportIntact(t *testi
 }
 
 func TestCompanionRefreshExplorerRestartThrottledDegradesToPolicyBroadcast(t *testing.T) {
-	// Review 43.1 #1 (a) : deux passes changed successives au hint
+	// Deux passes changed successives au hint
 	// explorer_restart (drift récurrent — une force externe réécrit la clé à
 	// chaque passe) ⇒ 1er geste = explorer_restart, 2e DÉGRADÉ en
 	// policy_broadcast + warning explicite (throttle anti-thrash : jamais deux
@@ -761,7 +757,7 @@ func TestCompanionRefreshExplorerRestartThrottledDegradesToPolicyBroadcast(t *te
 }
 
 func TestCompanionRefreshExplorerRestartReallowedAfterWindow(t *testing.T) {
-	// Review 43.1 #1 (b) : après avance d'horloge AU-DELÀ de la fenêtre de
+	// Après avance d'horloge AU-DELÀ de la fenêtre de
 	// 10 min, explorer_restart repart normalement.
 	c, store, regOps, refresh := newRefreshTestCompanion(t)
 	now := time.Date(2026, 7, 11, 8, 0, 0, 0, time.UTC)
@@ -783,7 +779,7 @@ func TestCompanionRefreshExplorerRestartReallowedAfterWindow(t *testing.T) {
 }
 
 func TestCompanionRefreshWeakerGesturesNeverThrottled(t *testing.T) {
-	// Review 43.1 #1 (c) : shell_notify et policy_broadcast ne sont JAMAIS
+	// shell_notify et policy_broadcast ne sont JAMAIS
 	// throttlés — deux passes changed successives de chaque niveau, toutes
 	// émises telles quelles, même DANS la fenêtre d'interdiction ouverte par
 	// un explorer_restart antérieur.
@@ -823,7 +819,7 @@ func TestCompanionRefreshWeakerGesturesNeverThrottled(t *testing.T) {
 }
 
 func TestCompanionRefreshAccumulationResetBetweenPasses(t *testing.T) {
-	// AC5 (g) : passe 1 (drift) → 1 geste ; passe 2 (stable) → AUCUN geste de
+	// Passe 1 (drift) → 1 geste ; passe 2 (stable) → AUCUN geste de
 	// plus (l'accumulation est consommée par passe — pas de flicker au tick).
 	c, store, _, refresh := newRefreshTestCompanion(t)
 	writeSessionCache(t, store, refreshSessionState(registryHiddenNoHint))
@@ -842,10 +838,8 @@ func TestCompanionRefreshAccumulationResetBetweenPasses(t *testing.T) {
 	}
 }
 
-// --- Story 43.4 : fenêtre d'avertissement avant explorer_restart -------------
-
 func TestCompanionRestartNoticeShownBeforeRestartDismissedAfter(t *testing.T) {
-	// AC1 : restart NON throttlé (réellement exécuté) ⇒ la notice est montrée
+	// Restart NON throttlé (réellement exécuté) ⇒ la notice est montrée
 	// AVANT RestartExplorer et dismiss est appelé APRÈS son retour — ordre
 	// complet [show_notice explorer_restart dismiss], exactement UNE fois.
 	c, store, _, refresh := newRefreshTestCompanion(t)
@@ -861,18 +855,18 @@ func TestCompanionRestartNoticeShownBeforeRestartDismissedAfter(t *testing.T) {
 	if refresh.dismissCalls != 1 {
 		t.Fatalf("dismiss appelé exactement une fois par le compagnon, obtenu %d", refresh.dismissCalls)
 	}
-	// Libellé D6 : la const partagée, telle quelle (FR, sans jargon).
+	// Libellé : la const partagée, telle quelle (FR, sans jargon).
 	if len(refresh.noticeTexts) != 1 || refresh.noticeTexts[0] != restartNoticeText {
 		t.Fatalf("libellé D6 attendu (%q), obtenu %v", restartNoticeText, refresh.noticeTexts)
 	}
-	// AC4 : la séquence 43.1 des GESTES reste inchangée (un seul geste).
+	// La séquence des GESTES reste inchangée (un seul geste).
 	if len(refresh.seq) != 1 || refresh.seq[0] != "explorer_restart" {
 		t.Fatalf("séquence de gestes 43.1 inchangée attendue : %v", refresh.seq)
 	}
 }
 
 func TestCompanionRestartNoticeNeverShownForWeakerGesturesOrStablePass(t *testing.T) {
-	// AC1 (And) / D1 : shell_notify, policy_broadcast et passe STABLE ne
+	// shell_notify, policy_broadcast et passe STABLE ne
 	// montrent JAMAIS la notice — « l'absence d'action = on ne l'a jamais
 	// créée ».
 	c, store, _, refresh := newRefreshTestCompanion(t)
@@ -901,7 +895,7 @@ func TestCompanionRestartNoticeNeverShownForWeakerGesturesOrStablePass(t *testin
 }
 
 func TestCompanionRestartNoticeNotShownOnThrottledDegradedRestart(t *testing.T) {
-	// Piège #6 : second restart < 10 min ⇒ DÉGRADÉ en policy_broadcast —
+	// Second restart < 10 min ⇒ DÉGRADÉ en policy_broadcast —
 	// aucun kill de shell, donc AUCUNE notice (la notice vit APRÈS le check
 	// throttle, dans le seul chemin qui atteint RestartExplorer).
 	c, store, regOps, refresh := newRefreshTestCompanion(t)
@@ -928,7 +922,7 @@ func TestCompanionRestartNoticeNotShownOnThrottledDegradedRestart(t *testing.T) 
 }
 
 func TestCompanionRestartNoticeFailureNeverBlocksRestart(t *testing.T) {
-	// AC2 / D4 : échec simulé de la notice (dismiss no-op) ET échec du geste
+	// Échec simulé de la notice (dismiss no-op) ET échec du geste
 	// lui-même ⇒ RestartExplorer est QUAND MÊME tenté, la passe, le drop et
 	// l'applied-state restent intacts — jamais une erreur de passe.
 	c, store, _, refresh := newRefreshTestCompanion(t)
@@ -956,7 +950,7 @@ func TestCompanionRestartNoticeFailureNeverBlocksRestart(t *testing.T) {
 }
 
 func TestCompanionRestartNoticeDismissIdempotent(t *testing.T) {
-	// AC2 : dismiss est IDEMPOTENT — le compagnon l'appelle une fois ; des
+	// Dismiss est IDEMPOTENT — le compagnon l'appelle une fois ; des
 	// appels supplémentaires (contrat de l'impl, mimé par le fake) sont sans
 	// effet observable et sans panique.
 	c, store, _, refresh := newRefreshTestCompanion(t)
@@ -977,7 +971,7 @@ func TestCompanionRestartNoticeDismissIdempotent(t *testing.T) {
 }
 
 func TestCompanionIgnoresMachineScopeItems(t *testing.T) {
-	// AC5 / piège #5 : un item MACHINE forgé avec hint explorer_restart n'est
+	// Un item MACHINE forgé avec hint explorer_restart n'est
 	// JAMAIS dispatché par le compagnon (partition des portées) — aucun geste,
 	// AUCUNE notice. Côté SYSTEM, l'exclusion est STRUCTURELLE : le
 	// MachineEngine (main_windows.go) ne reçoit aucune RefreshOps et le
@@ -998,7 +992,7 @@ func TestCompanionIgnoresMachineScopeItems(t *testing.T) {
 	}
 }
 
-// TestCompanionRunUserRainmeterIniFailureGraceful (Story 27.1ter, NFR1) : un
+// TestCompanionRunUserRainmeterIniFailureGraceful : un
 // échec d'écriture du .ini per-user est gracieux — le watchdog lance quand même
 // Rainmeter, le compagnon ne panique/ne bloque pas.
 func TestCompanionRunUserRainmeterIniFailureGraceful(t *testing.T) {
@@ -1029,7 +1023,7 @@ func TestCompanionRunUserRainmeterIniFailureGraceful(t *testing.T) {
 	<-done
 }
 
-// Story 2.12.3 — le drapeau `debug` est relu à CHAQUE passe et notifié aux
+// Le drapeau `debug` est relu à CHAQUE passe et notifié aux
 // seuls changements. Régression visée : sur un poste réinstallé, le cache
 // per-SID n'existe pas encore au démarrage du compagnon (course avec
 // session-fetch SYSTEM), la lecture initiale rend false et la console partait

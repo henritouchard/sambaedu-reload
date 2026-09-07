@@ -9,7 +9,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Tests unit — ThunderbirdPolicyAdapter — parité `tb_import_policy` (AC 6).
+ * Tests unit — ThunderbirdPolicyAdapter : parité avec `tb_import_policy` legacy.
  */
 class ThunderbirdPolicyAdapterTest extends TestCase
 {

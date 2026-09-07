@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Auth\Federated\Support;
 
 /**
- * Story 20.1.
  *
  * Catalogue des codes d'erreur retournés par le vérificateur de JWT fédéré
  * et le controller de login. Calqué sur {@see \App\Auth\V1\Support\JwtErrorCodes}.

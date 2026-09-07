@@ -13,7 +13,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 54.3 (AC1, AR8, FR14) — `User::businessRoles()` : LA résolution
+ * `User::businessRoles` : LA résolution
  * canonique du rôle métier, 100 % Postgres.
  *
  * Matrice complète de normalisation de `users.role` (singulier/pluriel/casse/
@@ -88,7 +88,7 @@ class UserBusinessRolesTest extends TestCase
     public function a_non_super_admin_spatie_role_never_yields_admin(): void
     {
         // Un rôle Spatie 'prof' matérialisé (hors sync réelle, cf. Dev Notes
-        // 49.1 non implémentée) ne doit JAMAIS produire 'admin'.
+        // non implémentée) ne doit JAMAIS produire 'admin'.
         $user = $this->makeUser('autre');
         $user->assignRole(SambaRole::Prof->value);
 
@@ -98,13 +98,13 @@ class UserBusinessRolesTest extends TestCase
     #[Test]
     public function resolution_never_touches_ldap(): void
     {
-        // Story 54.3 — la preuve reposait sur le cache statique `User::$ldapCache` :
+        // La preuve reposait sur le cache statique `User::$ldapCache` :
         // tout chemin LDAP y posait une clé (même pour un résultat `null`), un
         // cache resté vide prouvait donc qu'aucun n'avait été emprunté.
         //
-        // Story 49.2 — ce cache et toute la chaîne LDAP-lazy du modèle
+        // Ce cache et toute la chaîne LDAP-lazy du modèle
         // (`getLdapUser()`, `ldapBusinessObject()`, `isProf()`, `isEleve()`,
-        // `isAdmin()`) ont été SUPPRIMÉS (FR-R3). La propriété est désormais
+        // `isAdmin()`) ont été SUPPRIMÉS. La propriété est désormais
         // STRUCTURELLE : `App\Models\User` n'a plus aucun chemin vers l'annuaire.
         // On la verrouille en conséquence — si quelqu'un réintroduit un jour un
         // helper LDAP-first sur ce modèle, ce test le signale.

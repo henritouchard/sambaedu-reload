@@ -10,7 +10,7 @@ use App\Services\Filesystem\Plan\PlanGrant;
 use App\Services\Filesystem\Plan\PlanNode;
 
 /**
- * Story 60.3 — LA LIGNE DE CONTRAT du plan de fichiers.
+ * LA LIGNE DE CONTRAT du plan de fichiers.
  *
  * Au-dessus : le plan, neutre, comparable, portable. En dessous : une autorité
  * d'écriture qui traduit ce plan dans SON modèle de permissions. Le contrat existe
@@ -19,7 +19,6 @@ use App\Services\Filesystem\Plan\PlanNode;
  * Q-D, 2026-08-04) : basculer une valeur de colonne et lancer une migration
  * explicite, pas réécrire le domaine.
  *
- * ---------------------------------------------------------------------------
  * **FORME DISTANTE, DÈS LE PREMIER JOUR.** Aucune méthode ne rend `bool` ni
  * `void`. Le premier backend est local et synchrone ; les suivants sont des API
  * distantes, partiellement asynchrones, avec des réussites partielles. Un contrat
@@ -28,7 +27,6 @@ use App\Services\Filesystem\Plan\PlanNode;
  * fait. C'est le patron déjà en service dans le dépôt pour l'état désiré du parc :
  * un statut PAR RESSOURCE, jamais un verdict global.
  *
- * ---------------------------------------------------------------------------
  * **LES CINQ CONTRAINTES MESURÉES**, chacune adossée au test qui la tient — aucune
  * n'est une promesse de commentaire :
  *
@@ -42,7 +40,7 @@ use App\Services\Filesystem\Plan\PlanNode;
  *
  *  2. **La relecture BALAIE les nœuds du plan, racine comprise.** Mesuré : une
  *     lecture unique de sous-arbre rend les enfants mais pas la racine.
- *     → {@see InspectionReport::covering()} et {@see \App\Services\Filesystem\Plan\PlanNode::ROOT_PATH} ;
+ *  → {@see InspectionReport::covering()} et {@see \App\Services\Filesystem\Plan\PlanNode::ROOT_PATH} ;
  *     mêmes tests.
  *
  *  3. **L'adaptateur NORMALISE l'idempotence.** Mesuré : trois sémantiques natives
@@ -53,7 +51,7 @@ use App\Services\Filesystem\Plan\PlanNode;
  *     aucun échec net : les erreurs distinguables rendent `echec` avec leur cause.
  *
  *  4. **Le plafond sait se DÉCLINER sans échouer**, et il a DEUX raisons de
- *     décliner — voir ci-dessous. → {@see quota()}.
+ *  décliner — voir ci-dessous. → {@see quota()}.
  *
  *  5. **La CLÔTURE du plan traverse la ligne intacte.** Un nœud porte les rôles qui
  *     n'ont RIEN reçu ici ; le serveur de fichiers historique l'ignorera (il
@@ -63,10 +61,9 @@ use App\Services\Filesystem\Plan\PlanNode;
  *     vérifie qu'un backend la retrouve ET retrouve les sujets du rôle clos via
  *     {@see FilePlan::$roles}.
  *
- * ---------------------------------------------------------------------------
- * **NON SUPPORTÉ ≠ NON IMPLÉMENTÉ** (correction Henri, 2026-08-04). Le serveur de
+ * **NON SUPPORTÉ ≠ NON IMPLÉMENTÉ.** Le serveur de
  * fichiers historique SAIT plafonner une arborescence — s'il ne le fait pas, c'est
- * que NOUS ne l'avons pas branché, et la story qui le ferait est suspendue. C'est
+ * que NOUS ne l'avons pas branché, et ce branchement est suspendu. C'est
  * une dette de notre code (`non_implemente`, temporaire), pas une limite de son
  * modèle (`non_exprimable`, permanent). Écrire « non supporté » dans les deux cas
  * mettrait une contre-vérité dans le code, et l'UI ne saurait plus quoi montrer à
@@ -74,7 +71,6 @@ use App\Services\Filesystem\Plan\PlanNode;
  * ({@see \App\Enums\FileBackendOutcome}), les deux prédicats la rendent
  * interrogeable, et l'affichage les distingue.
  *
- * ---------------------------------------------------------------------------
  * **CE QUE CE CONTRAT N'EST PAS.** Ce n'est pas un contrat de fichiers. Les
  * abstractions de système de fichiers du framework couvrent les OPÉRATIONS sur les
  * fichiers (lire, écrire, lister) et n'abstraient PAS les permissions — or c'est
@@ -137,11 +133,11 @@ interface FileBackend
      * Révoque les octrois du plan et sort sa structure de l'espace exposé.
      *
      * **Ce que cette méthode ne fait PAS : détruire des données.** C'est une
-     * contrainte d'epic (aucune suppression implicite n'est exprimable), et elle
+     * contrainte du modèle (aucune suppression implicite n'est exprimable), et elle
      * n'est tenue ici par personne : le backend d'aperçu n'exécute rien, et aucun
-     * backend n'exécute quoi que ce soit dans cette story. Ce docblock DÉCRIT donc
-     * l'obligation que la story 60.4 devra tenir en implémentant le premier
-     * backend réel — il ne prétend pas qu'elle est déjà garantie.
+     * backend n'exécute quoi que ce soit à ce jour. Ce docblock DÉCRIT donc
+     * l'obligation qu'il faudra tenir en implémentant le premier backend réel — il
+     * ne prétend pas qu'elle est déjà garantie.
      *
      * Comme {@see provision()} : rapport par nœud, périmètre = les nœuds du plan.
      */
@@ -164,29 +160,29 @@ interface FileBackend
      *
      * **Décliner n'est PAS échouer, et il y a deux façons de décliner** — c'est
      * exactement la nuance qu'un implémenteur pressé écrase en « pas supporté »
-     * pour les deux, et c'est la correction que cette story porte :
+     * pour les deux :
      *
      *  - `non_exprimable` — le MODÈLE du backend n'a pas le concept de plafond de
      *    zone. Cas mesuré au sondage : un backend distant dont le quota est par
      *    UTILISATEUR, pas par dossier (relecture : quota illimité sur un compte
-     *    élève). Permanent. Aucune story ne le rendra possible ; l'administrateur
+     *    élève). Permanent. Rien ne le rendra possible ; l'administrateur
      *    doit choisir un autre backend pour ce besoin. L'UI MASQUE le réglage.
      *  - `non_implemente` — le mécanisme EXISTE côté backend et SE5 ne le pilote
      *    pas. Cas d'aujourd'hui : le serveur de fichiers historique sait plafonner
      *    une arborescence (quotas de projet, volume monté et vérifié en ouverture
-     *    d'epic), la story qui le brancherait est SUSPENDUE. Temporaire, propriété
+     *    du chantier), mais ce branchement est SUSPENDU. Temporaire, propriété
      *    de notre code. L'UI GRISE le réglage : indisponible pour l'instant.
      *
      * Le backend d'aperçu, lui, répond `non_execute` : ce n'est ni une limite de
      * modèle ni une dette de code, ne rien faire est sa fonction.
      *
-     * **Aucune infrastructure de quota n'entre dans cette story** — le plafond est
+     * **Aucune infrastructure de quota n'existe ici** — le plafond est
      * STRUCTURANT dans le contrat, et exécuté par personne ici.
      */
     public function quota(FilePlan $plan): ReconciliationReport;
 
     /**
-     * Story 60.5 — OÙ ce plan vit, dans les termes de ce backend, POUR AFFICHAGE.
+     * OÙ ce plan vit, dans les termes de ce backend, POUR AFFICHAGE.
      *
      * **Pourquoi le contrat porte cette question, et pas l'orchestrateur.** Depuis
      * que SE5 gouverne deux zones disjointes, « où est mon partage ? » est devenu

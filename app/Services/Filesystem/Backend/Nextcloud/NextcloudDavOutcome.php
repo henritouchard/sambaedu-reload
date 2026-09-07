@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Filesystem\Backend\Nextcloud;
 
 /**
- * Story 61.3 — L'ISSUE D'UN GESTE WEBDAV, avec ses idempotences DÉJÀ normalisées.
+ * L'ISSUE D'UN GESTE WEBDAV, avec ses idempotences DÉJÀ normalisées.
  *
  * Le transport de ce backend a trois sémantiques natives pour « c'était déjà
  * fait » ou « ce n'est pas une erreur », et aucune ne doit remonter au-dessus de la

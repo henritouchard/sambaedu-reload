@@ -7,7 +7,6 @@ namespace App\Ipxe\Http\Requests;
 use Illuminate\Foundation\Http\FormRequest;
 
 /**
- * Story 3.4 — AC5.5 / AC5.3.
  *
  * Validation du body de `GET|POST /ipxe/linux/action`.
  *

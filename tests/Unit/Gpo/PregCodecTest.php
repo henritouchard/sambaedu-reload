@@ -9,7 +9,7 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Story 38.4 (T2.1) — codec `Registry.pol` (PReg) natif.
+ * Codec `Registry.pol` (PReg) natif.
  *
  * Vérifie la byte-stabilité (decode→encode idempotent) et les helpers
  * get/set de clé, sur des entrées construites en octets (golden bytes),
@@ -85,10 +85,11 @@ final class PregCodecTest extends TestCase
     }
 
     /**
-     * Review 38.4 #3 — fixture d'octets HAND-AUTHORED conforme au format PReg
-     * réel (MS-GPREG), indépendante d'encode() : détecte une erreur systématique
-     * de convention (délimiteur/ordre/endianness) que le round-trip
-     * encode→decode→encode ne peut pas voir (auto-cohérence).
+     * La fixture d'octets est écrite À LA MAIN d'après le format PReg réel
+     * (MS-GPREG), donc indépendante d'`encode()`. C'est ce qui permet de
+     * détecter une erreur systématique de convention — délimiteur, ordre,
+     * endianness — qu'un aller-retour encode→decode→encode ne peut pas voir,
+     * puisqu'il ne prouve que sa propre cohérence.
      */
     #[Test]
     public function decodes_hand_authored_preg_bytes_and_is_byte_stable(): void

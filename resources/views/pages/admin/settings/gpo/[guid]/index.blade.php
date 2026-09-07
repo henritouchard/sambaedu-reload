@@ -12,27 +12,26 @@ use Livewire\Component;
 /**
  * Page Livewire SFC — Détail d'une GPO Active Directory.
  *
- * Story 16.2 + Story 16.9 — Détail GPO sous `/admin/settings/gpo/{guid}`.
+ * + — Détail GPO sous `/admin/settings/gpo/{guid}`.
  * Convention maison filesystem-based router.
- * Consomme GpoService::get/listContainers/getLinks/getInheritance (Story 16.1).
+ * Consomme GpoService::get/listContainers/getLinks/getInheritance.
  * Périmètre : lecture seule. CTAs natifs vers les sections gérables (Firefox /
  * Wallpaper / Shortcuts / Wine / Profils itinérants) via NativeSectionResolver
- * quand l'heuristique sur le displayName matche (Story 16.3a). Le bouton
+ * quand l'heuristique sur le displayName matche. Le bouton
  * "Éditer dans l'ancienne UI" a été retiré : `gestion_gpo.php` est un menu
  * de maintenance legacy (maj base, export) qui ignore tout paramètre de
  * sélection — l'admin doit passer par les CTAs natifs ou la création
  * legacy (gpo-maj.php depuis le listing).
  *
- * Story 16.3a — Enrichissement :
- * - L'heuristique `NATIVE_SECTIONS_HEURISTICS` est migrée vers NativeSectionResolver (AC1.1/AC1.2).
- * - CTAs natifs primaires en header (AC2.1).
- * - Bouton legacy dégradé en secondaire si match (AC2.2).
- * - Encart 16.2 enrichi avec paramètre ?from_gpo (AC2.3).
+ * Enrichissement :
+ * - L'heuristique `NATIVE_SECTIONS_HEURISTICS` est migrée vers NativeSectionResolver.
+ * - CTAs natifs primaires en header.
+ * - Bouton legacy dégradé en secondaire si match.
+ * - Encart enrichi avec paramètre ?from_gpo.
  */
 new #[Title('Détail GPO - SE4FS')] class extends Component {
     use WithToasts;
 
-    // --- Propriétés ---
     public string $guid = '';
     public ?array $gpo = null;
     public array $containers = [];
@@ -42,11 +41,11 @@ new #[Title('Détail GPO - SE4FS')] class extends Component {
     public array $loadErrors = [];
     public bool $hasError = false;
 
-    // Story 27.14 — la publication étage 2 (SYSVOL) via `GpoPublisher` a été
+    // La publication étage 2 (SYSVOL) via `GpoPublisher` a été
     // supprimée avec le canal de config legacy. La page reste en lecture seule.
 
     /**
-     * Comptage postes par OU (Story 16.5 — AC3.2).
+     * Comptage postes par OU.
      * @var array<string,int>
      */
     public array $workstationCountByOu = [];
@@ -101,7 +100,7 @@ new #[Title('Détail GPO - SE4FS')] class extends Component {
     {
         // 1. Charger la GPO principale.
         // L'exception est rattrapée séparément et bascule la page en mode "erreur"
-        // (toast + bandeau) — la page reste navigable conformément à AC2.7.
+        // (toast + bandeau) — la page reste navigable conformément à.
         // L'absence de la GPO (get() === null) est un vrai 404 et doit échapper
         // au try/catch sinon abort(404) serait confondu avec une erreur réseau.
         $gpoObj = null;
@@ -130,13 +129,13 @@ new #[Title('Détail GPO - SE4FS')] class extends Component {
         // 3. Charger links + héritage pour les containers à afficher.
         $this->loadContainerDetails($this->desiredContainers());
 
-        // 4. Story 16.5 — Comptage postes par OU pour l'encart Impact.
+        // 4. — Comptage postes par OU pour l'encart Impact.
         $this->workstationCountByOu = $this->countWorkstationsByOu($this->containers);
     }
 
     /**
-     * Story 16.5 — AC3.2. Comptage postes via suffix-match sur `ad_dn`
-     * (Eloquent — cf. T0.4 / DO2 / TD-16.5-2). Pas de colonne `ou_dn`
+     * . Comptage postes via suffix-match sur `ad_dn`
+     * (Eloquent — cf. TD-16.5-2 dans `docs/tech-debt-gpo.md`). Pas de colonne `ou_dn`
      * dédiée — on utilise le suffixe DN du poste.
      *
      * @param  list<string>  $ouDns
@@ -149,7 +148,7 @@ new #[Title('Détail GPO - SE4FS')] class extends Component {
             if ($dn === '' || $dn === null) {
                 continue;
             }
-            // Story 16.5 review #4 : échapper wildcards SQL `%` / `_` avant
+            // Échapper les wildcards SQL `%` / `_` avant
             // concaténation. Clause `ESCAPE '\'` explicite pour cohérence
             // SQLite (env tests) — PostgreSQL prod accepte l'échappement
             // backslash nativement.
@@ -175,7 +174,7 @@ new #[Title('Détail GPO - SE4FS')] class extends Component {
     }
 
     /**
-     * Story 16.5 — AC3.2. Total agrégé des postes potentiellement affectés.
+     * . Total agrégé des postes potentiellement affectés.
      */
     public function getTotalImpactProperty(): int
     {
@@ -241,9 +240,9 @@ new #[Title('Détail GPO - SE4FS')] class extends Component {
     }
 
     /**
-     * Retourne les sections natives matchant le displayName (AC2.4 / Story 16.3a).
+     * Retourne les sections natives matchant le displayName.
      *
-     * Délègue à NativeSectionResolver::resolve() — AC1.2 (refactor heuristique).
+     * Délègue à NativeSectionResolver::resolve.
      * Perf : calcul purement en mémoire, aucun appel I/O.
      */
     public function nativeSectionLinks(): array
@@ -251,7 +250,7 @@ new #[Title('Détail GPO - SE4FS')] class extends Component {
         return NativeSectionResolver::resolve($this->gpo['displayName'] ?? '');
     }
 
-    // Story 27.14 — `getIsPublishableProperty`, `openPublishModal`,
+    // `getIsPublishableProperty`, `openPublishModal`,
     // `closePublishModal` et `confirmPublish` (publication étage 2 SYSVOL via
     // `GpoPublisher`) ont été supprimés avec le canal de config legacy. La page
     // de détail GPO reste en consultation read-only (métadonnées, impact,
@@ -291,7 +290,7 @@ new #[Title('Détail GPO - SE4FS')] class extends Component {
             {{-- Toutes les actions de la GPO regroupées dans un seul dropdown (pattern /users). --}}
             @can('server.admin')
                 <x-molecules.action-menu label="Actions" icon="fa-bars" width="w-72" testid="gpo-actions-menu">
-                    {{-- Gérer les liaisons (Story 16.5 — AC3.1) --}}
+                    {{-- Gérer les liaisons --}}
                     <li>
                         <a href="{{ route('admin.gpo.links', ['guid' => trim((string) $this->guid, '{}')]) }}"
                             data-testid="cta-manage-links">
@@ -300,7 +299,7 @@ new #[Title('Détail GPO - SE4FS')] class extends Component {
                         </a>
                     </li>
 
-                    {{-- Édition native des sections matchées (Story 16.3a — AC2.1) --}}
+                    {{-- Édition native des sections matchées --}}
                     @if ($hasNativeLinks)
                         <li class="menu-title text-xs opacity-60">Édition native</li>
                         @foreach ($nativeLinks as $key => $link)
@@ -314,7 +313,7 @@ new #[Title('Détail GPO - SE4FS')] class extends Component {
                         @endforeach
                     @endif
 
-                    {{-- Story 27.14 — bouton « Publier l'étage 2 (SYSVOL) » retiré
+                    {{-- Bouton « Publier l'étage 2 (SYSVOL) » retiré
                          avec l'extinction du canal de config legacy. --}}
                 </x-molecules.action-menu>
             @endcan
@@ -405,10 +404,10 @@ new #[Title('Détail GPO - SE4FS')] class extends Component {
             </div>
         </div>
 
-        {{-- Story 27.14 — l'encart « publication étage 2 (SYSVOL) » a été retiré
+        {{-- L'encart « publication étage 2 (SYSVOL) » a été retiré
              avec l'extinction du canal de config legacy. --}}
 
-        {{-- Encart "Impact" — Story 16.5 / AC3.2 / D5 --}}
+        {{-- Encart "Impact" --}}
         <div class="card bg-base-100 shadow-sm border border-base-300" data-testid="impact-card">
             <div class="card-body">
                 <h3 class="card-title text-lg flex items-center gap-2">
@@ -545,7 +544,7 @@ new #[Title('Détail GPO - SE4FS')] class extends Component {
 
     </div>
 
-    {{-- Story 27.14 — la modale « Publier l'étage 2 (SYSVOL) » a été retirée
+    {{-- La modale « Publier l'étage 2 (SYSVOL) » a été retirée
          avec l'extinction du canal de config legacy (publication GpoPublisher
          supprimée). --}}
 </x-organisms.page>

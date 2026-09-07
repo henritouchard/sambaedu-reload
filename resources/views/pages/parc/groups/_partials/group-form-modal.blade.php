@@ -45,16 +45,16 @@ new class extends Component {
     public string $description = '';
     public ?int $parent_id = null;
     public bool $is_physical = true;
-    // Nature des postes (Story 26.1). Défaut « partagé » (shared_local) appliqué
+    // Nature des postes. Défaut « partagé » (shared_local) appliqué
     // dans resetForm() ; le choix « non déclaré » n'est plus exposé en UI.
     public string $environment = '';
 
-    // Label de contrat amont (Story 30.2). '' = aucun → null en base (miroir exact
+    // Label de contrat amont. '' = aucun → null en base (miroir exact
     // du pattern `environment`). Section masquée si pas de contrat amont actif.
     public string $controlhubLabel = '';
     // Propriétés DÉRIVÉES côté serveur (loadControlHubLabels) : #[Locked] interdit
     // leur mutation par requête Livewire forgée — sinon un client pourrait neutraliser
-    // l'affichage lecture seule ou injecter un label assignable (review 30.2 M2).
+    // l'affichage lecture seule ou injecter un label assignable (review M2).
     #[Locked]
     public bool $hasActiveContract = false;
     /** @var array<int,string> Noms des labels libres assignables du contrat actif. */
@@ -142,11 +142,11 @@ new class extends Component {
     }
 
     /**
-     * Story 30.2 — Charge le contrat amont actif et les labels assignables (free).
+     * Charge le contrat amont actif et les labels assignables (free).
      *
-     * NFR3 : sans contrat actif, la section UI est masquée (hasActiveContract=false)
+     * Sans contrat actif, la section UI est masquée (hasActiveContract=false)
      * et aucune contrainte n'est ajoutée. Le label actuellement porté qui n'est PAS
-     * dans la liste free (réservé — cf. 30.3 — ou « dangling ») est exposé en lecture
+     * dans la liste free (réservé, ou « dangling ») est exposé en lecture
      * seule via $reservedLabelHeld, jamais sélectionnable par le refnum.
      */
     private function loadControlHubLabels(): void
@@ -208,7 +208,7 @@ new class extends Component {
                 $labelService->assignLabel($group, $this->controlhubLabel);
             }
         } catch (LabelAssignmentException | UpstreamLockCollisionException $e) {
-            // Story 30.5 — collision verrou/verrou prédite : message explicite
+            // Collision verrou/verrou prédite : message explicite
             // (item / périmètre / valeurs) en toast, sans redirection.
             $this->toastError($e->getMessage());
             return false;
@@ -255,7 +255,7 @@ new class extends Component {
                     'environment' => $environment,
                 ]);
 
-                // Story 30.2 — Mapping du label de contrat amont via le service dédié
+                // Mapping du label de contrat amont via le service dédié
                 // (jamais via updateGroup, qui throw sur isLocked — concern distinct).
                 // '' = détacher ; sinon assigner. Un refus métier laisse le reste de
                 // l'édition enregistré : on reste dans la modale pour corriger.
@@ -284,7 +284,7 @@ new class extends Component {
                 'environment' => $environment,
             ]);
 
-            // Story 30.2 (AC #3) — Rattacher le label libre choisi. Un refus laisse
+            // Rattacher le label libre choisi. Un refus laisse
             // le groupe créé : on redirige vers sa fiche avec le motif du refus,
             // plutôt que de garder ouverte une modale de création déjà consommée.
             if ($this->controlhubLabel !== '') {
@@ -431,7 +431,7 @@ new class extends Component {
             </div>
         @endif
 
-        {{-- Label de contrat amont (Story 30.2) — masqué si pas de contrat actif (NFR3). --}}
+        {{-- Label de contrat amont — masqué si pas de contrat actif. --}}
         @if ($hasActiveContract)
             <div class="form-control w-full">
                 <label class="label py-2">
@@ -444,7 +444,7 @@ new class extends Component {
                 </label>
 
                 @if ($reservedLabelHeld !== null)
-                    {{-- Label réservé porté (cas 30.3) : lecture seule, jamais éditable par le refnum. --}}
+                    {{-- Label réservé porté (cas) : lecture seule, jamais éditable par le refnum. --}}
                     <select class="select select-bordered w-full" disabled>
                         <option>{{ $reservedLabelHeld }}</option>
                     </select>
@@ -465,7 +465,7 @@ new class extends Component {
             </div>
         @endif
 
-        {{-- Environnement / nature des postes (Story 26.1) --}}
+        {{-- Environnement / nature des postes --}}
         <div class="form-control w-full">
             <label class="label py-2">
                 <x-atoms.tooltip label="Environnement des postes" labelClass="label-text font-medium" icon="true"

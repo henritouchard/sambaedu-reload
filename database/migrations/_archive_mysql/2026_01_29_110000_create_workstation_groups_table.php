@@ -53,10 +53,8 @@ return new class extends Migration {
             // Gestion par ControlHub
             $table->boolean('managed_by_control_hub')->default(false);
             
-            // Timestamps
             $table->timestamps();
             
-            // Index
             $table->index('parent_id');
             $table->index('is_physical_room');
             $table->index('is_active');

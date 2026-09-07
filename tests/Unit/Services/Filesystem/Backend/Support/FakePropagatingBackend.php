@@ -17,11 +17,11 @@ use App\Services\Filesystem\Plan\PlanGrant;
 use App\Services\Filesystem\Plan\PlanNode;
 
 /**
- * Story 60.3 — LE DOUBLE À PROPAGATION : la transcription, en code exécutable,
- * de ce qui a été MESURÉ contre une instance réelle en ouverture d'epic.
+ * LE DOUBLE À PROPAGATION : la transcription, en code exécutable,
+ * de ce qui a été MESURÉ contre une instance réelle en ouverture.
  *
  * **Il n'invente rien.** Chaque comportement ci-dessous est référencé à sa mesure
- * dans `_bmad-output/ultradev/60-0-spike-nextcloud.md`. Là où le sondage n'a pas
+ * par le sondage d'ouverture. Là où celui-ci n'a pas
  * mesuré, ce double ne dit rien.
  *
  * **Pourquoi il existe à côté du backend d'aperçu.** Le backend d'aperçu
@@ -38,9 +38,8 @@ use App\Services\Filesystem\Plan\PlanNode;
  * **Sur son nom.** Il emprunte un nom du vocabulaire fermé, faute d'en avoir un à
  * lui : un double de test n'a pas à ouvrir la colonne `backend`. Ce qu'il
  * transcrit, ce sont des COMPORTEMENTS mesurés, pas l'identité d'un produit — et
- * l'identité, elle, arrivera par code en Epic 61.
+ * L'identité, elle, arrivera par code en.
  *
- * ---------------------------------------------------------------------------
  * LES MESURES TRANSCRITES (référence : `60-0-spike-nextcloud.md`)
  *
  *  - §1, l. 29-45 — Un octroi posé sur un ANCÊTRE propage à tout le sous-arbre.
@@ -195,10 +194,6 @@ final class FakePropagatingBackend implements FileBackend
             ),
         );
     }
-
-    // =========================================================================
-    // Transcription des mesures
-    // =========================================================================
 
     private function reconcile(FilePlan $plan, PlanNode $node): NodeReconciliation
     {

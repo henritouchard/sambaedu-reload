@@ -9,11 +9,11 @@ use App\Services\Agent\Releases\ReleaseOperationException;
 use Illuminate\Console\Command;
 
 /**
- * Story 25.1 — Publication d'une release agent (AC1, décision n° 1 :
- * création = commande artisan, l'UI rings/releases = 25.5).
+ * Publication d'une release agent : la création d'une release passe par cette
+ * commande artisan.
  *
  * Le `--hash` est OBLIGATOIRE : c'est la valeur produite par le pipeline de
- * build (24.5, `sha256sum agent/build/dist/sambaedu-agent-<v>.exe`) que le
+ * build (`sha256sum agent/build/dist/sambaedu-agent-<v>.exe`) que le
  * serveur contre-vérifie sur le fichier réel de
  * `config('agent.releases_path')`. Toute incohérence = refus, AUCUNE ligne
  * écrite, exit ≠ 0 ({@see ReleaseCreationService::create()}).

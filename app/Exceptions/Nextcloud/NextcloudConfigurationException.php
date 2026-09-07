@@ -7,7 +7,7 @@ namespace App\Exceptions\Nextcloud;
 use RuntimeException;
 
 /**
- * Story 61.1 — LE REFUS QUI NOMME CE QUI MANQUE.
+ * LE REFUS QUI NOMME CE QUI MANQUE.
  *
  * La configuration de connexion à l'instance Nextcloud est **fail-closed** : une
  * URL vide, un identifiant admin absent ou un secret jamais saisi n'autorisent

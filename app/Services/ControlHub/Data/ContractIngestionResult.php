@@ -5,14 +5,14 @@ declare(strict_types=1);
 namespace App\Services\ControlHub\Data;
 
 /**
- * Story 28.2 — DTO de résultat de l'ingestion d'un contrat amont (controlHub).
+ * DTO de résultat de l'ingestion d'un contrat amont (controlHub).
  *
  * Retourné par {@see \App\Services\ControlHub\ControlHubContractIngestionService::ingest()}.
  * Sert aux assertions de test (no-op vs mutation) et au `Log::info` final.
  *
- * Invariant : `$mutated === false` ⇒ no-op fonctionnel (aucune écriture, aucun événement) — NFR4.
+ * Invariant : `$mutated === false` ⇒ no-op fonctionnel (aucune écriture, aucun événement).
  *
- * ⚠️ GARDE-FOU R3 : aucun mot « central » dans ce DTO. [Source: prd-contrat-manage-se5.md#R3]
+ * ⚠️ GARDE-FOU R3 : aucun mot « central » dans ce DTO.
  */
 class ContractIngestionResult
 {
@@ -24,7 +24,7 @@ class ContractIngestionResult
     public ?int $contractId = null;
 
     /**
-     * Story 33.1 — Version du schéma d'échange négociée pour ce payload (conforme ou défaut
+     * Version du schéma d'échange négociée pour ce payload (conforme ou défaut
      * courant si absente). Renseignée à chaque ingestion (observabilité + assertions de test) ;
      * indépendante de `$mutated` (la version est négociée même sur un no-op).
      */

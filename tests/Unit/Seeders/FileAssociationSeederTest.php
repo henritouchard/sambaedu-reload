@@ -14,7 +14,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Tests du `FileAssociationSeeder` — Story 27.3bis (AC10, D-Henri n°7).
+ * Tests du `FileAssociationSeeder`.
  *
  * Vérifie le TAGAGE par source sur la baseline figée (hôte/CI sans default.xml ni
  * packages.xml) : natives `source=native`/`wpkg_package=null`, WPKG `source=wpkg`/
@@ -102,7 +102,7 @@ class FileAssociationSeederTest extends TestCase
         self::assertNull($jpg->wpkg_package);
         self::assertTrue($jpg->isNative());
 
-        // .txt → txtfile = native (le cas de Henri).
+        // .txt → txtfile : le cas canonique d'une association native.
         $txt = FileAssociation::query()->where('identifier', '.txt')->first();
         self::assertNotNull($txt);
         self::assertSame(FileAssociation::SOURCE_NATIVE, $txt->source);

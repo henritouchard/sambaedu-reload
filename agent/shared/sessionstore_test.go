@@ -10,7 +10,7 @@ import (
 const testSID = "S-1-5-21-1111111111-2222222222-3333333333-1001"
 
 func TestSessionPathsFollowContracts(t *testing.T) {
-	// Chemins = CONTRATS 24.3/24.4 (le serveur et la doc QA les connaissent).
+	// Chemins = CONTRATS (le serveur et la doc QA les connaissent).
 	s := &Store{Root: "ROOT"}
 
 	cases := map[string]string{

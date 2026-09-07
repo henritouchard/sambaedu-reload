@@ -25,13 +25,13 @@ use Tests\Concerns\IssuesFederatedJwt;
 use Tests\TestCase;
 
 /**
- * Story 20.4 — Feature : middleware d'audit dénormalisé des actions externes.
+ * Feature : middleware d'audit dénormalisé des actions externes.
  *
  * Exerce directement le middleware {@see AuditExternalAction} (parité avec
  * `FederatedLoginEndpointTest` qui exerce guard/controller directement) afin
  * de rester déterministe sur le host (pas de LDAP/PG). Vraie DB SQLite.
  *
- * Couvre AC1..AC7 + AC9.
+ * Couvre.. +.
  */
 class ExternalActionAuditTest extends TestCase
 {
@@ -143,7 +143,7 @@ class ExternalActionAuditTest extends TestCase
     #[Test]
     public function mutating_federated_action_writes_denormalised_log(): void
     {
-        // AC1 : POST en session fédérée → ligne dénormalisée complète.
+        // POST en session fédérée → ligne dénormalisée complète.
         $actor = $this->provisionFederatedActor('sub-mut', 'technicien');
         $request = $this->makeRequest('POST', '/app/users/1/quota', 'app.users.quota.update', federated: true);
 
@@ -167,7 +167,7 @@ class ExternalActionAuditTest extends TestCase
     #[Test]
     public function sensitive_get_in_federated_session_writes_log(): void
     {
-        // AC4 (2e branche) : GET sur route sensible (PII élève) → ligne écrite,
+        // GET sur route sensible (PII élève) → ligne écrite,
         // http_method='GET'.
         $this->provisionFederatedActor('sub-get-sens', 'technicien');
         $request = $this->makeRequest('GET', '/app/users/jdoe', 'app.user.show', federated: true);
@@ -184,7 +184,7 @@ class ExternalActionAuditTest extends TestCase
     #[Test]
     public function non_sensitive_get_in_federated_session_writes_nothing(): void
     {
-        // AC4 (1re branche) : GET sur route NON sensible → aucune ligne.
+        // GET sur route NON sensible → aucune ligne.
         $this->provisionFederatedActor('sub-get-neutre', 'technicien');
         $request = $this->makeRequest('GET', '/app/dashboard', 'app.dashboard', federated: true);
 
@@ -196,7 +196,7 @@ class ExternalActionAuditTest extends TestCase
     #[Test]
     public function get_request_without_route_name_is_not_audited(): void
     {
-        // AC4 (défensif) : un GET en session fédérée sur une route SANS nom
+        // Un GET en session fédérée sur une route SANS nom
         // (route()->getName() === null) ne peut matcher aucune allowlist → aucune
         // ligne d'audit. Garantit que l'absence de nom n'écrit rien par défaut.
         $this->provisionFederatedActor('sub-get-noname', 'technicien');
@@ -212,7 +212,7 @@ class ExternalActionAuditTest extends TestCase
     #[Test]
     public function non_federated_session_writes_nothing(): void
     {
-        // AC2 : une action en session AD/LDAP normale (non fédérée) → rien.
+        // Une action en session AD/LDAP normale (non fédérée) → rien.
         // On loggue un user AD normal, sans marqueur fédéré.
         $user = User::create([
             'login' => 'prof.dupont', 'fullname' => 'Prof Dupont', 'source' => 'ad',
@@ -230,7 +230,7 @@ class ExternalActionAuditTest extends TestCase
     #[Test]
     public function log_remains_readable_after_soft_delete_of_identity(): void
     {
-        // AC3 (1re partie) : soft-delete de l'identité → ligne intacte.
+        // Soft-delete de l'identité → ligne intacte.
         $actor = $this->provisionFederatedActor('sub-soft', 'technicien');
         $request = $this->makeRequest('DELETE', '/app/users/1', 'app.user.delete', federated: true);
         $this->runMiddleware($request, 204);
@@ -247,7 +247,7 @@ class ExternalActionAuditTest extends TestCase
     #[Test]
     public function log_remains_readable_after_anonymisation_of_identity(): void
     {
-        // AC3 (2e partie, raison d'être) : anonymisation 20.2 (PII vidée,
+        // Anonymisation (PII vidée,
         // external_sub → anon:<hmac>, soft-delete) → la ligne d'audit reste
         // lisible et attribuable (valeurs COPIÉES au moment de l'action).
         $actor = $this->provisionFederatedActor('sub-anon', 'technicien');
@@ -273,7 +273,7 @@ class ExternalActionAuditTest extends TestCase
     #[Test]
     public function audit_write_failure_does_not_break_request_and_is_traced(): void
     {
-        // AC5 : échec d'écriture de l'audit (DB cassée) → la requête métier
+        // Échec d'écriture de l'audit (DB cassée) → la requête métier
         // réussit quand même (fail-soft) + trace federated.audit.write_failed.
         $this->provisionFederatedActor('sub-fail', 'technicien');
         $request = $this->makeRequest('POST', '/app/users/1/quota', 'app.users.quota.update', federated: true);
@@ -283,7 +283,7 @@ class ExternalActionAuditTest extends TestCase
 
         Log::shouldReceive('channel')->with('federated-auth')->andReturnSelf();
         Log::shouldReceive('warning')->once()->withArgs(function (string $message, array $context): bool {
-            // AC7 : contrôle EXACT des clés du contexte loggué. Une assertion
+            // Contrôle EXACT des clés du contexte loggué. Une assertion
             // anti-PII tautologique (str_contains du nom/email) passerait même
             // si une clé PII était ajoutée plus tard ; on borne donc le contexte
             // à la liste blanche stricte {action_type, exception}.
@@ -304,7 +304,7 @@ class ExternalActionAuditTest extends TestCase
     #[Test]
     public function denormalised_role_reflects_active_spatie_role(): void
     {
-        // AC6 : actor_role reflète exactement le rôle Spatie actif (20.3).
+        // Actor_role reflète exactement le rôle Spatie actif.
         $this->provisionFederatedActor('sub-role', 'technicien');
         // L'admin change le rôle actif : referent-numerique remplace technicien.
         Role::firstOrCreate(['name' => 'referent-numerique', 'guard_name' => 'web']);
@@ -322,7 +322,7 @@ class ExternalActionAuditTest extends TestCase
     #[Test]
     public function no_pii_in_monolog_on_successful_audit(): void
     {
-        // AC7 : un audit RÉUSSI n'émet aucun log Monolog porteur de PII. Le seul
+        // Un audit RÉUSSI n'émet aucun log Monolog porteur de PII. Le seul
         // dépositaire de l'identité claire est la TABLE d'audit (finalité bornée).
         $this->provisionFederatedActor('sub-nopii', 'technicien');
 
@@ -339,7 +339,7 @@ class ExternalActionAuditTest extends TestCase
     #[Test]
     public function status_code_is_copied_from_response(): void
     {
-        // AC1 complément : le status_code de la réponse réelle est copié.
+        // Complément : le status_code de la réponse réelle est copié.
         $this->provisionFederatedActor('sub-status', 'technicien');
         $request = $this->makeRequest('PUT', '/app/users/1', 'app.user.update', federated: true);
 

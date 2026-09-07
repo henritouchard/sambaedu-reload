@@ -5,14 +5,13 @@ declare(strict_types=1);
 namespace App\Services\Nextcloud;
 
 /**
- * Story 61.1 — LE RAPPORT : par élément pour les montages, compté pour les
+ * LE RAPPORT : par élément pour les montages, compté pour les
  * utilisateurs, JAMAIS un booléen global.
  *
  * Un run qui a monté les stockages mais échoué sur les comptes DOIT le dire, et le
  * dire de façon lisible sans consulter les journaux. C'est la contrepartie du
  * fail-soft par utilisateur : sans compteur, « ça a marché » finit par vouloir dire
- * « ça n'a pas explosé », et c'est exactement la signature de défaut que les Epics
- * 56/57 ont rencontrée — un signal qui n'atteint pas son destinataire.
+ * « ça n'a pas explosé » — un signal qui n'atteint pas son destinataire.
  *
  * **Les montages sont détaillés, les utilisateurs sont comptés.** Il y a deux
  * montages et il peut y avoir dix mille comptes : détailler les seconds ferait un
@@ -21,7 +20,7 @@ namespace App\Services\Nextcloud;
  * demandent un geste, et qu'un geste a besoin d'un nom.
  *
  * **Le rapport se sérialise en tableau et s'affiche.** Contrairement aux rapports
- * de la ligne de contrat (Epic 60), il n'a pas d'invariant de complétude à
+ * de la ligne de contrat, il n'a pas d'invariant de complétude à
  * protéger : ce n'est pas un état désiré confronté à un plan, c'est un journal
  * d'exécution. Il est donc mis en cache en tableau et relu par l'écran, patron
  * identique au dernier rapport de réconciliation des répertoires réseau.
@@ -68,7 +67,7 @@ final class NextcloudProvisioningReport
     ) {
     }
 
-    // -- Connexion ------------------------------------------------------------
+    // Connexion
 
     public function recordProbe(NextcloudConnectionProbe $probe): void
     {
@@ -90,7 +89,7 @@ final class NextcloudProvisioningReport
         return $this->refusal;
     }
 
-    // -- Montages -------------------------------------------------------------
+    // Montages
 
     public function recordMount(string $name, NextcloudMountAction $action, string $detail = ''): void
     {
@@ -108,7 +107,7 @@ final class NextcloudProvisioningReport
         return $this->mounts;
     }
 
-    // -- Utilisateurs ---------------------------------------------------------
+    // Utilisateurs
 
     public function countUserCreated(): void
     {
@@ -127,7 +126,6 @@ final class NextcloudProvisioningReport
      * combler le trou (un compte créé avec un aléa est un compte auquel personne
      * ne peut se connecter, et il ferait passer le compteur au vert).
      *
-     * ---------------------------------------------------------------------------
      * **LA MARCHE À SUIVRE A ÉTÉ CORRIGÉE LE 2026-08-17, ELLE ÉTAIT FAUSSE.** Elle
      * annonçait que le compte « se créera au prochain changement de mot de passe
      * SE5 ». C'est vrai à la CRÉATION d'un utilisateur SE5, faux pour un compte du
@@ -140,7 +138,6 @@ final class NextcloudProvisioningReport
      * ({@see \App\Console\Commands\NextcloudConfigureLdapCommand}), et elle est
      * nommée par sa signature de commande — un rapport n'a pas à dépendre d'une
      * classe de commande.
-     * ---------------------------------------------------------------------------
      *
      * `$discardedCandidates` : les comptes que l'autocomplétion a rendus sans
      * qu'aucun soit l'homonyme du login. SE5 n'en adopte AUCUN (adopter un
@@ -165,8 +162,8 @@ final class NextcloudProvisioningReport
                 . (count($discardedCandidates) > 5 ? ', …' : '') . '.';
         }
 
-        // Story 61.2 — les candidats écartés voyagent aussi en STRUCTURE, pas
-        // seulement dans la phrase : la modale de rattachement (AC7) pré-remplit le
+        // Les candidats écartés voyagent aussi en STRUCTURE, pas
+        // seulement dans la phrase : la modale de rattachement pré-remplit le
         // champ avec le premier d'entre eux. Reparser le texte du détail aurait fait
         // dépendre un geste d'écriture de la ponctuation d'un message.
         $this->addIssue($login, 'introuvable', $detail, $discardedCandidates);
@@ -179,8 +176,7 @@ final class NextcloudProvisioningReport
     }
 
     /**
-     * Correction de revue 61.3 #1, **renommée par la story 63.4** — LE PLAFOND
-     * QU'ON N'A PAS ÉCRIT, ET POURQUOI.
+     * LE PLAFOND QU'ON N'A PAS ÉCRIT, ET POURQUOI.
      *
      * Les appartenances d'un compte se résolvent par l'ANNUAIRE. Quand l'annuaire ne
      * répond pas — ou ne connaît pas ce compte — elles sont INDÉTERMINABLES, et SE5
@@ -189,7 +185,7 @@ final class NextcloudProvisioningReport
      * ni journal.
      *
      * ⚠️ **Elle s'appelait `countQuotaProfileUnresolved`** : le profil de quota
-     * n'existe plus (63.4), et un nom qui le cite encore ferait chercher une notion
+     * n'existe plus, et un nom qui le cite encore ferait chercher une notion
      * que le dépôt ne porte plus. Le compteur sérialisé, lui, ne l'a jamais cité —
      * il est à zéro diff.
      *
@@ -219,9 +215,8 @@ final class NextcloudProvisioningReport
     }
 
     /**
-     * Story 63.4, correction de revue — **LE PLAFOND QUE LE BALAYAGE A CHANGÉ.**
+     * Correction de revue — **LE PLAFOND QUE LE BALAYAGE A CHANGÉ.**
      *
-     * ---------------------------------------------------------------------------
      * **POURQUOI CE COMPTEUR EXISTE.** SE5 ne gouverne le plafond cloud d'un compte
      * que s'il porte au moins une règle de quota. Passer de « aucune règle » à « une
      * règle » — ce que fait la migration de bascule — fait donc basculer cette
@@ -238,7 +233,6 @@ final class NextcloudProvisioningReport
      * Il compte les plafonds que le balayage **change ou changerait** : en
      * simulation, il annonce donc ce qu'un vrai passage ferait — la seule lecture
      * utile avant de lancer le vrai.
-     * ---------------------------------------------------------------------------
      */
     public function countQuotaChanged(): void
     {
@@ -273,7 +267,7 @@ final class NextcloudProvisioningReport
         return $this->userIssues;
     }
 
-    // -- Verdict --------------------------------------------------------------
+    // Verdict
 
     public function hasFailures(): bool
     {

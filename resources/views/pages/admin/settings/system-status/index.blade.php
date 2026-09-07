@@ -53,7 +53,7 @@ new #[Title('État du système')] class extends Component {
         'controlHub' => [ControlHubReachableCheck::class],
         'Apache' => [ApacheConfigCheck::class],
         'iPXE' => [IpxeConfigCheck::class],
-        // Story 56.5 — santé du système d'extensions. Les trois checks sont
+        // Santé du système d'extensions. Les trois checks sont
         // read-only : le premier sonde les backends `127.0.0.1:<port>` en direct
         // (comme controlHub fait son HEAD), les deux autres lisent un marqueur
         // et le registre des clients. Exécution au `wire:init`, donc APRÈS le

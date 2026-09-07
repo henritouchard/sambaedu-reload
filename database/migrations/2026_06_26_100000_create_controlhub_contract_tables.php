@@ -5,7 +5,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Epic 28 — Story 28.1 : Modèle et persistance du contrat amont (controlHub).
+ * Modèle et persistance du contrat amont (controlHub).
  *
  * Crée les 5 tables du contrat amont reçu depuis controlHub :
  *
@@ -15,13 +15,12 @@ use Illuminate\Support\Facades\Schema;
  *  - `controlhub_contract_imposed_groups` — groupes imposés {nom, label associé}.
  *  - `controlhub_contract_catalog_apps`   — catalogue applicatif faisant autorité.
  *
- * Portée de cette story : CRÉATION PURE (schéma + modèles). Aucun seeder, aucune ligne par défaut (NFR3).
- * L'ingestion idempotente = Story 28.2 ; le branchement StateCompiler = Story 28.3.
+ * CRÉATION PURE (schéma + modèles). Aucun seeder, aucune ligne par défaut.
  *
- * ⚠️ GARDE-FOU R3 : aucun mot « central » dans les noms de table, de colonne ou de contrainte.
- * Préfixe de table imposé : `controlhub_contract_*`. [Source: prd-contrat-manage-se5.md#R3 ; décision Henri 2026-06-26]
+ * ⚠️ GARDE-FOU : aucun mot « central » dans les noms de table, de colonne ou de contrainte.
+ * Préfixe de table imposé : `controlhub_contract_*`.
  *
- * Les clés naturelles uniques (NFR4) préparent l'upsert idempotent de la Story 28.2.
+ * Les clés naturelles uniques préparent l'upsert idempotent.
  * ⚠️ Noms de contrainte courts (< 63 car. PG) passés en 2e argument de unique().
  *
  * Style : cf. 2026_06_18_100000_create_capabilities_table.php (garde hasTable, FK cascade, commentaires).
@@ -34,7 +33,7 @@ return new class extends Migration
             return;
         }
 
-        // ── 1. Contrat racine ───────────────────────────────────────────────────
+        // 1. Contrat racine
         Schema::create('controlhub_contracts', function (Blueprint $table): void {
             $table->id();
 
@@ -56,7 +55,7 @@ return new class extends Migration
             $table->timestamps();
         });
 
-        // ── 2. Items imposés ────────────────────────────────────────────────────
+        // 2. Items imposés
         Schema::create('controlhub_contract_items', function (Blueprint $table): void {
             $table->id();
 
@@ -87,16 +86,16 @@ return new class extends Migration
 
             // Nom du label ciblé — renseigné uniquement si target_type = label.
             // ⚠️ NOT NULL DEFAULT '' (PAS nullable) : la chaîne vide '' = « pas de label / cible instance ».
-            //    Indispensable à NFR4 — en PG comme en SQLite, NULL est DISTINCT dans un index unique,
+            //    Indispensable : en PG comme en SQLite, NULL est DISTINCT dans un index unique,
             //    donc deux items 'instance' identiques avec target_label=NULL ne collisionneraient JAMAIS
             //    (trou d'idempotence sur le cas dominant). '' rend la clé naturelle effective.
-            //    L'ingestion 28.2 normalisera null → '' avant écriture. [Review 28.1 finding #1]
+            //  L'ingestion normalisera null → '' avant écriture.
             $table->string('target_label')->default('')
                 ->comment('Nom du label ciblé si target_type=label ; \'\' = cible instance (NOT NULL pour NFR4)');
 
             $table->timestamps();
 
-            // Clé naturelle idempotente (NFR4) — préparation upsert Story 28.2.
+            // Clé naturelle idempotente — préparation upsert.
             // Nom court (< 63 car. PG).
             $table->unique(
                 ['controlhub_contract_id', 'type', 'key', 'target_type', 'target_label'],
@@ -104,7 +103,6 @@ return new class extends Migration
             );
         });
 
-        // ── 3. Labels ───────────────────────────────────────────────────────────
         Schema::create('controlhub_contract_labels', function (Blueprint $table): void {
             $table->id();
 
@@ -130,13 +128,13 @@ return new class extends Migration
             );
         });
 
-        // ── 4. Groupes imposés ──────────────────────────────────────────────────
+        // 4. Groupes imposés
         Schema::create('controlhub_contract_imposed_groups', function (Blueprint $table): void {
             $table->id();
 
             // Nom de FK court explicite : le nom auto-généré
             // (controlhub_contract_imposed_groups_controlhub_contract_id_foreign) dépasse 63 car.
-            // et serait tronqué silencieusement par PG. [Review 28.1 finding #3]
+            // et serait tronqué silencieusement par PG.
             $table->foreignId('controlhub_contract_id')
                 ->constrained('controlhub_contracts', indexName: 'chc_imposed_group_contract_fk')
                 ->cascadeOnDelete()
@@ -148,7 +146,7 @@ return new class extends Migration
 
             // Nom du label réservé porté par ce groupe (nullable — pas toujours lié à un label réservé).
             // ⚠️ PAS de FK dure vers controlhub_contract_labels : rattachement par nom côté logique amont.
-            //    Le mapping groupe↔label local est différé → Epic 30 (Stories 30.x).
+            // Le mapping groupe↔label local est différé.
             $table->string('label_name')->nullable()
                 ->comment('Nom du label réservé associé à ce groupe imposé — rattachement logique, pas FK (Epic 30)');
 
@@ -161,7 +159,7 @@ return new class extends Migration
             );
         });
 
-        // ── 5. Catalogue applicatif ─────────────────────────────────────────────
+        // 5. Catalogue applicatif
         Schema::create('controlhub_contract_catalog_apps', function (Blueprint $table): void {
             $table->id();
 

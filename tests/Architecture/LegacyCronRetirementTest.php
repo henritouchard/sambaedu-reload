@@ -8,14 +8,14 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Story 38.5 — Garde-fous du débranchement des crons legacy.
+ * Garde-fous du débranchement des crons legacy.
  *
  * Tests par lecture textuelle des scripts (patron `IpxeStaticAliasTest`) :
  *
  *  1. `update.sh` déclare ET appelle `ensure_legacy_crons_retired`, avec la liste
  *     EXPLICITE des 3 cibles legacy (sambaedu-web-common / -shares / -wpkg).
  *  2. Anti-glob : la fonction de retrait ne contient AUCUN glob `sambaedu-*` et ne
- *     retire jamais `sambaedu-{scheduler,system,boot-server}` (crons SE5 + gating 8.3).
+ *  retire jamais `sambaedu-{scheduler,system,boot-server}` (crons SE5 + gating).
  *  3. `update.sh` provisionne le cron système AVANT le retrait (ensure_system_cron
  *     déclarée + appelée avant ensure_legacy_crons_retired).
  *  4. `scripts/config/sambaedu-system.cron` existe et contient renew_ticket.sh (×2
@@ -98,7 +98,7 @@ class LegacyCronRetirementTest extends TestCase
     }
 
     /**
-     * AC1 (garde-fou epic) — anti-glob : la fonction de retrait ne doit JAMAIS
+     * Anti-glob : la fonction de retrait ne doit JAMAIS
      * contenir de glob `sambaedu-*` ni retirer les crons SE5 / boot-server.
      */
     #[Test]
@@ -125,7 +125,7 @@ class LegacyCronRetirementTest extends TestCase
     }
 
     /**
-     * AC1 And / T1.4 — le cron système est provisionné AVANT le retrait
+     * And / T1.4 — le cron système est provisionné AVANT le retrait
      * (ensure_system_cron déclarée + appelée avant ensure_legacy_crons_retired).
      */
     #[Test]
@@ -188,10 +188,10 @@ class LegacyCronRetirementTest extends TestCase
     }
 
     /**
-     * Review 38.5 #1 — robustesse greenfield : avec `set -e`, les deux
-     * fonctions doivent être appelées EN TÊTE de main() (avant update_composer,
-     * première étape susceptible d'échouer) — sinon un échec d'une étape
-     * antérieure laisse les crons legacy actifs en silence.
+     * `update.sh` tourne sous `set -e` : les deux fonctions doivent être
+     * appelées EN TÊTE de main(), avant `update_composer` qui est la première
+     * étape susceptible d'échouer. Sinon un échec en amont laisse les crons
+     * legacy actifs, en silence.
      */
     #[Test]
     public function cron_functions_run_before_any_fallible_step(): void
@@ -211,9 +211,9 @@ class LegacyCronRetirementTest extends TestCase
     }
 
     /**
-     * Review 38.5 #2 — install.sh (T5.1) : install_system_cron déclarée ET
-     * appelée, et AUCUN retrait direct / glob sambaedu-* dans install.sh
-     * (le retrait passe exclusivement par le replay update.sh).
+     * install.sh : install_system_cron déclarée ET appelée, et AUCUN retrait
+     * direct ni glob sambaedu-* dans le script — le retrait passe exclusivement
+     * par le rejeu de update.sh.
      */
     #[Test]
     public function install_script_provisions_system_cron_and_never_retires_directly(): void

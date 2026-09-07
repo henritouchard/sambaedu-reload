@@ -13,7 +13,6 @@ use Symfony\Component\Finder\Finder;
 /**
  * LES GARDES DU CHANTIER OPENCLOUD — positives ET négatives.
  *
- * ---------------------------------------------------------------------------
  * **LA LIGNE QUI COMPTE LE PLUS ICI : LE BACKEND EST 100 % HTTP, LE DÉPLOIEMENT
  * EXÉCUTE DES CONTENEURS, ET LES DEUX NE SE RENCONTRENT JAMAIS.**
  *
@@ -27,7 +26,6 @@ use Symfony\Component\Finder\Finder;
  * sous le namespace du backend, et il est EXIGÉ sous celui du déploiement. Sans
  * la seconde moitié, la première serait verte pour la pire des raisons — plus
  * personne ne déploierait rien.
- * ---------------------------------------------------------------------------
  */
 class OpenCloudNamespaceTest extends TestCase
 {
@@ -275,7 +273,6 @@ class OpenCloudNamespaceTest extends TestCase
     }
 
     /**
-     * ═══════════════════════════════════════════════════════════════════════
      * **LE SECRET N'ENTRE JAMAIS DANS UNE LIGNE DE COMMANDE.**
      *
      * L'en-tête du script privilégié explique lui-même pourquoi le mot de passe
@@ -292,7 +289,6 @@ class OpenCloudNamespaceTest extends TestCase
      * Le scan est TEXTUEL et il a ses aiguilles, comme les autres gardes de ce
      * fichier : une règle qui ne voit pas sa propre aiguille est une garde
      * aveugle, verte pour toujours.
-     * ═══════════════════════════════════════════════════════════════════════
      */
     #[Test]
     public function no_secret_ever_reaches_a_command_line_in_the_privileged_script(): void
@@ -355,7 +351,6 @@ class OpenCloudNamespaceTest extends TestCase
     }
 
     /**
-     * ═══════════════════════════════════════════════════════════════════════
      * **LES VOLUMES N'APPARTIENNENT JAMAIS À UN UID ÉCRIT EN DUR.**
      *
      * Le fichier de configuration de l'instance porte ses secrets internes —
@@ -368,7 +363,6 @@ class OpenCloudNamespaceTest extends TestCase
      * L'identité d'exécution se RÉSOUT donc à l'exécution, depuis un compte
      * système dédié — et l'absence de ce compte est un refus nommé, jamais un
      * repli.
-     * ═══════════════════════════════════════════════════════════════════════
      */
     #[Test]
     public function the_instance_volumes_never_belong_to_a_hardcoded_uid(): void
@@ -505,7 +499,7 @@ class OpenCloudNamespaceTest extends TestCase
     }
 
     /**
-     * **LA FRONTIÈRE D8, TENUE DES DEUX CÔTÉS.**
+     * **LA FRONTIÈRE ZONE / PERSONNE, TENUE DES DEUX CÔTÉS.**
      *
      * Deux plafonds, deux objets : la recette plafonne une ZONE (l'espace de
      * projet), la règle de quota budgète une PERSONNE (son lecteur personnel). Une
@@ -560,7 +554,7 @@ class OpenCloudNamespaceTest extends TestCase
      *
      * Le point le plus important de cette liste est ce qu'elle NE contient PAS :
      * aucune suppression d'espace. Révoquer, c'est retirer les octrois — détruire
-     * une zone n'est le geste d'aucune réconciliation (D9), et une méthode de
+     * une zone n'est le geste d'aucune réconciliation, et une méthode de
      * suppression dans le code de production serait une arme chargée posée sur la
      * table.
      */
@@ -661,10 +655,9 @@ class OpenCloudNamespaceTest extends TestCase
     }
 
     /**
-     * ═══════════════════════════════════════════════════════════════════════
      * **LE VERDICT : LA LIGNE DE CONTRAT NE BOUGE PAS, ET C'EST OBSERVABLE.**
      *
-     * Le cadrage de cet epic pose une affirmation vérifiable : *si la coupe est
+     * Le cadrage pose une affirmation vérifiable : *si la coupe est
      * bonne, un troisième produit s'insère sans rien rouvrir ; s'il oblige à
      * retoucher le contrat, c'est que le contrat était faux.* Cette phrase n'a de
      * valeur que rendue MESURABLE, et c'est l'objet de ce test.
@@ -679,9 +672,8 @@ class OpenCloudNamespaceTest extends TestCase
      *
      * **Ce test n'interdit rien ; il MESURE.** Si un quatrième fichier devait un
      * jour rejoindre la liste des connaissants, ce test rougirait — et ce rouge
-     * serait l'information la plus utile de tout l'epic, pas un obstacle à
+     * serait l'information la plus utile qui soit, pas un obstacle à
      * contourner.
-     * ═══════════════════════════════════════════════════════════════════════
      */
     #[Test]
     public function the_contract_line_never_learns_the_name_of_a_third_product(): void

@@ -7,7 +7,7 @@ namespace App\Auth\Federated\Session;
 use Illuminate\Http\Request;
 
 /**
- * Story 20.1 — D-5.
+ * D-5.
  *
  * Marqueur de session « fédérée ». Source de vérité partagée entre :
  *  - {@see \App\Auth\Federated\Http\FederatedLoginController} (pose le marqueur

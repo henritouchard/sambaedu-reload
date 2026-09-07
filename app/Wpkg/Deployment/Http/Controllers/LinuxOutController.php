@@ -12,22 +12,20 @@ use Illuminate\Support\Facades\Log;
 
 /**
  * @legacy-port path="sambaedu/wpkg/linux_out.php"
- * @see _bmad-output/implementation-artifacts/17-6-portage-endpoints-wpkg-linux-winget.md
  *
- * Story 17.6 / AC1 — Endpoint HTTP `/wpkg/linux_out.php`.
+ * Endpoint HTTP `/wpkg/linux_out.php`.
  *
  * Consommé par `applications/wpkg/startup.linux` (`curl -F "id=$id" .../wpkg/linux_out.php`).
  * Génère la liste plain-text des **paquets APT** applicables au poste :
  * `"pkg1 pkg2 pkg3"` (espaces simples, `Content-Type: text/plain`).
  *
- * Parité iso-legacy stricte (correctif post-review #1, décision Henri 2026-05-25
- * « aligner sur les 6 siblings ») :
+ * Parité iso-legacy stricte, alignée sur les 6 endpoints `*_out.php` voisins :
  *   - Le legacy `linux_out.php:17` fait `apcu_fetch("apps.$id")` où
  *     `$id = md5(strtolower($user).strtolower($machine).$action.$application)`
  *     (posé par le pipeline d'assembly des scripts, `ApplicationScriptsGenerator`).
  *   - Le script `startup.linux` envoie ce **md5** (pas le hostname). Côté natif,
  *     ce contexte pré-calculé est écrit dans le store `app_context` (clé
- *     `apps.<md5>`, TTL 1800s) par `CacheAppContextWriter` (16.7/16.11/16.15),
+ *     `apps.<md5>`, TTL 1800s) par `CacheAppContextWriter`,
  *     exactement comme pour les 6 autres endpoints `*_out.php` natifs
  *     (`wallpaper`, `firefox`, `thunderbird`, `network`, `veyon`, `associations`).
  *   - On lit donc `AppContextRepository::findById($id)` (md5 validé
@@ -36,7 +34,7 @@ use Illuminate\Support\Facades\Log;
  *     lowercase). **Aucun appel `WorkstationPackagesResolver`** : le contexte
  *     porte déjà la liste applicable au poste (résolue à l'assembly).
  *
- * Pas d'auth JWT (D2 / `feedback_auth_iso_legacy`) : le poste n'est pas encore
+ * Pas d'auth JWT : le poste n'est pas encore
  * enrôlé au boot. Protection = `local.request` (IP allowlist LAN) + throttle.
  */
 final class LinuxOutController
@@ -78,7 +76,7 @@ final class LinuxOutController
         // `ApplicationScriptsGenerator::resolveInstalledApplications`).
         $appIds = $this->extractListeApplications($context->raw);
 
-        // S1 (Henri) : `loadByAppIds` filtre `->installed()` (parité packages.xml
+        // `loadByAppIds` filtre `->installed()` (parité packages.xml
         // qui ne contient que les apps Installed) et matche case-insensitive.
         $applications = $reader->loadByAppIds($appIds);
 

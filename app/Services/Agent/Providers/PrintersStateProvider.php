@@ -18,28 +18,27 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Type `printers` (contrat §7, identifiant DÉJÀ figé — NFR12) — projection en
+ * Type `printers` (contrat §7, identifiant figé) — projection en
  * lecture seule du catalogue d'imprimantes rattachées aux mailles POSTE du
  * poste (pivot `printer_workstation_group`) vers des candidats d'état
- * (Story 27.2, AC1/AC2/AC3).
  *
- * **Lecture Postgres + CUPS PURE** (NFR7, critère Keycloak) : le provider lit
+ * **Lecture Postgres + CUPS PURE** (critère Keycloak) : le provider lit
  * le pivot `printer_workstation_group` restreint aux `physicalGroupIds` +
  * `logicalGroupIds` du {@see TargetContext} (mailles POSTE — l'imprimante est
- * une ressource de POSTE, Vérité #9 « l'imprimante de la salle » ; il n'existe
+ * une ressource de POSTE, « l'imprimante de la salle » ; il n'existe
  * AUCUNE relation `UserGroup → Printer`). `CupsPrinterService` est lu
  * UNIQUEMENT pour la métadonnée (description/location) — JAMAIS d'écriture CUPS,
- * JAMAIS l'URI back-end live (décision Henri n° 4). Aucun appel
+ * JAMAIS l'URI back-end live. Aucun appel
  * AD/LdapRecord/APCu.
  *
- * **Connexion logique** (décision Henri n° 4) : le payload porte une connexion
+ * **Connexion logique** : le payload porte une connexion
  * Samba STABLE `\\<se4fs>\<cups_name>` (partage imprimante), jamais l'URI CUPS
  * (`socket://…`, `ipp://…`). Le token `<se4fs>` est substitué LOCALEMENT par
- * l'agent (iso 27.1) — aucun couplage runtime CUPS, aucune fuite réseau au
+ * l'agent — aucun couplage runtime CUPS, aucune fuite réseau au
  * calcul.
  *
  * **Sémantique `aggregate`** (union) AVEC un sous-item `exclusive` interne — le
- * drapeau de payload `is_default` (décision Henri n° 5). Un poste reçoit l'union
+ * drapeau de payload `is_default`. Un poste reçoit l'union
  * des imprimantes de toutes ses mailles, mais **UN SEUL** item porte
  * `is_default: true` : le défaut est réglé EXPLICITEMENT par l'admin sur
  * l'attachement imprimante↔WG (colonne pivot `is_default`), et l'unicité est
@@ -50,8 +49,8 @@ use Illuminate\Support\Facades\Log;
  * la spécificité).
  *
  * Le provider étiquette ses candidats BRUTS par maille (PhysicalGroup /
- * LogicalGroup) — zéro précédence, zéro tri (D2 = compilateur), à l'unique
- * exception du calcul du défaut exclusif (décision n° 5). La dédup par contenu
+ * LogicalGroup) — zéro précédence, zéro tri (elles restent au compilateur), à
+ * l'unique exception du calcul du défaut exclusif. La dédup par contenu
  * (même imprimante au parc ET à la salle) vit dans le `StateCompiler` SEUL.
  *
  * Payload v1 : `{cups_name, connection, description, location, is_default}` —
@@ -153,7 +152,7 @@ final class PrintersStateProvider implements StateProvider
                     : StateMaille::LogicalGroup,
                 payload: [
                     'cups_name' => $cupsName,
-                    // Connexion LOGIQUE (décision n° 4) : partage Samba
+                    // Connexion LOGIQUE : partage Samba
                     // imprimante, jamais l'URI back-end CUPS. `<se4fs>`
                     // substitué localement par l'agent.
                     'connection' => '\\\\<se4fs>\\'.$cupsName,
@@ -176,9 +175,9 @@ final class PrintersStateProvider implements StateProvider
     }
 
     /**
-     * Résout l'UNIQUE imprimante par défaut du poste (décision n° 5) : parmi les
-     * couples (imprimante, WG) porteurs d'un `is_default=true` au pivot, le **WG
-     * logique l'emporte sur le physique** (Story 27.3, D-Q3 — inversion globale
+     * Résout l'UNIQUE imprimante par défaut du poste : parmi les couples
+     * (imprimante, WG) porteurs d'un `is_default=true` au pivot, le **WG
+     * logique l'emporte sur le physique** (précédence globale
      * `logique > physique`, alignée sur `StateCompiler::specificity()`) ; à
      * spécificité égale, départage déterministe `cups_name` asc. Retourne le
      * `cups_name` gagnant, ou null si aucun défaut réglé.
@@ -187,14 +186,14 @@ final class PrintersStateProvider implements StateProvider
      * drapeau de payload propre à ce type (le compilateur aggregate ne connaît
      * pas `is_default`). C'est l'exception admise à « zéro précédence côté
      * provider » : le sous-item exclusive est explicitement de la responsabilité
-     * du provider (décisions n° 4/5).
+     * du provider.
      *
      * @param  list<array{printer: Printer, group: WorkstationGroup}>  $pairs
      */
     private function resolveDefaultCupsName(array $pairs): ?string
     {
         /** @var array{0: int, 1: string}|null $best */
-        $best = null; // [rang, cups_name] — rang 0 = logique (gagne), 1 = physique (D-Q3)
+        $best = null; // [rang, cups_name] — rang 0 = logique (gagne), 1 = physique
 
         foreach ($pairs as $pair) {
             $printer = $pair['printer'];
@@ -207,11 +206,11 @@ final class PrintersStateProvider implements StateProvider
                 continue;
             }
 
-            // D-Q3 (27.3) : logique > physique → le WG logique a le rang 0.
+            // logique > physique → le WG logique a le rang 0.
             // ⚠️ COUPLAGE à tenir en phase avec StateCompiler::specificity()
             // (PhysicalGroup < LogicalGroup) : ce rang local est la résolution
-            // INTERNE du sous-item `is_default` (aggregate, hors compilateur,
-            // décisions n°4/5) — si la précédence physique/logique est de nouveau
+            // INTERNE du sous-item `is_default` (aggregate, hors compilateur).
+            // Si la précédence physique/logique est de nouveau
             // ré-inversée, mettre les DEUX à jour (test PrintersStateProviderTest
             // `default_logical_wins_over_physical` verrouille ce sens).
             $rank = $group->is_physical === true ? 1 : 0;
@@ -233,7 +232,7 @@ final class PrintersStateProvider implements StateProvider
      * back-end, jamais d'écriture. CUPS injoignable (daemon down) = métadonnée
      * vide : l'état reste compilable (l'imprimante est toujours servie par sa
      * connexion logique stable), l'erreur réelle d'installation est isolée côté
-     * agent (AC4). Imprimante absente de CUPS (orphan SER) = vide aussi.
+     * agent. Imprimante absente de CUPS (orphan SER) = vide aussi.
      *
      * @return array{description: ?string, location: ?string}
      */

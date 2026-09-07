@@ -14,7 +14,7 @@ use RuntimeException;
 use Tests\TestCase;
 
 /**
- * Story 27.16 — comportement de GARDE (fail-soft) du déployeur du bootstrap
+ * Comportement de GARDE (fail-soft) du déployeur du bootstrap
  * agent {@see AgentBootstrapPublisher}.
  *
  * On valide UNIQUEMENT les chemins qui n'exigent ni DC réel ni Kerberos ni
@@ -24,7 +24,7 @@ use Tests\TestCase;
  *  - re-exécution (idempotence) → reste `skipped` (pas d'exception, pas d'état).
  *
  * L'e2e réel (publication Administrator + lien + reboot poste) est une action
- * manuelle Henri (cf. story §Actions VM).
+ * manuelle sur la VM.
  */
 final class AgentBootstrapPublisherTest extends TestCase
 {
@@ -112,12 +112,6 @@ final class AgentBootstrapPublisherTest extends TestCase
         self::assertTrue($result->isSkipped());
     }
 
-    // -----------------------------------------------------------------------
-    // Pb8 — résolution OU cible (2 topologies + cas « aucune OU »).
-    // On mocke la détection LDAP (`ouExists`) et le code établissement pour
-    // exercer la logique de sélection SANS DC réel.
-    // -----------------------------------------------------------------------
-
     #[Test]
     public function it_resolves_establishment_layer_ou_when_present(): void
     {
@@ -146,7 +140,7 @@ final class AgentBootstrapPublisherTest extends TestCase
             'sambaedu.ldap_base_dn' => 'DC=localdev,DC=fr',
         ]);
 
-        // Topologie plate SANS code établissement (/vm) : le conteneur plat EST
+        // Topologie plate SANS code établissement (vm) : le conteneur plat EST
         // celui de l'instance, le résoudre est légitime.
         $publisher = $this->testablePublisher(
             establishmentCode: '',
@@ -220,12 +214,6 @@ final class AgentBootstrapPublisherTest extends TestCase
         self::assertNull($this->resolveOu($publisher));
     }
 
-    // -----------------------------------------------------------------------
-    // Pb1/Pb8 — anti-lien-racine. Le flux d'isolation DOIT retirer le lien
-    // racine (removeLink sur le base_dn) ET poser le lien sur l'OU étab,
-    // JAMAIS de setLink sur la racine.
-    // -----------------------------------------------------------------------
-
     #[Test]
     public function isolation_removes_root_link_and_links_establishment_ou_never_root(): void
     {
@@ -295,15 +283,6 @@ final class AgentBootstrapPublisherTest extends TestCase
         self::assertSame(AgentBootstrapDeployResult::KIND_DEPLOYED, $result->kind);
     }
 
-    // -----------------------------------------------------------------------
-    // Blocage d'héritage sur l'OU des COMPTES (moitié UTILISATEUR des GPO).
-    //
-    // Les deux moitiés d'une GPO héritent par des chemins distincts : bloquer
-    // l'OU des postes ne neutralisait QUE la moitié machine, laissant passer
-    // lecteurs réseau, redirections, imprimantes et scripts de logon — en
-    // concurrence directe avec les capacités natives de l'agent.
-    // -----------------------------------------------------------------------
-
     #[Test]
     public function it_resolves_establishment_layer_users_ou_when_present(): void
     {
@@ -323,7 +302,7 @@ final class AgentBootstrapPublisherTest extends TestCase
     {
         config(['sambaedu.ldap_base_dn' => 'dc=localdev,dc=fr']);
 
-        // Topologie plate (/vm) : etabCode '0' → pas de couche établissement.
+        // Topologie plate (vm) : etabCode '0' → pas de couche établissement.
         $publisher = $this->testablePublisher('', ['ou=Utilisateurs,dc=localdev,dc=fr']);
 
         self::assertSame('ou=Utilisateurs,dc=localdev,dc=fr', $this->resolveUsersOu($publisher));
@@ -465,10 +444,6 @@ final class AgentBootstrapPublisherTest extends TestCase
 
         self::assertSame(AgentBootstrapDeployResult::KIND_DEPLOYED, $result->kind);
     }
-
-    // -----------------------------------------------------------------------
-    // Helpers de test (réflexion sur les méthodes protected).
-    // -----------------------------------------------------------------------
 
     private function testablePublisher(string $establishmentCode, array $existingOus, ?GpoService $gpo = null, string $peopleRdn = 'ou=Utilisateurs'): AgentBootstrapPublisher
     {

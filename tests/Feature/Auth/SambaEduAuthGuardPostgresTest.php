@@ -23,16 +23,16 @@ use Symfony\Component\HttpFoundation\Response;
 use Tests\TestCase;
 
 /**
- * Story 49.2 — le guard de session lit Postgres, et RIEN d'autre.
+ * Le guard de session lit Postgres, et RIEN d'autre.
  *
  * C'est le test de non-régression du point le plus sensible du produit : une
  * erreur ici n'abîme pas un écran, elle empêche tout le monde de se connecter
  * ou laisse entrer quelqu'un qui ne devrait pas. La dernière refonte du guard
- * (Epic 20) a produit LA régression de référence du dépôt — le flux fédéré
+ * A produit LA régression de référence du dépôt — le flux fédéré
  * déconnecté à chaque requête par une revérification annuaire.
  *
- * Couvre AC1 (existence + activité SQL, fédérés exclus du lookup natif, zéro
- * LDAP), AC3 (branche fédérée intacte) et les cinq scénarios verrous d'AC11.
+ * Couvre (existence + activité SQL, fédérés exclus du lookup natif, zéro
+ * LDAP) (branche fédérée intacte) et les cinq scénarios verrous d'.
  */
 class SambaEduAuthGuardPostgresTest extends TestCase
 {
@@ -43,10 +43,6 @@ class SambaEduAuthGuardPostgresTest extends TestCase
         Mockery::close();
         parent::tearDown();
     }
-
-    // ========================================================================
-    // Outillage
-    // ========================================================================
 
     /**
      * Guard réel, `AuthenticationService` mocké (il lit `$_SESSION`, hors de
@@ -92,10 +88,6 @@ class SambaEduAuthGuardPostgresTest extends TestCase
         return [$passed, $response, $request];
     }
 
-    // ========================================================================
-    // AC1 — zéro LDAP sur le chemin du guard
-    // ========================================================================
-
     #[Test]
     public function guard_has_no_ldap_dependency_at_all(): void
     {
@@ -125,10 +117,6 @@ class SambaEduAuthGuardPostgresTest extends TestCase
             );
         }
     }
-
-    // ========================================================================
-    // AC11-1 — session native nominale
-    // ========================================================================
 
     #[Test]
     public function native_session_passes_and_exposes_the_eloquent_user(): void
@@ -175,17 +163,13 @@ class SambaEduAuthGuardPostgresTest extends TestCase
         }
     }
 
-    // ========================================================================
-    // AC11-3 — compte désactivé : DÉCONNECTÉ au coup d'après
-    // ========================================================================
-
     #[Test]
     public function deactivated_user_is_refused_and_logged_out(): void
     {
         $user = User::create(['login' => 'parti.hier', 'role' => 'prof', 'is_active' => true]);
         Auth::login($user);
 
-        // Façon 49.3 : la réconciliation des départs pose `is_active = false`.
+        // Façon : la réconciliation des départs pose `is_active = false`.
         $user->update(['is_active' => false]);
 
         $guard = $this->makeGuard('parti.hier', $logoutCalls);
@@ -219,10 +203,6 @@ class SambaEduAuthGuardPostgresTest extends TestCase
         $this->assertFalse($second, 'Aucune fenêtre de cache ne doit subsister sur le chemin du guard');
     }
 
-    // ========================================================================
-    // AC11-4 — compte inexistant en SQL
-    // ========================================================================
-
     #[Test]
     public function unknown_login_is_refused_and_legacy_session_destroyed(): void
     {
@@ -237,7 +217,7 @@ class SambaEduAuthGuardPostgresTest extends TestCase
     #[Test]
     public function guard_never_creates_a_users_row(): void
     {
-        // L'auto-provisioning a MIGRÉ vers la cérémonie de login (D1) : le laisser
+        // L'auto-provisioning a MIGRÉ vers la cérémonie de login : le laisser
         // ici maintenait un canal LDAP déclenché par toute ligne SQL manquante.
         $this->assertSame(0, User::count());
 
@@ -245,10 +225,6 @@ class SambaEduAuthGuardPostgresTest extends TestCase
 
         $this->assertSame(0, User::count(), 'Le guard ne doit plus rien provisionner');
     }
-
-    // ========================================================================
-    // AC1 / D2 — le lookup natif EXCLUT les comptes fédérés
-    // ========================================================================
 
     #[Test]
     public function a_native_session_never_aligns_on_a_federated_row(): void
@@ -293,10 +269,6 @@ class SambaEduAuthGuardPostgresTest extends TestCase
         $this->assertTrue($passed);
     }
 
-    // ========================================================================
-    // AC11-5 — réalignement du guard web
-    // ========================================================================
-
     #[Test]
     public function stale_web_session_is_realigned_on_the_legacy_session_login(): void
     {
@@ -313,10 +285,6 @@ class SambaEduAuthGuardPostgresTest extends TestCase
         $this->assertTrue($passed);
         $this->assertSame($current->id, Auth::id());
     }
-
-    // ========================================================================
-    // AC3 / AC11-2 — branche fédérée intacte
-    // ========================================================================
 
     #[Test]
     public function federated_session_is_untouched_by_the_postgres_switch(): void
@@ -407,10 +375,6 @@ class SambaEduAuthGuardPostgresTest extends TestCase
 
         FederatedSession::forget($request);
     }
-
-    // ========================================================================
-    // Early-returns préservés
-    // ========================================================================
 
     #[Test]
     public function unauthenticated_session_is_refused_before_any_lookup(): void

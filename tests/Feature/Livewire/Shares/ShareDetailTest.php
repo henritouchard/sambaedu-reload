@@ -21,7 +21,7 @@ use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
 /**
- * Story 34.2 — Tests Feature Livewire de la page détail : assignation par maille
+ * Tests Feature Livewire de la page détail : assignation par maille
  * (RO/RW), retrait, re-provision, suppression, collision de lettre (T3/T4/T6/AC).
  */
 class ShareDetailTest extends TestCase
@@ -86,7 +86,7 @@ class ShareDetailTest extends TestCase
             'assignable_id' => $user->id,
             'access' => 'rw',
         ]);
-        // Story 60.4 — l'écran ENFILE la réconciliation : aucune commande n'est
+        // L'écran ENFILE la réconciliation : aucune commande n'est
         // lancée dans le cycle de la requête, et le traitement porte l'identifiant
         // du répertoire, jamais un plan ni un rapport.
         Process::assertNothingRan();
@@ -202,7 +202,7 @@ class ShareDetailTest extends TestCase
     #[Test]
     public function letter_collision_is_blocked_on_add_assignment_and_rolled_back(): void
     {
-        // Review #1 : le vecteur `addAssignment` doit AUSSI fermer le piège #3.
+        // Le vecteur `addAssignment` doit AUSSI fermer la collision de lettre.
         // A=P: déjà assigné à dave ; B=P: sans audience. Assigner dave à B crée
         // une audience commune {dave} sur la même lettre P: → collision → refus +
         // ROLLBACK de la ligne pivot (aucune écriture partielle).

@@ -8,7 +8,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 6.1 — Crée les tables `printers` + `printer_workstation_group` en
+ * Crée les tables `printers` + `printer_workstation_group` en
  * SQLite mémoire pour les tests Feature/Unit.
  *
  * À utiliser AVEC `CreatesPermissionSchema` (qui pose `users` et

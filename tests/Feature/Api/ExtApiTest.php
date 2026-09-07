@@ -25,9 +25,8 @@ use Tests\Feature\Oidc\Concerns\UsesOidcTestKeys;
 use Tests\TestCase;
 
 /**
- * Story 56.4 — **AC3, AC4, AC5** : l'API extensions `/api/ext/v1/`.
+ * L'API extensions `/api/ext/v1/`.
  *
- * ══════════════════════════════════════════════════════════════════════════
  *  L'ORDRE DE CE FICHIER EST DÉLIBÉRÉ (patron `OidcUserinfoTest`)
  *
  *  Le contrôle POSITIF vient d'abord — le flux complet `/oidc/authorize` →
@@ -36,9 +35,8 @@ use Tests\TestCase;
  *  obtiendrait aussi.
  *
  *  Les réponses sont assertées par la liste EXACTE de leurs clés. Le contrat
- *  v1 est public et gelé (NFR11) : une clé de trop est une dette permanente,
+ *  v1 est public et gelé : une clé de trop est une dette permanente,
  *  et un `assertArrayNotHasKey` ne couvre que ce à quoi on a pensé.
- * ══════════════════════════════════════════════════════════════════════════
  */
 class ExtApiTest extends TestCase
 {
@@ -71,7 +69,7 @@ class ExtApiTest extends TestCase
         parent::tearDown();
     }
 
-    // ── Fixtures ──────────────────────────────────────────────────────────
+    // Fixtures
 
     private function makeProf(): User
     {
@@ -168,7 +166,7 @@ class ExtApiTest extends TestCase
     }
 
     /**
-     * Les traces ÉCRITES PAR CETTE STORY, aplaties — pour prouver l'absence
+     * Nos propres traces, aplaties — pour prouver l'absence
      * d'une valeur (PII, jeton clair).
      */
     private function flattenedExtApiLogs(): string
@@ -194,9 +192,7 @@ class ExtApiTest extends TestCase
         return $keys;
     }
 
-    // ══════════════════════════════════════════════════════════════════════
-    // AC3 — le contrat v1, au format maison
-    // ══════════════════════════════════════════════════════════════════════
+    // Le contrat v1, au format maison
 
     #[Test]
     public function me_returns_the_frozen_identity_contract(): void
@@ -218,7 +214,7 @@ class ExtApiTest extends TestCase
         self::assertIsString($response->json('message'));
         self::assertNull($response->json('data'));
 
-        // Valeurs = contrat de claims 55.2, VERBATIM.
+        // Valeurs = contrat de claims, VERBATIM.
         self::assertSame('prof.dupont', $response->json('sub'));
         self::assertSame('Professeur Dupont', $response->json('name'));
         self::assertSame('prof', $response->json('role'));
@@ -248,7 +244,7 @@ class ExtApiTest extends TestCase
     }
 
     /**
-     * Contrat gelé 55.2 : un rôle non résoluble ⇒ **clé ABSENTE**, jamais
+     * Contrat gelé : un rôle non résoluble ⇒ **clé ABSENTE**, jamais
      * `null`, jamais `""`. Une extension qui n'obtient pas de rôle n'habilite
      * pas.
      */
@@ -277,10 +273,6 @@ class ExtApiTest extends TestCase
         self::assertSame([], $response->json('groups'));
     }
 
-    // ══════════════════════════════════════════════════════════════════════
-    // AC5 — FR24 : rien de la base ni de l'annuaire ne sort
-    // ══════════════════════════════════════════════════════════════════════
-
     #[Test]
     public function no_directory_or_database_identifier_ever_reaches_the_payloads(): void
     {
@@ -290,7 +282,7 @@ class ExtApiTest extends TestCase
         $me = $this->getJson('/api/ext/v1/me', $this->bearer($flow['token']));
         $groups = $this->getJson('/api/ext/v1/me/groups', $this->bearer($flow['token']));
 
-        // Contrôle POSITIF adossé (calque AC3 de 55.3) : sans lui, deux
+        // Contrôle POSITIF adossé (calque) : sans lui, deux
         // réponses vides passeraient toutes les assertions négatives.
         self::assertSame('Professeur Dupont', $me->json('name'));
         self::assertSame(['3A', '4B', 'TechnoCollege'], $groups->json('groups'));
@@ -316,9 +308,7 @@ class ExtApiTest extends TestCase
         self::assertNotSame((string) $user->id, $me->json('sub'));
     }
 
-    // ══════════════════════════════════════════════════════════════════════
-    // AC4 — 401 INDISTINCTS (5 causes), codes fins au journal seul
-    // ══════════════════════════════════════════════════════════════════════
+    // 401 INDISTINCTS (5 causes), codes fins au journal seul
 
     #[Test]
     public function the_five_rejection_causes_produce_a_strictly_identical_body(): void
@@ -335,7 +325,6 @@ class ExtApiTest extends TestCase
         $bodies['inconnu'] = $this->getJson('/api/ext/v1/me', $this->bearer(str_repeat('a', 64)))
             ->assertStatus(401)->json();
 
-        // 3. Jeton expiré.
         $expired = $this->completeFlow(user: $this->makeUser('jeton.expire'));
         Carbon::setTestNow(Carbon::now()->addSeconds(601));
         $bodies['expiré'] = $this->getJson('/api/ext/v1/me', $this->bearer($expired['token']))
@@ -364,7 +353,7 @@ class ExtApiTest extends TestCase
         self::assertSame('invalid_token', $reference['error']);
 
         // Les codes FINS, eux, sont au journal — sans quoi une intégration
-        // ratée serait indiagnosticable (FR20).
+        // ratée serait indiagnosticable.
         foreach ($this->logContextsOfType('oidc.ext_api.rejected') as $context) {
             $codes[] = $context['code'] ?? null;
         }
@@ -381,8 +370,8 @@ class ExtApiTest extends TestCase
 
         // ⚠️ Aucune PII dans NOS traces, et jamais le jeton clair. L'assertion
         // porte sur les contextes du canal `oidc.ext_api.*` : c'est ce que
-        // cette story écrit, et le seul journal dont elle réponde (le reste de
-        // l'application journalise ses propres affaires, hors périmètre).
+        // le canal d'extension écrit, et le seul journal dont il réponde (le reste
+        // de l'application journalise ses propres affaires, hors périmètre).
         $flat = $this->flattenedExtApiLogs();
         self::assertStringNotContainsString('parti.dupont', $flat);
         self::assertStringNotContainsString('jeton.expire', $flat);
@@ -419,9 +408,7 @@ class ExtApiTest extends TestCase
         $this->json('GET', '/api/ext/v1/me', ['access_token' => $flow['token']])->assertStatus(401);
     }
 
-    // ══════════════════════════════════════════════════════════════════════
-    // AC4 — 403 `insufficient_scope`, générique
-    // ══════════════════════════════════════════════════════════════════════
+    // 403 `insufficient_scope`, générique
 
     #[Test]
     public function a_token_without_the_required_scope_is_forbidden_without_naming_scopes(): void
@@ -443,14 +430,13 @@ class ExtApiTest extends TestCase
     }
 
     /**
-     * Review 56.4 #1 — le garde-fou du CÂBLAGE, jusqu'ici sans aucun test.
+     * Le garde-fou du CÂBLAGE des routes de ce canal.
      *
      * Une route de ce canal déclarée sans scope requis (ou avec un scope hors
      * du catalogue fermé) est une faute de câblage : le middleware refuse
      * plutôt que de servir des données à la faveur d'un paramètre oublié. Ce
-     * chemin protège une story FUTURE — celle qui ajoutera une route et
-     * oubliera son alias. Sans test, un refactor pouvait l'inverser ou le
-     * supprimer sans que rien ne rougisse.
+     * chemin protège un ajout FUTUR — celui qui ajoutera une route et oubliera
+     * son alias.
      *
      * On enregistre ici deux routes de test portant le même middleware, avec
      * un jeton PLEINEMENT consenti : seul le câblage diffère du cas nominal.
@@ -488,7 +474,7 @@ class ExtApiTest extends TestCase
     }
 
     /**
-     * **LE test de FR23** : le jeton est émis avec `groups`, PUIS le scope est
+     * Le jeton est émis avec `groups`, PUIS le scope est
      * révoqué. Sans ré-émission et sans purge, l'endpoint doit fermer.
      */
     #[Test]
@@ -518,9 +504,7 @@ class ExtApiTest extends TestCase
         self::assertContains(OidcErrorCodes::ACCESS_TOKEN_SCOPE_INSUFFICIENT, $codes);
     }
 
-    // ══════════════════════════════════════════════════════════════════════
     // Journal nominal
-    // ══════════════════════════════════════════════════════════════════════
 
     #[Test]
     public function a_served_call_is_logged_without_any_pii(): void

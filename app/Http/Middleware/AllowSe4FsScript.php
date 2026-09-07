@@ -12,7 +12,7 @@ use Symfony\Component\HttpFoundation\Response;
 /**
  * Middleware d'authentification des scripts d'exploitation SE_FS.
  *
- * Story 1bis.18f — port natif du legacy `header_authorize_script` de
+ * .18f — port natif du legacy `header_authorize_script` de
  * `sambaedu/includes/config.inc.php:947` :
  *
  *   ```php
@@ -20,7 +20,7 @@ use Symfony\Component\HttpFoundation\Response;
  *          && $se4_key == $config["se4_key"])) { ... 403 }
  *   ```
  *
- * Stratégie d'auth (semantique OR — choix produit Henri 2026-04-27) :
+ * Stratégie d'auth (sémantique OR) :
  *  - Whitelist IP (`config('sambaedu.se4fs_ip')`) ; **OU**
  *  - Paramètre query/post `se4_key` matchant `config('sambaedu.se4_key')`.
  *

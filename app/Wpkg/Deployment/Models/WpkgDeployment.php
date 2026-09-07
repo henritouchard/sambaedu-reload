@@ -12,8 +12,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
- * Story 15.5 — Modèle Eloquent de la table `wpkg_deployments` (créée
- * par 15.1 mais sans modèle Eloquent).
+ * Modèle Eloquent de la table `wpkg_deployments` (créée
+ * par mais sans modèle Eloquent).
  *
  * Représente un déploiement administré (clone parc, bulk catégorie, etc.)
  * avec son périmètre cible (`target_scope`) et son agrégat de statuts

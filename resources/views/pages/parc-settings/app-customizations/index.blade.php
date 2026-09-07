@@ -8,7 +8,7 @@ use Livewire\Component;
 /**
  * Page Livewire SFC — personnalisation applicative établissement.
  *
- * Story 4.8 — Task 4.7 (AC 7). Convention filesystem-based router :
+ * Convention filesystem-based router :
  * `/app/parc-settings/app-customizations` → cette page.
  */
 new #[Title('Personnalisation applications — SE4FS')] class extends Component {
@@ -38,7 +38,7 @@ new #[Title('Personnalisation applications — SE4FS')] class extends Component 
     :scrollable="true"
     description="Paramétrez les politiques des applications (Firefox, Thunderbird, …) par défaut de l'établissement.">
 
-    {{-- Breadcrumb de retour GPO (Story 16.3a, AC4.2) — affiché uniquement si ?from_gpo présent --}}
+    {{-- Breadcrumb de retour GPO — affiché uniquement si ?from_gpo présent --}}
     <x-slot:actions>
         <x-molecules.gpo-back-link />
     </x-slot:actions>

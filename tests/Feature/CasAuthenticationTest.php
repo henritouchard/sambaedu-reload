@@ -83,7 +83,6 @@ class CasAuthenticationTest extends TestCase
         // phpCAS::client() appelle exit() au lieu de throw, ce qui termine
         // le subprocess avant qu'on puisse asserter. Ce test ne peut pas
         // passer tant que phpCAS n'est pas wrappé/mocké dans le code de prod.
-        // Voir _bmad-output/implementation-artifacts/tech-debt-test-infra-cleanup.md §3.
         $this->markTestSkipped('phpCAS::client() exit() dans subprocess — nécessite mock phpCAS en prod');
 
         $mockConfig = Mockery::mock(SambaEduConfig::class)->makePartial();

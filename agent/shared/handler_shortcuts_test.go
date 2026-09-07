@@ -20,8 +20,8 @@ type fakeShortcutOps struct {
 	createCalls int
 	removeCalls int
 	placeErr    map[string]error // place → erreur de résolution (test error path)
-	// desktopPathErr : desktop_path → erreur de résolution (Story 27.21 —
-	// simule un Bureau RÉSEAU non résoluble sur CE poste, hors-domaine, sans
+	// DesktopPathErr : desktop_path → erreur de résolution
+	// (simule un Bureau RÉSEAU non résoluble sur CE poste, hors-domaine, sans
 	// casser la résolution du Bureau local).
 	desktopPathErr map[string]error
 }
@@ -48,7 +48,7 @@ func (o *fakeShortcutOps) PlaceDir(spec ShortcutSpec) (string, error) {
 			return "", err
 		}
 		if spec.DesktopPath == "" {
-			// Probe desktop sans desktop_path (balayage des orphelins, review #2) :
+			// Probe desktop sans desktop_path (balayage des orphelins) :
 			// l'OS résout le bureau STANDARD. Le fake renvoie le bureau local.
 			return strings.TrimRight(localDesktop, `\/`), nil
 		}
@@ -81,8 +81,8 @@ func (o *fakeShortcutOps) ListManaged(dirs []string) ([]string, error) {
 
 func (o *fakeShortcutOps) Matches(path string, spec ShortcutSpec) (bool, error) {
 	if o.userLnks[path] {
-		// Homonyme utilisateur : non géré → (false, nil), JAMAIS une erreur
-		// (review #1). Le handler consulte Blocked() avant Matches et saute ce
+		// Homonyme utilisateur : non géré → (false, nil), JAMAIS une erreur.
+		// Le handler consulte Blocked() avant Matches et saute ce
 		// chemin, donc ce false n'entraîne jamais d'écrasement.
 		return false, nil
 	}
@@ -139,7 +139,7 @@ func shortcutItem(name, target, place, desktopPath string) StateItem {
 }
 
 // shortcutItemSweep : idem, mais le serveur NOMME les emplacements Bureau à
-// BALAYER (`desktop_sweep_paths`, Story 27.21 arbitrage option A). Le champ est
+// BALAYER (`desktop_sweep_paths`). Le champ est
 // un `[]any` — la forme réelle après décodage JSON du contrat.
 func shortcutItemSweep(name, target, place, desktopPath string, sweep []string) StateItem {
 	item := shortcutItem(name, target, place, desktopPath)
@@ -155,8 +155,6 @@ func shortcutItemSweep(name, target, place, desktopPath string, sweep []string) 
 
 const netDesktop = `\\<se4fs>\users\<user>\Bureau`
 const localDesktop = `%USERPROFILE%\Desktop`
-
-// --- Résolution du chemin par environnement (fix Bug C, côté agent) ----------
 
 func TestShortcutsDesktopPathFromServer(t *testing.T) {
 	cases := []struct {
@@ -183,8 +181,6 @@ func TestShortcutsDesktopPathFromServer(t *testing.T) {
 		})
 	}
 }
-
-// --- Set cible + idempotence -------------------------------------------------
 
 func TestShortcutsApplyCreatesTargetSetThenIdempotent(t *testing.T) {
 	ops := newFakeOps()
@@ -218,8 +214,6 @@ func TestShortcutsApplyCreatesTargetSetThenIdempotent(t *testing.T) {
 	}
 }
 
-// --- Suppression level-triggered (sorti des règles) --------------------------
-
 func TestShortcutsRemovesManagedShortcutDroppedFromRules(t *testing.T) {
 	ops := newFakeOps()
 	h := &ShortcutsHandler{Ops: ops}
@@ -250,8 +244,6 @@ func TestShortcutsRemovesManagedShortcutDroppedFromRules(t *testing.T) {
 	}
 }
 
-// --- Un raccourci UTILISATEUR n'est jamais supprimé --------------------------
-
 func TestShortcutsNeverDeletesUserCreatedShortcut(t *testing.T) {
 	ops := newFakeOps()
 	ops.userLnks[netDesktop+`\MesNotes.lnk`] = true // créé par l'utilisateur
@@ -266,12 +258,10 @@ func TestShortcutsNeverDeletesUserCreatedShortcut(t *testing.T) {
 	}
 }
 
-// --- #6 : homonyme user au chemin EXACT d'une cible --------------------------
-//
 // Un `.lnk` utilisateur (sans marqueur) occupe le chemin EXACT d'un raccourci
 // désiré (un prof a créé « Intranet » sur son bureau). Test/Apply ne plantent
 // pas, ne suppriment/n'écrasent pas le fichier user, et les AUTRES raccourcis
-// convergent quand même (review #1).
+// convergent quand même.
 func TestShortcutsUserHomonymOnDesiredPathIsIgnored(t *testing.T) {
 	ops := newFakeOps()
 	intranetPath := netDesktop + `\Intranet.lnk`
@@ -311,11 +301,9 @@ func TestShortcutsUserHomonymOnDesiredPathIsIgnored(t *testing.T) {
 	}
 }
 
-// --- #7 : orphelins cross-placement supprimés au passage suivant -------------
-//
 // Toutes les règles `desktop` sont retirées alors qu'une règle `startup`
 // subsiste → le `.lnk` desktop GÉRÉ (marqueur) est supprimé au passage suivant
-// (review #2 — l'union des emplacements gérables est balayée, pas seulement ceux
+// (l'union des emplacements gérables est balayée, pas seulement ceux
 // du desired courant).
 func TestShortcutsCrossPlacementOrphanRemoved(t *testing.T) {
 	ops := newFakeOps()
@@ -353,14 +341,12 @@ func TestShortcutsCrossPlacementOrphanRemoved(t *testing.T) {
 	}
 }
 
-// --- Story 27.21 : le SERVEUR nomme les Bureaux à balayer (option A) ---------
-//
 // Le serveur désigne l'emplacement de POSE via `desktop_path` (réseau si parc
 // partagé ET home accessible, local sinon) ET les emplacements de BALAYAGE via
 // `desktop_sweep_paths` — deux notions distinctes. Sur un parc `shared_local`,
 // le serveur ordonne les DEUX Bureaux, pour supprimer les `.lnk` GÉRÉS restés
 // sur l'emplacement devenu inactif après une bascule de la politique home
-// (AC2/AC3). Sur un parc perdir/nomade, il n'ordonne que le Bureau local.
+// . Sur un parc perdir/nomade, il n'ordonne que le Bureau local.
 
 func TestShortcutsManagedDirsSweepServerNamedDesktops(t *testing.T) {
 	bothDesktops := []string{netDesktop, localDesktop}
@@ -372,7 +358,7 @@ func TestShortcutsManagedDirsSweepServerNamedDesktops(t *testing.T) {
 		{
 			// Le champ vit sur TOUS les items du type — un parc partagé sans
 			// aucune règle `desktop` fait quand même balayer les deux Bureaux
-			// (leçon review #2 de 27.1 : sinon orphelins à vie).
+			// (sinon orphelins à vie).
 			"aucune règle desktop (parc partagé)",
 			[]StateItem{shortcutItemSweep("N", `C:\n.exe`, shortcutPlaceStartup, "", bothDesktops)},
 			[]string{netDesktop, strings.TrimRight(localDesktop, `\/`)},
@@ -388,13 +374,13 @@ func TestShortcutsManagedDirsSweepServerNamedDesktops(t *testing.T) {
 			[]string{netDesktop, strings.TrimRight(localDesktop, `\/`)},
 		},
 		{
-			// LE cas du finding #1 : aucun Bureau réseau dans les dirs balayés.
+			// Aucun Bureau réseau dans les dirs balayés.
 			"parc perdir/nomade : Bureau LOCAL seul",
 			[]StateItem{shortcutItemSweep("A", "ta", shortcutPlaceDesktop, localDesktop, []string{localDesktop})},
 			[]string{strings.TrimRight(localDesktop, `\/`)},
 		},
 		{
-			// Serveur antérieur à 27.21 (champ absent) : repli CONSERVATEUR sur
+			// Serveur antérieur (champ absent) : repli CONSERVATEUR sur
 			// les seuls emplacements propres au poste — jamais le Bureau réseau.
 			"champ absent (serveur antérieur) : repli local",
 			[]StateItem{shortcutItem("A", "ta", shortcutPlaceDesktop, localDesktop)},
@@ -438,11 +424,10 @@ func TestShortcutsManagedDirsSweepServerNamedDesktops(t *testing.T) {
 
 // Verrou serveur⇄agent SANS duplication de littéral : on lit le golden
 // CANONIQUE partagé (`tests/Fixtures/Agent/state.v1.json`, la même source de
-// vérité que le hash croisé NFR13) et on prouve que le handler balaie
+// vérité que le hash croisé serveur⇄agent) et on prouve que le handler balaie
 // EXACTEMENT les emplacements qu'il porte. Si le serveur change sa convention de
 // chemin, le golden change et ce test suit — plus aucune constante réseau côté
-// agent (le jumelage Go-vs-Go tautologique de la 1re passe est supprimé,
-// review 27.21 #2).
+// agent.
 func TestShortcutsSweepsExactlyTheGoldenNamedDesktops(t *testing.T) {
 	var state struct {
 		MachineUser []struct {
@@ -492,8 +477,7 @@ func TestShortcutsSweepsExactlyTheGoldenNamedDesktops(t *testing.T) {
 	// au-delà des chemins nommés par le golden + les 3 probes standard propres au
 	// poste (Bureau local, startup, taskbar). Sans cette borne, une probe réseau
 	// inconditionnelle réintroduite par un refactor futur resterait verte ici — or
-	// c'est précisément ce test golden-driven qui doit servir de verrou indépendant
-	// (review 27.21 2e tour, finding #5).
+	// c'est précisément ce test golden-driven qui doit servir de verrou indépendant.
 	allowed := map[string]bool{}
 	for _, want := range wantDirs {
 		allowed[want] = true
@@ -518,7 +502,7 @@ func TestShortcutsSweepsExactlyTheGoldenNamedDesktops(t *testing.T) {
 
 // Bascule de la politique home dans les DEUX sens : le `.lnk` géré de
 // l'emplacement devenu inactif est supprimé au passage suivant, celui de
-// l'emplacement actif est posé. Zéro orphelin (AC3).
+// L'emplacement actif est posé. Zéro orphelin.
 func TestShortcutsHomePolicySwitchLeavesNoOrphan(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -593,7 +577,7 @@ func TestShortcutsHomePolicySwitchLeavesNoOrphan(t *testing.T) {
 
 // Un `.lnk` NON marqué (créé par l'utilisateur) présent dans CHACUN des deux
 // Bureaux n'est jamais supprimé — l'élargissement du balayage n'élargit PAS le
-// périmètre de suppression (garantie ListManaged/marqueur, AC2).
+// périmètre de suppression (garantie ListManaged/marqueur).
 func TestShortcutsNeverDeletesUserLnkInEitherDesktop(t *testing.T) {
 	ops := newFakeOps()
 	ops.userLnks[netDesktop+`\MesNotes.lnk`] = true
@@ -625,7 +609,7 @@ func TestShortcutsNeverDeletesUserLnkInEitherDesktop(t *testing.T) {
 
 // Fail-soft : un Bureau non résoluble sur CE poste (hors-domaine — `<se4fs>`
 // sans valeur) n'est PAS fatal. La probe est ignorée, les autres emplacements
-// convergent (AC2).
+// convergent.
 func TestShortcutsUnresolvableNetworkDesktopIsNotFatal(t *testing.T) {
 	ops := newFakeOps()
 	ops.desktopPathErr[netDesktop] = fmt.Errorf("SE4FS non défini")
@@ -668,9 +652,7 @@ func TestUsableShortcutDir(t *testing.T) {
 	}
 }
 
-// --- Story 27.21 (arbitrage option A) : le SERVEUR nomme les Bureaux balayés --
-//
-// LE test de non-régression du finding #1 (🔴 review 27.21) : le Bureau RÉSEAU
+// Test de non-régression : le Bureau RÉSEAU
 // `\\<se4fs>\users\<user>\Bureau\` est un emplacement PAR UTILISATEUR, PARTAGÉ
 // entre TOUS ses postes, alors que le desired-state est compilé par couple
 // (poste, user). Un poste `personal_local`/`nomade` n'a AUCUNE autorité dessus :
@@ -678,7 +660,7 @@ func TestUsableShortcutDir(t *testing.T) {
 // poste `shared_local` du même utilisateur (ping-pong permanent de
 // suppressions/re-créations sur un partage de production).
 //
-// Depuis l'option A, l'agent n'invente plus l'emplacement réseau : il balaie
+// L'agent n'invente jamais l'emplacement réseau : il balaie
 // EXACTEMENT les chemins que le serveur lui nomme (`desktop_sweep_paths`).
 func TestShortcutsPerdirNeverSweepsNetworkDesktop(t *testing.T) {
 	ops := newFakeOps()
@@ -720,7 +702,7 @@ func TestShortcutsPerdirNeverSweepsNetworkDesktop(t *testing.T) {
 
 // Le pendant : un poste `shared_local` — à qui le serveur ORDONNE les deux
 // emplacements — nettoie toujours correctement l'emplacement devenu inactif
-// (le double-balayage anti-orphelins de l'AC2/AC3 reste pleinement en vigueur).
+// (le double-balayage anti-orphelins reste pleinement en vigueur).
 func TestShortcutsSharedLocalStillSweepsBothDesktops(t *testing.T) {
 	ops := newFakeOps()
 	netLnk := netDesktop + `\Intranet.lnk`
@@ -764,8 +746,6 @@ func containsDir(dirs []string, want string) bool {
 	return false
 }
 
-// --- Payload invalide → error (enveloppe) ------------------------------------
-
 func TestShortcutsInvalidPayloadIsError(t *testing.T) {
 	ops := newFakeOps()
 	h := &ShortcutsHandler{Ops: ops}
@@ -788,8 +768,6 @@ func TestShortcutsInvalidPayloadIsError(t *testing.T) {
 	}
 }
 
-// --- Dédup : empreinte d'agrégat stable, ordre serveur (réutilise le moteur) --
-
 func TestShortcutsAggregateHashIsServerOrderConcat(t *testing.T) {
 	// L'empreinte est la concat des hashes opaques (engine.AggregateHash) — la
 	// dédup de contenu est FAITE CÔTÉ SERVEUR (StateCompiler) ; l'agent ne
@@ -807,8 +785,6 @@ func TestShortcutsAggregateHashIsServerOrderConcat(t *testing.T) {
 		t.Fatalf("empreinte non déterministe")
 	}
 }
-
-// --- Machine d'états §5 via le moteur (STRICT inconditionnel, Story 27.8) -----
 
 func TestShortcutsThroughEngineSection5(t *testing.T) {
 	items := []StateItem{shortcutItem("A", "ta", shortcutPlaceDesktop, netDesktop)}
@@ -863,7 +839,7 @@ func TestShortcutsThroughEngineSection5(t *testing.T) {
 	}
 }
 
-// Bug terrain 27.1 : la convention `chemin,index` du `.lnk` doit être décomposée
+// Bug terrain : la convention `chemin,index` du `.lnk` doit être décomposée
 // avant SetIconLocation, sinon `…\firefox.exe,0` est pris comme chemin de fichier
 // (introuvable → icône « feuille blanche »).
 func TestParseIconLocation(t *testing.T) {
@@ -894,8 +870,6 @@ func TestParseIconLocation(t *testing.T) {
 	}
 }
 
-// --- Story 27.7 : icône UPLOADÉE (icon_asset/icon_checksum) ------------------
-
 func TestParseShortcutSpecCarriesUploadedIconFields(t *testing.T) {
 	sha := strings.Repeat("a", 64)
 	payload := map[string]any{
@@ -918,7 +892,7 @@ func TestParseShortcutSpecCarriesUploadedIconFields(t *testing.T) {
 
 func TestParseShortcutSpecStripsInvalidUploadedIcon(t *testing.T) {
 	// icon_asset hors format content-addressed → remis à "" (on retombera sur
-	// l'icône brute, jamais un asset cassé — piège n° 3).
+	// l'icône brute, jamais un asset cassé).
 	for _, bad := range []map[string]any{
 		{"name": "x", "place": "startup", "icon": "x", "icon_asset": "../evil.ico", "icon_checksum": strings.Repeat("a", 64)},
 		{"name": "x", "place": "startup", "icon": "x", "icon_asset": strings.Repeat("a", 64) + ".ico", "icon_checksum": "tooshort"},

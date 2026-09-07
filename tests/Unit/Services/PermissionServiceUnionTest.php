@@ -17,7 +17,7 @@ use Tests\TestCase;
 use Tests\Traits\CreatesPermissionSchema;
 
 /**
- * Story 7.2 (AC10) — Calcul union groupe + individuel (FR29).
+ * Calcul union groupe + individuel.
  *
  * Les permissions effectives d'un user sont l'union :
  *  - rôle(s) → leurs permissions

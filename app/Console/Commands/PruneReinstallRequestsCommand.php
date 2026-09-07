@@ -9,7 +9,7 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 3.11 — Tâche 8.3 — Purge quotidienne des requêtes de réinstallation
+ * Purge quotidienne des requêtes de réinstallation
  * terminales (done/failed/canceled) > N jours.
  *
  * Patron identique à `parc:prune-group-schedule-runs`. Scheduler ->daily().

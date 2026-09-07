@@ -15,7 +15,7 @@ use Illuminate\Support\Facades\Log;
 /**
  * Service de vérification de la cohérence AD/SQL.
  *
- * Story 38.7 — `checkAppProfiles()` a été RETIRÉE : elle comparait SQL ↔
+ * `checkAppProfiles` a été RETIRÉE : elle comparait SQL ↔
  * `OU=Parcs` pour un « exporter vers l'AD », or SE5 n'écrit plus les profils
  * dans l'AD (`OU=Parcs` en lecture seule). {@see checkWorkstationGroups()}
  * RESTE : il compare les `OU` de `OU=Computers`, qui demeurent la vérité AD.
@@ -224,7 +224,7 @@ class AdSyncChecker
                     'groups' => $groups,
                     'ip' => $machine->ip,
                     'mac' => $machine->mac,
-                    // Story 4.11 — la salle vit dans le pivot global ; lecture
+                    // La salle vit dans le pivot global ; lecture
                     // via l'accessor `physicalRoom` (plus de FK dédiée).
                     'physical_room_id' => $machine->physicalRoom?->id,
                     'uuid' => $machine->ad_guid,

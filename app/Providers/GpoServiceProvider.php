@@ -8,13 +8,13 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\ServiceProvider;
 
 /**
- * Service Provider du module GPO natif (Story 16.1, Epic 16).
+ * Service Provider du module GPO natif.
  *
  * Au boot :
  *
  * 1. **Crée le dossier `storage/logs/gpo/`** si absent. Sans ça, Monolog
  *    plante au premier write sur le channel `gpo` (parité commit `42cebba`
- *    pour `wpkg-deploy`). Effectué AVANT tout autre log sur le channel —
+ *  pour `wpkg-deploy`). Effectué AVANT tout autre log sur le channel
  *    ordre critique (chicken-and-egg).
  * 2. **Vérifie l'accessibilité** du binaire `samba-tool` et du chemin SYSVOL
  *    (cf. `config/sambaedu.php` § gpo.bin_path et gpo.sysvol_path).

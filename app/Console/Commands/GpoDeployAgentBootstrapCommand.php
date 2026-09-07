@@ -9,7 +9,7 @@ use App\Services\Gpo\AgentBootstrapPublisher;
 use Illuminate\Console\Command;
 
 /**
- * Story 27.16 — `gpo:deploy-agent-bootstrap`.
+ * `gpo:deploy-agent-bootstrap`.
  *
  * Déploie automatiquement la GPO-dispatcher figée d'amorçage agent
  * `SE_agent_bootstrap` (publication SYSVOL sous contexte Administrator + blocage

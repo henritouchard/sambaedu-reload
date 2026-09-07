@@ -7,7 +7,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 27.17 — colonne `is_parc_default` sur `applications`.
+ * Colonne `is_parc_default` sur `applications`.
  *
  * Équivalent applicatif du `is_default` du wallpaper : marque qu'une application
  * doit être appliquée PAR DÉFAUT à TOUS les postes (couche Broadcast). Lue par

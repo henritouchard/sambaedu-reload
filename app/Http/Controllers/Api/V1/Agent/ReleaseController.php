@@ -15,37 +15,36 @@ use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 /**
- * Story 25.1 — Distribution des releases agent (D6, FR24). Nom figé par
- * l'architecture. Deux endpoints, chaîne middleware iso state/report
+ * Distribution des releases agent. Deux endpoints, chaîne middleware iso state/report
  * (`auth.v1.secure-headers` + `throttle:60,1` + `agent.token`) :
  *
  *  - `GET /api/v1/agent/release` (route `agent.v1.release`) — le MANIFEST
  *    `{version, hash, url}` résolu selon le ring du poste authentifié
  *    ({@see ReleaseManifestService} : ring → récence → stable → 404
  *    `no_release`). Wrapper SE5 `{success, …}` (seul /state sert le contrat
- *    brut) ; `url` ABSOLUE (piège n° 6). Aucune release applicable → 404
- *    `no_release` — jamais un 200 vide ambigu (l'agent 25.2 traite 404 =
+ *    brut) ; `url` ABSOLUE. Aucune release applicable → 404
+ *  `no_release` — jamais un 200 vide ambigu (l'agent traite 404 =
  *    « rien à faire »).
  *  - `GET /api/v1/agent/releases/{filename}` (route
  *    `agent.v1.release.download`) — serving binaire iso
- *    {@see AssetController} (24.4) : pattern strict AVANT tout accès disque
+ *  {@see AssetController} : pattern strict AVANT tout accès disque
  *    ou DB, lookup `agent_releases` d'abord (seul un filename publié est
  *    servi), realpath confiné sous `releases_path`, 404 INDISTINCT
  *    `{error, message}` pour TOUT échec (malformé, inconnu DB, fichier
  *    absent) — aucun oracle de présence. Le binaire ne porte PAS le wrapper
- *    SE5 (piège n° 10). L'agent 25.2 vérifiera SHA-256 + signature
- *    Authenticode AVANT exécution (décision n° 8 — le serveur garantit
- *    l'intégrité à la CRÉATION, pas à l'exécution).
+ *    SE5. L'agent vérifie le SHA-256 et la signature Authenticode AVANT
+ *    exécution : le serveur garantit l'intégrité à la CRÉATION, pas à
+ *    l'exécution.
  *
  * Controller mince : la résolution vit dans le service, l'auth et les
- * écritures `workstations` (check-in, rotation X-Agent-New-Token — D5,
- * survit aux deux réponses) dans le middleware 23.2. Identité = le token,
+ * écritures `workstations` (check-in, rotation X-Agent-New-Token, qui survit
+ * aux deux réponses) dans le middleware. Identité = le token,
  * jamais un identifiant en entrée.
  */
 class ReleaseController extends Controller
 {
     /**
-     * Forme produite par le build 24.5 : `sambaedu-agent-<version>.exe`.
+     * Forme produite par le build : `sambaedu-agent-<version>.exe`.
      * Toute autre forme (traversal, casse, extension) = 404 immédiat,
      * AVANT tout accès disque ou DB.
      */
@@ -63,7 +62,7 @@ class ReleaseController extends Controller
 
         $manifest = $this->manifests->manifestFor($workstation);
         if ($manifest === null) {
-            // AC3/décision n° 7 : ni ring ni stable → 404 explicite, jamais
+            // Décision n° 7 : ni ring ni stable → 404 explicite, jamais
             // un 200 vide (et jamais une canari par accident).
             Log::channel('agent')->debug('[ReleaseController] agent.release.no_release', [
                 'action_type' => 'agent.release.no_release',
@@ -76,7 +75,7 @@ class ReleaseController extends Controller
             ], 404);
         }
 
-        // Debug : un par check-in (volume NFR4) — jamais en info.
+        // Debug : un par check-in — jamais en info.
         Log::channel('agent')->debug('[ReleaseController] agent.release.manifest_served', [
             'action_type' => 'agent.release.manifest_served',
             'workstation_id' => $workstation->id,
@@ -95,7 +94,7 @@ class ReleaseController extends Controller
             return $this->notFound($workstation, $filename);
         }
 
-        // Lookup DB d'abord (AC4) : seul un filename publié est servi —
+        // Lookup DB d'abord : seul un filename publié est servi
         // un binaire orphelin déposé dans le répertoire n'est jamais servi.
         $release = AgentRelease::query()->where('filename', $filename)->first();
         if ($release === null) {
@@ -103,10 +102,10 @@ class ReleaseController extends Controller
         }
 
         // realpath confiné : le pattern exclut déjà tout séparateur de
-        // chemin — seconde ligne de défense anti-traversal (iso 24.4).
+        // chemin — seconde ligne de défense anti-traversal.
         $base = realpath((string) config('agent.releases_path'));
         if ($base === false) {
-            // Signal ops distinct (review 25.1 #8) : répertoire de releases
+            // Signal ops distinct : répertoire de releases
             // absent/illisible ≠ release inconnue — un parc entier en 404
             // doit pointer la config, pas la DB. Réponse client inchangée
             // (404 indistinct, zéro oracle).
@@ -124,9 +123,9 @@ class ReleaseController extends Controller
             return $this->notFound($workstation, $filename);
         }
 
-        // Debug (décision review 25.1 #4) : un téléchargement n'est qu'un
+        // Debug : un téléchargement n'est qu'un
         // préalable sans garantie — la trace de déploiement qui FAIT FOI est
-        // la version rapportée par l'agent au check-in (25.2 : version dans
+        // la version rapportée par l'agent au check-in (version dans
         // chaque rapport, échec d'update rapporté). Pas de pic info au
         // rollout d'un ring.
         Log::channel('agent')->debug('[ReleaseController] agent.release.download_served', [
@@ -140,7 +139,7 @@ class ReleaseController extends Controller
     }
 
     /**
-     * 404 INDISTINCT (piège n° 10, iso `AssetController::notFound()`) :
+     * 404 INDISTINCT (iso `AssetController::notFound()`) :
      * malformé, inconnu en DB ou absent du disque répondent à l'identique.
      */
     private function notFound(Workstation $workstation, string $filename): JsonResponse
@@ -148,7 +147,7 @@ class ReleaseController extends Controller
         Log::channel('agent')->info('[ReleaseController] agent.release.download_not_found', [
             'action_type' => 'agent.release.download_not_found',
             'workstation_id' => $workstation->id,
-            // Input client non authentifié en forme : borné avant log (P5 23.2).
+            // Input client non authentifié en forme : borné avant log (P5).
             'filename' => Str::limit($filename, 128),
         ]);
 

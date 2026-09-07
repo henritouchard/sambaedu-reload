@@ -24,7 +24,7 @@ use Tests\TestCase;
 
 /**
  * Onglet Livewire « Associations par défaut » de la page d'un WorkstationGroup —
- * Story 27.11 (V2 COMPOSER). Le geste s'applique PAR groupe (parc/salle), monté en
+ * (V2 COMPOSER). Le geste s'applique PAR groupe (parc/salle), monté en
  * onglet de `parc/groups/{id}` avec `groupId`.
  *
  * Vérifie : gate app.customize (rendu vs 403) ; le COMPOSER (saisie extension +
@@ -229,7 +229,7 @@ class FileAssociationsPageTest extends TestCase
         return $assoc;
     }
 
-    // ── Gate ───────────────────────────────────────────────────────────────────
+    // Gate
 
     #[Test]
     public function renders_for_authorized_manager(): void
@@ -253,7 +253,7 @@ class FileAssociationsPageTest extends TestCase
         Livewire::test(self::COMPONENT, ['groupId' => 1])->assertStatus(403);
     }
 
-    // ── Composer : création ──────────────────────────────────────────────────
+    // Composer : création
 
     #[Test]
     public function compose_creates_native_association_and_attaches_to_parc(): void
@@ -316,8 +316,6 @@ class FileAssociationsPageTest extends TestCase
         self::assertSame('vlc', $assoc->wpkg_package);
     }
 
-    // ── Garde-fou exe manquant (piège n°4) ─────────────────────────────────────
-
     #[Test]
     public function compose_blocks_generic_without_executable(): void
     {
@@ -353,7 +351,7 @@ class FileAssociationsPageTest extends TestCase
             ->assertHasErrors('newIdentifier');
     }
 
-    // ── Liste éditable / désactivable ──────────────────────────────────────────
+    // Liste éditable / désactivable
 
     #[Test]
     public function parc_associations_list_shows_only_attached_entries(): void
@@ -390,7 +388,7 @@ class FileAssociationsPageTest extends TestCase
         ]);
     }
 
-    // ── Validation prédictive sur entrée custom (AC5) ──────────────────────────
+    // Validation prédictive sur entrée custom
 
     #[Test]
     public function predictive_native_association_is_applicable(): void
@@ -445,7 +443,7 @@ class FileAssociationsPageTest extends TestCase
     #[Test]
     public function predictive_generic_association_is_best_effort(): void
     {
-        // C2/AC5 : un ProgId GÉNÉRIQUE (Applications\<exe>) → best-effort, JAMAIS
+        // C2/ : un ProgId GÉNÉRIQUE (Applications\<exe>) → best-effort, JAMAIS
         // « applicable » — indépendamment de la source (ici native).
         $parc = $this->parc();
         $assoc = FileAssociation::create([
@@ -513,7 +511,7 @@ class FileAssociationsPageTest extends TestCase
     #[Test]
     public function composing_second_app_for_same_identifier_replaces_previous(): void
     {
-        // Q2 (décision Henri 2026-06-18) : une asso existe déjà pour .html sur le parc
+        // Une asso existe déjà pour .html sur le parc
         // (FirefoxHTML) ; composer une 2e app pour .html (ProgId différent) → l'ancienne
         // est AUTOMATIQUEMENT détachée du parc (règle exclusive), la nouvelle la remplace.
         $parc = $this->parc();

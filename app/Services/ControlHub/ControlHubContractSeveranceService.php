@@ -22,70 +22,70 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 32.1 (FR7 + NFR5) — Réception du signal de RUPTURE du lien amont (controlHub).
+ * Réception du signal de RUPTURE du lien amont (controlHub).
  *
  * Service UNIQUE partagé par la commande artisan `controlhub:sever-link` et
- * l'endpoint controlHub authentifié (Q4). Il est le **miroir** de
+ * l'endpoint controlHub authentifié. Il est le **miroir** de
  * {@see ControlHubContractIngestionService::ingest()} : là où l'ingestion pose
  * `link_state = active`, la rupture pose `link_state = severed`.
  *
- * **« Preuve + construction » (verdict d'investigation).** La LEVÉE des verrous et
+ * **Ce qui est acquis gratuitement, et ce que ce service construit.** La LEVÉE des verrous et
  * la chute du bornage catalogue sont ACQUISES GRATUITEMENT : dès que
  * `link_state = severed`, {@see ControlHubContract::active()} renvoie `null` et TOUS
  * les consommateurs court-circuitent ({@see Resolution\UpstreamContractSource},
  * {@see UpstreamCatalogResolver}, {@see UpstreamLockResolver},
  * {@see \App\Policies\CapabilityPolicy}, tier `StateMaille::Upstream`). Ce service
- * ne RE-CONSTRUIT AUCUN déverrouillage ; il construit la VRAIE part de 32.1 :
- *   1. la **réception du signal** (`severed` n'était posé NULLE PART avant 32.1) ;
+ * ne RE-CONSTRUIT AUCUN déverrouillage ; il construit la VRAIE part :
+ *  1. la **réception du signal** (`severed` n'était posé NULLE PART avant) ;
  *   2. la **conservation de l'état effectif COMPLET, déverrouillé** : à la rupture
  *      « l'état du parc reste identique à ce qu'il était avec le lien, en retirant
- *      les verrous » (Henri). On FIGE LOCALEMENT l'état effectif des canaux
+ *      les verrous ». On FIGE LOCALEMENT l'état effectif des canaux
  *      réellement imposés (cf. {@see self::materializeEffectiveValues()} et
  *      {@see self::materializeApplicationAssignments()}) AVANT de poser `severed` ;
- *   3. l'**audit NFR5** de la transition `active → severed` ;
+ *   3. l'**audit** de la transition `active → severed` ;
  *   4. l'émission de {@see ControlHubContractChanged} (invalidation des
  *      mémoïsations par-conteneur, patron post-commit de l'ingestion).
  *
- * **M1 — matérialisation CAPABILITY-CENTRIC sur le VRAI canal `registry`.** Le SEUL
+ * **Matérialisation CAPABILITY-CENTRIC sur le VRAI canal `registry`.** Le SEUL
  * canal d'imposition câblé en prod est `registry` ({@see Resolution\RegistryUpstreamAdapter},
  * seul adaptateur enregistré dans `AgentServiceProvider`). Localement, tout le
- * registre dérive des CAPACITÉS (capability-first 27.12 — pas de store registre
+ * registre dérive des CAPACITÉS (capability-first — pas de store registre
  * brut). On NE matérialise donc PAS le pseudo-canal `type='capabilities'` (qui n'a
  * AUCUN adaptateur amont — canal mort) : pour chaque capacité VERROUILLÉE par
  * l'amont (détection par identité de clé registre, iso {@see UpstreamLockResolver}),
  * on recouvre la valeur de capacité imposée en INVERSANT la projection
  * {@see CapabilityProjection} (sens valeur-registre → valeur-capacité, à partir de
  * la valeur connue portée par l'item), et on l'écrit dans `capability_assignments`
- * à la maille du parc cible (patron `saveOverride()` 29.5). Le `permissif` est un
+ * à la maille du parc cible (patron `saveOverride()`). Le `permissif` est un
  * PLANCHER déjà battu par le défaut local → no-op (rien à conserver). Seuls les
  * `locked` sont matérialisés.
  *
- * **Apps — conservation de l'AFFECTATION (portée selon la cible, correctif #7).** Une
- * app `ordonnée` par l'amont (item `type='applications'`, 31.2) n'a, à la rupture,
- * qu'une ligne `Application` persistante (AC3) — son AFFECTATION venait de l'ordre
+ * **Apps — conservation de l'AFFECTATION (portée selon la cible).** Une
+ * app `ordonnée` par l'amont (item `type='applications'`) n'a, à la rupture,
+ * qu'une ligne `Application` persistante — son AFFECTATION venait de l'ordre
  * amont (levé via `active()` → null). On la conserve : pour un ordre `instance` on
- * pose `Application.is_parc_default` (défaut d'instance Broadcast 27.17 — couvre tous
+ * pose `Application.is_parc_default` (défaut d'instance Broadcast — couvre tous
  * les postes, même hors parc) ; pour un ordre `label` on projette une AFFECTATION
  * LOCALE par parc porteur (pivot `application_workstation_group`, via le chemin
  * canonique {@see AppProfileService::addApplicationsToWorkstationGroup()}). Un poste
  * qui ne recevait l'app QUE via l'ordre amont la CONSERVE après rupture.
  *
- * **Idempotence stricte (AC1/AC6)** : un signal sur une instance standalone (aucun
+ * **Idempotence stricte** : un signal sur une instance standalone (aucun
  * contrat actif) OU sur un contrat déjà `severed` est un **no-op total** — aucune
  * matérialisation, aucun audit, aucun event, aucune écriture.
  *
- * **NFR3 — standalone byte-identique** : sans contrat actif, `active()` → null,
+ * **Standalone byte-identique** : sans contrat actif, `active()` → null,
  * retour {@see ContractSeveranceResult::noop()} immédiat (aucune table contrat
  * lue/écrite hors de ce no-op).
  *
- * **NFR7 — Postgres-only** : aucun AD / LdapRecord / samba-tool dans ce chemin.
+ * **Postgres-only** : aucun AD / LdapRecord / samba-tool dans ce chemin.
  *
  * **Garde-fou (HORS scope)** : ce service NE touche JAMAIS `StateCompiler` /
  * `StateMaille` / le tier `Upstream`. La levée passe EXCLUSIVEMENT par
  * `active()` → null (déjà câblé partout).
  *
  * ⚠️ GARDE-FOU R3 : aucun mot « central ». Vocabulaire « amont » / `Upstream` /
- * `ControlHub*`. [Source: prd-contrat-manage-se5.md#R3]
+ * `ControlHub*`.
  */
 class ControlHubContractSeveranceService
 {
@@ -107,10 +107,10 @@ class ControlHubContractSeveranceService
         ?string $actorLabel = null,
         ?string $reason = null,
     ): ContractSeveranceResult {
-        // NFR3 / idempotence : aucun contrat actif (standalone OU déjà severed) ⇒
+        // Idempotence : aucun contrat actif (standalone OU déjà severed) ⇒
         // no-op TOTAL (aucune écriture, aucun audit, aucun event). `active()` est le
         // chokepoint unique (filtre link_state = active) — un contrat déjà severed
-        // n'est jamais retourné, donc un 2e signal est un no-op (AC1).
+        // N'est jamais retourné, donc un 2e signal est un no-op.
         $contract = ControlHubContract::active();
         if ($contract === null) {
             Log::info('ControlHubContractSeveranceService: no-op (aucun contrat amont actif)', [
@@ -121,16 +121,16 @@ class ControlHubContractSeveranceService
         }
 
         $result = DB::transaction(function () use ($contract, $origin, $actorLabel, $reason): ContractSeveranceResult {
-            // 1. CONSERVATION de l'état effectif COMPLET, déverrouillé (M1), AVANT de
+            // 1. CONSERVATION de l'état effectif COMPLET, déverrouillé, AVANT de
             //    poser `severed` : tant que `active()` voit encore le contrat, on FIGE
             //    LOCALEMENT (a) la valeur des capacités VERROUILLÉES via le vrai canal
-            //    `registry`, (b) l'affectation des apps ORDONNÉES amont. Idempotent
-            //    (un support local préexistant n'est jamais écrasé = AC3).
+            //    `registry`, (b) l'affectation des apps ORDONNÉES amont. Idempotent :
+            //    un support local préexistant n'est jamais écrasé.
             $valuesMaterialized = $this->materializeEffectiveValues($contract);
             $applicationsAssigned = $this->materializeApplicationAssignments($contract);
 
             // 2. Compteurs récap pour l'audit (lus AVANT la bascule, sémantique « ce qui
-            //    était imposé / conservé au moment de la rupture »). Correctif review #2 :
+            //    était imposé / conservé au moment de la rupture ») :
             //    `items_lifted` ne compte QUE les items réellement imposés (locked +
             //    permissive) — les `absent` n'imposent rien, ils sont exclus.
             $itemsLifted = $contract->items()
@@ -144,11 +144,11 @@ class ControlHubContractSeveranceService
                 ->count();
 
             // 3. Transition d'état : le lien passe à `severed` (la levée des verrous +
-            //    bornage catalogue tombe automatiquement via active() → null).
+            //  bornage catalogue tombe automatiquement via active() → null).
             $contract->link_state = ControlHubLinkState::Severed;
             $contract->save();
 
-            // 4. AUDIT NFR5 (même transaction = atomicité acte ↔ trace, AC6). Une seule
+            // 4. AUDIT (même transaction = atomicité acte ↔ trace). Une seule
             //    ligne par transition ; un re-signal ne réécrit RIEN (no-op en amont).
             ControlHubLinkAuditLog::log(
                 contractId: $contract->id,
@@ -188,17 +188,15 @@ class ControlHubContractSeveranceService
         return $result;
     }
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // M1 — Conservation de la valeur effective : canal `registry` réel
-    // ═══════════════════════════════════════════════════════════════════════
+    // Conservation de la valeur effective : canal `registry` réel
 
     /**
      * Matérialise dans le store local (`capability_assignments`) la valeur courante
      * effective des capacités VERROUILLÉES par l'amont via le VRAI canal `registry`,
      * pour que le refnum conserve EXACTEMENT ce qui tournait — désormais
-     * éditable/supprimable (FR7).
+     * éditable et supprimable localement.
      *
-     * **Capability-centric (M1)** :
+     * **Capability-centric** :
      *  - on lit les items `type='registry'`, `enforcement_state='locked'` (le
      *    `permissif` est un PLANCHER déjà battu par le défaut local → no-op ;
      *    l'`absent` n'impose rien) — cible `instance` ET `label` ;
@@ -207,12 +205,11 @@ class ControlHubContractSeveranceService
      *    capacité(s) locale(s) qui projettent cette clé ;
      *  - on RECOUVRE la valeur de capacité imposée en INVERSANT la map de projection
      *    de la clé ({@see CapabilityProjection::$spec}) à partir de la valeur
-     *    registre CONNUE portée par l'item (Henri : toujours recouvrable en
-     *    pratique) ;
+     *    registre CONNUE portée par l'item (en pratique toujours recouvrable) ;
      *  - on l'écrit en `capability_assignments` à la maille du parc cible (patron
-     *    `saveOverride()` 29.5).
+     *    `saveOverride()`).
      *
-     * **Cible (correctif review #7 — décision Henri 2026-06-30)** :
+     * **Cible** :
      *  - `target_type = instance` → on FIGE la valeur recouvrée dans le DÉFAUT
      *    D'INSTANCE de la capacité (`capabilities.default_value`, patron `saveDefault()`
      *    des parc-defaults). Une seule écriture, couvre UNIFORMÉMENT tous les postes
@@ -220,16 +217,16 @@ class ControlHubContractSeveranceService
      *    « c'était imposé partout ». PAS d'override par groupe (l'ancienne portée
      *    « tous les parcs actifs incl. salles physiques » était over-wide).
      *  - `target_type = label` → chaque `WorkstationGroup` portant ce
-     *    `controlhub_label` (rattachement par NOM, iso 30.2/30.4) reçoit un override
-     *    `capability_assignments` (patron `saveOverride()` 29.5). Inchangé.
+     *  `controlhub_label` (rattachement par NOM) reçoit un override
+     *  `capability_assignments` (patron `saveOverride()`). Inchangé.
      *
-     * **Idempotent (AC3/AC4)** :
+     * **Idempotent** :
      *  - `instance` : poser le défaut est idempotent — si `default_value` vaut déjà la
      *    valeur imposée, no-op (sinon on l'écrit ; figer = poser ce défaut, même si un
      *    défaut différent était posé : sous le verrou la valeur effective d'instance
      *    ÉTAIT la valeur imposée partout). Les overrides locaux par parc PLUS
      *    SPÉCIFIQUES (`capability_assignments`) restent intacts et continuent de primer
-     *    sur le défaut (`effective = assignment.value ?? default_value`) — c'est AC3.
+     * sur le défaut (`effective = assignment.value ?? default_value`) — c'est.
      *  - `label` : une assignation locale préexistante (cap × parc) est un SUPPORT
      *    LOCAL conservé tel quel — JAMAIS écrasée. On n'écrit que pour les couples
      *    sans ligne locale.
@@ -277,7 +274,7 @@ class ControlHubContractSeveranceService
                 continue;
             }
 
-            // Correctif #7 : la portée diverge selon le type de cible. `instance` →
+            // La portée diverge selon le type de cible. `instance` →
             // défaut d'instance (une écriture par capacité) ; `label` → override par
             // parc porteur (lus une seule fois, puis réutilisés pour chaque match).
             $isInstance = $item->target_type === ControlHubContractTarget::Instance;
@@ -294,8 +291,8 @@ class ControlHubContractSeveranceService
                 $recovered = $this->recoverCapabilityValue($match['specKey'], (string) $item->value);
 
                 if ($recovered === null) {
-                    // Filet (Henri : la valeur amont correspond toujours à un état de
-                    // capacité connu → jamais censé arriver). Clé à valeur littérale
+                    // Filet : la valeur amont correspond toujours à un état de
+                    // capacité connu, ce cas n'est donc pas censé arriver. Clé à valeur littérale
                     // (non ambiguë) : la même valeur est de toute façon ré-émise par
                     // le défaut local, rien à conserver.
                     Log::warning('ControlHubContractSeveranceService: valeur de capacité non recouvrable depuis la valeur registre amont (matérialisation ignorée — filet de sécurité)', [
@@ -308,9 +305,9 @@ class ControlHubContractSeveranceService
                 }
 
                 if ($isInstance) {
-                    // Décision Henri : figer dans le DÉFAUT D'INSTANCE (couvre tous les
+                    // On fige dans le DÉFAUT D'INSTANCE (couvre tous les
                     // postes, même hors parc). Les overrides par parc plus spécifiques
-                    // priment toujours (AC3).
+                    // priment toujours.
                     $materialized += $this->materializeInstanceDefault($capability, $recovered);
 
                     continue;
@@ -327,9 +324,9 @@ class ControlHubContractSeveranceService
 
     /**
      * Écrit une assignation locale de capacité pour un parc, SANS jamais écraser un
-     * support local préexistant (AC3).
+     * support local préexistant.
      *
-     * Correctif review #1 (TOCTOU) : `insertOrIgnore()` (robuste vs la contrainte
+     * Garde TOCTOU : `insertOrIgnore()` (robuste vs la contrainte
      * UNIQUE `capability_assignment_unique` en PG ; invisible en SQLite). Le compteur
      * est basé sur le nb de lignes RÉELLEMENT insérées.
      *
@@ -344,7 +341,7 @@ class ControlHubContractSeveranceService
             ->exists();
 
         if ($hasLocalSupport) {
-            // Support local préexistant (override refnum) : conservé tel quel (AC3).
+            // Support local préexistant (override refnum) : conservé tel quel.
             return 0;
         }
 
@@ -361,14 +358,14 @@ class ControlHubContractSeveranceService
     /**
      * Fige la valeur recouvrée dans le DÉFAUT D'INSTANCE de la capacité
      * (`capabilities.default_value`, patron `saveDefault()` des parc-defaults) pour un
-     * verrou `target_type = instance` (correctif review #7, décision Henri 2026-06-30).
+     * verrou `target_type = instance`.
      *
      * Couvre UNIFORMÉMENT tous les postes (même hors de tout parc), éditable sur la
      * page des défauts. Idempotent : si le défaut vaut déjà la valeur imposée → no-op
      * (0). Sinon on l'écrit (1) — figer = poser ce défaut (sous le verrou la valeur
      * effective d'instance ÉTAIT la valeur imposée partout). Les overrides locaux par
      * parc plus spécifiques (`capability_assignments`) restent intacts et continuent de
-     * primer (`effective = assignment.value ?? default_value`) — AC3.
+     * primer (`effective = assignment.value ?? default_value`).
      *
      * @return int 1 si le défaut a été (re)posé, 0 si déjà égal (no-op idempotent)
      */
@@ -442,7 +439,7 @@ class ControlHubContractSeveranceService
         // Map valeur-capacité → donnée (objet associatif, NON liste) : on l'inverse.
         if (is_array($raw) && ! array_is_list($raw)) {
             foreach ($raw as $capabilityValue => $mappedRegistryValue) {
-                // Correctif review #8 : garde `is_scalar` avant le cast — une valeur de
+                // Garde `is_scalar` avant le cast — une valeur de
                 // map non-scalaire (array/object dans une spec malformée) provoquerait
                 // un TypeError fatal en PHP 8 strict. On ignore l'entrée et on continue.
                 if (! is_scalar($mappedRegistryValue)) {
@@ -463,39 +460,37 @@ class ControlHubContractSeveranceService
         return null;
     }
 
-    // ═══════════════════════════════════════════════════════════════════════
     // Apps — matérialisation de l'AFFECTATION locale (état identique conservé)
-    // ═══════════════════════════════════════════════════════════════════════
 
     /**
-     * Projette chaque app ORDONNÉE par l'amont (item `type='applications'`, 31.2 —
+     * Projette chaque app ORDONNÉE par l'amont (item `type='applications'`,
      * `locked` ET `permissive` signifient « app présente », aggregate) en AFFECTATION
      * LOCALE par parc cible, pour qu'un poste qui ne la recevait QUE via l'ordre amont
      * la CONSERVE après rupture (l'ordre amont tombe via `active()` → null).
      *
-     * Réutilise le chemin d'affectation CANONIQUE 15.4
+     * Réutilise le chemin d'affectation CANONIQUE
      * ({@see AppProfileService::addApplicationsToWorkstationGroup()}, pivot
      * `application_workstation_group` lu par
      * {@see \App\Wpkg\Deployment\Services\WorkstationPackagesResolver}) :
      *  - idempotent (`syncWithoutDetaching` — pas de doublon si déjà affectée) ;
      *  - invalide le cache resolver par-hôte (`WorkstationGroupApplicationsChanged`) ;
-     *  - ses gardes 29.1 (délégation) / 31.1 (bornage catalogue) sont des no-op hors
+     *  - ses gardes de délégation et de bornage catalogue sont des no-op hors
      *    session web authentifiée (`Auth::check()` false en commande / endpoint
      *    controlHub) — l'action est SYSTÈME, pas refnum.
      *
-     * **Portée (correctif review #7 — décision Henri 2026-06-30)** : iso capacités, on
-     * utilise le mécanisme « défaut d'instance » quand il existe.
-     *  - `instance` → on pose `Application.is_parc_default = true` (couche Broadcast
-     *    27.17, analogue du défaut de capacité : l'app est appliquée par défaut à TOUS
+     * **Portée** : iso capacités, on utilise le mécanisme « défaut d'instance »
+     * quand il existe.
+     *  - `instance` → on pose `Application.is_parc_default = true` (couche Broadcast,
+     *    analogue du défaut de capacité : l'app est appliquée par défaut à TOUS
      *    les postes via {@see ApplicationsStateProvider}, même hors parc). UNE écriture,
-     *    PAS d'affectation par groupe → on n'itère plus les salles physiques (ce qui
-     *    gonflait le compteur et étalait des affectations over-wide, finding #7).
+     *    PAS d'affectation par groupe → on n'itère plus les salles physiques, ce qui
+     *    gonflait le compteur et étalait des affectations over-wide.
      *  - `label` → affectation locale par parc portant le `controlhub_label` (pivot
      *    `application_workstation_group`). Inchangé.
      *
      * Ne touche PAS le contrat agent figé (payload `applications {app_id,name}`
      * inchangé) ni la ligne `Application` au-delà du flag `is_parc_default` (déjà
-     * conservée, AC3).
+     * conservée).
      *
      * @return int nombre d'affectations matérialisées (défauts d'instance posés +
      *             affectations app↔parc NOUVELLEMENT créées, sans double comptage)
@@ -518,14 +513,14 @@ class ControlHubContractSeveranceService
         $assigned = 0;
 
         foreach ($items as $item) {
-            // `key == applications.app_id` (31.2, pont au niveau ENSEMBLE — jamais un
+            // `key == applications.app_id` (pont au niveau ENSEMBLE — jamais un
             // id de pivot/scope).
             $appId = (string) $item->key;
             $application = Application::query()->where('app_id', $appId)->first();
 
             if ($application === null) {
                 // L'app ordonnée n'a pas (encore) de ligne Application locale : rien à
-                // affecter. La matérialisation de la LIGNE relève de 31.3 /
+                // affecter. La matérialisation de la LIGNE relève /
                 // `controlhub:provision-ordered-apps` (la rupture ne crée pas
                 // l'inventaire) — filet nominatif.
                 Log::warning("ControlHubContractSeveranceService: ordre d'install amont sans ligne Application locale (affectation non matérialisée)", [
@@ -536,7 +531,7 @@ class ControlHubContractSeveranceService
             }
 
             if ($item->target_type === ControlHubContractTarget::Instance) {
-                // Correctif #7 : défaut d'instance app (Broadcast 27.17), pas une
+                // Défaut d'instance app (Broadcast), pas une
                 // affectation par groupe — couvre tous les postes (même hors parc).
                 $assigned += $this->materializeInstanceAppDefault($application);
 
@@ -557,8 +552,8 @@ class ControlHubContractSeveranceService
 
     /**
      * Fige une app ORDONNÉE amont `target_type = instance` en DÉFAUT D'INSTANCE
-     * (`Application.is_parc_default = true`, couche Broadcast 27.17) pour qu'elle reste
-     * appliquée par défaut à TOUS les postes après rupture (correctif review #7).
+     * (`Application.is_parc_default = true`, couche Broadcast) pour qu'elle reste
+     * appliquée par défaut à TOUS les postes après rupture.
      *
      * Idempotent : si l'app est déjà `is_parc_default` → no-op (0). N'altère AUCUN
      * autre champ de la ligne `Application` (status, recette, `managed_by_control_hub`).
@@ -577,15 +572,13 @@ class ControlHubContractSeveranceService
         return 1;
     }
 
-    // ═══════════════════════════════════════════════════════════════════════
     // Ciblage commun (capacités + apps)
-    // ═══════════════════════════════════════════════════════════════════════
 
     /**
      * Ids des `WorkstationGroup` PORTEURS d'un item ciblé par LABEL (actifs, non
      * archivés, `controlhub_label` = label de l'item).
      *
-     * **Correctif review #7** : ne traite QUE le cas `label`. Le cas `instance` est
+     * Ne traite QUE le cas `label`. Le cas `instance` est
      * désormais géré en amont par les appelants via le DÉFAUT D'INSTANCE
      * (`capabilities.default_value` / `Application.is_parc_default`) — il ne passe plus
      * jamais par un balayage de tous les parcs actifs (qui incluait les salles
@@ -602,7 +595,7 @@ class ControlHubContractSeveranceService
 
         $label = (string) $item->target_label;
         if ($label === '') {
-            // Garde-fou (iso 30.4) : un label vide ne cible aucun parc identifiable.
+            // Garde-fou : un label vide ne cible aucun parc identifiable.
             return [];
         }
 

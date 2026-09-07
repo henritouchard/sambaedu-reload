@@ -31,10 +31,6 @@ $test_machine = $all_machines[0];
 $machine_nom = $test_machine['cn'];
 echo "✓ Machine de test trouvée: $machine_nom\n\n";
 
-// ============================================================================
-// PHASE 1: Test Legacy - Retrait d'une machine d'un parc
-// ============================================================================
-
 echo "┌─────────────────────────────────────────────────────────────────┐\n";
 echo "│ PHASE 1: Test Legacy - Retrait d'une machine d'un parc         │\n";
 echo "└─────────────────────────────────────────────────────────────────┘\n\n";
@@ -142,10 +138,6 @@ if ($legacy_member_not_in_ad) {
 }
 
 echo "\n";
-
-// ============================================================================
-// PHASE 2: Test Laravel - Retrait d'une machine d'un parc
-// ============================================================================
 
 echo "┌─────────────────────────────────────────────────────────────────┐\n";
 echo "│ PHASE 2: Test Laravel - Retrait d'une machine d'un parc        │\n";
@@ -261,7 +253,6 @@ try {
             }
         }
         
-        // Nettoyage Laravel
         echo "\n6. Nettoyage parc Laravel...\n";
         $adSyncService->deleteWorkstationGroup($workstationGroup);
         $workstationGroup->delete();
@@ -275,10 +266,6 @@ $laravel_success = $laravel_machine_removed && $laravel_member_absent_ad;
 
 echo "\n";
 
-// ============================================================================
-// NETTOYAGE
-// ============================================================================
-
 echo "┌─────────────────────────────────────────────────────────────────┐\n";
 echo "│ NETTOYAGE                                                       │\n";
 echo "└─────────────────────────────────────────────────────────────────┘\n\n";
@@ -287,10 +274,6 @@ echo "└───────────────────────�
 echo "Suppression du parc legacy...\n";
 delete_parc($config, $legacy_parc_nom);
 echo "✓ Nettoyage terminé\n\n";
-
-// ============================================================================
-// RÉSUMÉ FINAL
-// ============================================================================
 
 echo "╔════════════════════════════════════════════════════════════════╗\n";
 echo "║                      RÉSUMÉ DE LA COMPARAISON                  ║\n";

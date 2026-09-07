@@ -18,22 +18,22 @@ use App\Services\Agent\Providers\PrivilegeAuthoringGuard;
 /**
  * Rend les garde-fous d'authoring des mécanismes HORS-REGISTRE RÉELS au runtime
  * serveur : sans cet observer, les guards n'auraient AUCUN appelant hors tests,
- * et les décisions Henri (Q2 fs_acl, Q3 firewall) resteraient inopérantes en
- * production (leçon review 36.1 #2b — pas de guard « testé mais inopérant »).
+ * et leurs règles resteraient inopérantes en production : un guard « testé mais
+ * inopérant » ne garde rien.
  *
- * **Dispatch PAR MÉCANISME (Story 36.2).** L'observer route la projection vers
+ * **Dispatch PAR MÉCANISME.** L'observer route la projection vers
  * le guard de SON mécanisme (`fs_acl` → {@see FsAclAuthoringGuard} ; `firewall` →
  * {@see FirewallAuthoringGuard} ; `privilege` → {@see PrivilegeAuthoringGuard},
- * Story 35.6 — SeDeny*-only : un droit *grant* verrouillerait la machine) ; les
+ * seDeny*-only : un droit *grant* verrouillerait la machine) ; les
  * autres mécanismes (`registry`, `registry_list`, `localgroup`…) ne sont PAS
- * concernés et retournent immédiatement. Les comportements `fs_acl` (36.1) et
- * `firewall` (36.2) sont INCHANGÉS — l'extension 35.6 réutilise le patron
+ * concernés et retournent immédiatement. Les comportements `fs_acl` et
+ * `firewall` sont INCHANGÉS — l'extension réutilise le patron
  * existant (décision de conception : ÉTENDRE l'observer, pas de jumeau — un
  * seul point de dispatch par modèle, zéro double enregistrement).
  *
  * **Événement `saving`** (couvre create ET update) : le spec est validé AVANT
  * écriture ; une violation lève l'exception du mécanisme (l'INSERT/UPDATE est
- * annulé). Protège aussi le futur formulaire 36.4 (toute création de projection
+ * annulé). Protège aussi le futur formulaire (toute création de projection
  * par Eloquent passe par ici).
  *
  * **Les seeds passent** : ils sont propres (validés) ET écrits via

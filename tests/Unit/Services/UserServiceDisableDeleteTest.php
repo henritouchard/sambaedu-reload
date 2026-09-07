@@ -64,10 +64,6 @@ class UserServiceDisableDeleteTest extends TestCase
         parent::tearDown();
     }
 
-    // =========================================================================
-    // Tests disableUser() — Permissions
-    // =========================================================================
-
     #[Test]
     public function disableUser_rejects_when_no_permission(): void
     {
@@ -76,10 +72,6 @@ class UserServiceDisableDeleteTest extends TestCase
         $this->assertFalse($result['success']);
         $this->assertStringContainsString('droits', $result['message']);
     }
-
-    // =========================================================================
-    // Tests disableUser() — Comptes système (D-3)
-    // =========================================================================
 
     #[Test]
     public function disableUser_rejects_system_account(): void
@@ -102,10 +94,6 @@ class UserServiceDisableDeleteTest extends TestCase
         $this->assertFalse($result['success']);
         $this->assertStringContainsString('système', $result['message']);
     }
-
-    // =========================================================================
-    // Tests disableUser() — Fonctionnel
-    // =========================================================================
 
     #[Test]
     public function disableUser_sets_uac_to_514_and_returns_success(): void
@@ -180,10 +168,6 @@ class UserServiceDisableDeleteTest extends TestCase
         $this->addToAssertionCount(1);
     }
 
-    // =========================================================================
-    // Tests enableUser() — Permissions
-    // =========================================================================
-
     #[Test]
     public function enableUser_rejects_when_no_permission(): void
     {
@@ -192,10 +176,6 @@ class UserServiceDisableDeleteTest extends TestCase
         $this->assertFalse($result['success']);
         $this->assertStringContainsString('droits', $result['message']);
     }
-
-    // =========================================================================
-    // Tests enableUser() — Comptes système (D-3)
-    // =========================================================================
 
     #[Test]
     public function enableUser_rejects_system_account(): void
@@ -207,10 +187,6 @@ class UserServiceDisableDeleteTest extends TestCase
         $this->assertFalse($result['success']);
         $this->assertStringContainsString('système', $result['message']);
     }
-
-    // =========================================================================
-    // Tests enableUser() — Fonctionnel
-    // =========================================================================
 
     #[Test]
     public function enableUser_sets_uac_to_512_and_returns_success(): void
@@ -284,10 +260,6 @@ class UserServiceDisableDeleteTest extends TestCase
         $this->addToAssertionCount(1);
     }
 
-    // =========================================================================
-    // Tests deleteUserPermanently() — Permissions
-    // =========================================================================
-
     #[Test]
     public function deleteUserPermanently_rejects_when_no_permission(): void
     {
@@ -296,10 +268,6 @@ class UserServiceDisableDeleteTest extends TestCase
         $this->assertFalse($result['success']);
         $this->assertStringContainsString('droits', $result['message']);
     }
-
-    // =========================================================================
-    // Tests deleteUserPermanently() — Comptes système (D-3)
-    // =========================================================================
 
     #[Test]
     public function deleteUserPermanently_rejects_system_account(): void
@@ -311,10 +279,6 @@ class UserServiceDisableDeleteTest extends TestCase
         $this->assertFalse($result['success']);
         $this->assertStringContainsString('système', $result['message']);
     }
-
-    // =========================================================================
-    // Tests deleteUserPermanently() — Suppression en deux temps
-    // =========================================================================
 
     #[Test]
     public function deleteUserPermanently_rejects_active_account(): void

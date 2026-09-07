@@ -83,7 +83,7 @@ class ChangePasswordController extends Controller
             $authResult = $this->authService->authenticate($currentUser, $request->current_password, $request->ip());
 
             if (!$authResult['success'] && ($authResult['code'] ?? '') !== AuthenticationErrors::ERROR_AUTHENTICATION_PASSWORD_CHANGE_REQUIRED) {
-                // Story 49.2 (correction de review) — `authenticate()` peut
+                // `authenticate` peut
                 // refuser pour une raison qui n'a RIEN à voir avec le mot de
                 // passe : depuis la restauration de `blocage_eleves` (ce garde
                 // était un stub `return false`, donc muet), un élève d'un

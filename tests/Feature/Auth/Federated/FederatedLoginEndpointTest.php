@@ -27,9 +27,9 @@ use Tests\Concerns\IssuesFederatedJwt;
 use Tests\TestCase;
 
 /**
- * Story 20.1 — Feature : endpoint de login fédéré + réconciliation guard (D-5).
+ * Feature : endpoint de login fédéré + réconciliation guard (D-5).
  *
- * Couvre AC1, AC11-15. Pour rester déterministe sur le host (pas de LDAP/PG),
+ * Couvre-15. Pour rester déterministe sur le host (pas de LDAP/PG),
  * le test exerce directement le controller d'entrée et le guard de session,
  * avec une vraie DB SQLite et des mocks Mockery côté LDAP.
  */
@@ -42,7 +42,7 @@ class FederatedLoginEndpointTest extends TestCase
         parent::setUp();
         $this->configureFederatedAuth();
         $this->ensureFederatedTables();
-        // Story 20.3 — D-1 : la résolution est un lookup direct dans les rôles
+        // D-1 : la résolution est un lookup direct dans les rôles
         // EXISTANTS. Les tests seedent en base le rôle attendu (auparavant
         // déclaré dans `config('federated_auth.role_map')`, table supprimée).
         Role::firstOrCreate(['name' => SambaRole::Technicien->value, 'guard_name' => 'web']);
@@ -99,7 +99,7 @@ class FederatedLoginEndpointTest extends TestCase
     #[Test]
     public function role_absent_from_db_returns_403_and_creates_no_role(): void
     {
-        // Story 20.3 — AC3 / D-2 end-to-end : le rôle asséré n'EXISTE PAS dans
+        // D-2 end-to-end : le rôle asséré n'EXISTE PAS dans
         // l'instance → 403, aucune session, et AUCUN rôle créé à la volée
         // (Role::count() inchangé). Aucune table de correspondance n'est
         // consultée : la résolution est un lookup direct dans `roles`.
@@ -124,7 +124,7 @@ class FederatedLoginEndpointTest extends TestCase
     #[Test]
     public function second_existing_role_applies_correct_spatie_role(): void
     {
-        // Story 20.3 — AC1 : un 2e rôle EXISTANT (seedé en base, pas en config)
+        // Un 2e rôle EXISTANT (seedé en base, pas en config)
         // applique le rôle Spatie correspondant.
         Role::firstOrCreate(['name' => SambaRole::ReferentNumerique->value, 'guard_name' => 'web']);
 
@@ -140,7 +140,7 @@ class FederatedLoginEndpointTest extends TestCase
     #[Test]
     public function asserted_role_is_case_insensitive(): void
     {
-        // Story 20.3 — AC2 : normalisation casse/espaces. Le rôle `technicien`
+        // Normalisation casse/espaces. Le rôle `technicien`
         // est seedé dans le setUp ; l'IdP asserte ` TECHNICIEN `.
         $emitted = $this->issueFederatedJwt(['sub' => 'ext-case', 'role' => ' TECHNICIEN ']);
         $response = $this->makeController()->callback($this->requestWithToken($emitted['token']));
@@ -154,7 +154,7 @@ class FederatedLoginEndpointTest extends TestCase
     #[Test]
     public function super_admin_is_applied_when_it_exists(): void
     {
-        // Story 20.3 — AC5 / D-5 : super-admin n'est pas bloqué. S'il existe en
+        // D-5 : super-admin n'est pas bloqué. S'il existe en
         // base, il est demandable comme tout autre rôle existant.
         Role::firstOrCreate(['name' => SambaRole::SuperAdmin->value, 'guard_name' => 'web']);
 
@@ -210,7 +210,7 @@ class FederatedLoginEndpointTest extends TestCase
     #[Test]
     public function deactivated_identity_is_refused_on_fresh_login(): void
     {
-        // Q1 / review #1 : un admin a désactivé l'identité externe. Un nouveau
+        // Un admin a désactivé l'identité externe. Un nouveau
         // JWT valide ne doit PAS la réarmer silencieusement → 403, pas de session.
         $first = $this->issueFederatedJwt(['sub' => 'ext-revoked', 'jti' => 'jti-rev-1']);
         $this->makeController()->callback($this->requestWithToken($first['token']));
@@ -238,7 +238,7 @@ class FederatedLoginEndpointTest extends TestCase
     #[Test]
     public function soft_deleted_identity_is_refused_on_fresh_login(): void
     {
-        // Variante Q1 : identité soft-deletée → révocation effective, 403.
+        // Variante de la désactivation : identité soft-deletée → révocation effective, 403.
         $first = $this->issueFederatedJwt(['sub' => 'ext-trashed', 'jti' => 'jti-tr-1']);
         $this->makeController()->callback($this->requestWithToken($first['token']));
         Auth::logout();
@@ -261,7 +261,7 @@ class FederatedLoginEndpointTest extends TestCase
     #[Test]
     public function anonymized_identity_is_refused_on_reconnection(): void
     {
-        // Story 20.2 — AC11 / D-4 : anti-résurrection end-to-end. Un 1er login
+        // D-4 : anti-résurrection end-to-end. Un 1er login
         // crée l'identité ; on l'anonymise via le service ; une reconnexion
         // (nouveau jti) doit être refusée 403, sans réactivation ni recréation.
         $first = $this->issueFederatedJwt(['sub' => 'ext-anon-e2e', 'jti' => 'jti-anon-1']);
@@ -357,7 +357,7 @@ class FederatedLoginEndpointTest extends TestCase
     #[Test]
     public function native_user_flow_is_unchanged_for_non_federated_sessions(): void
     {
-        // Régression AC15 (Story 20.1), RECADRÉE par la Story 49.2.
+        // Régression, recadrée.
         //
         // Ce que ce test verrouille n'a PAS changé : une session NON fédérée
         // suit son flux propre, et ce flux VALIDE l'existence de l'utilisateur
@@ -365,7 +365,7 @@ class FederatedLoginEndpointTest extends TestCase
         //
         // Ce qui a changé, c'est la SOURCE de cette validation : l'assertion
         // « `UserRepository::findByLogin` est appelé » n'a plus d'objet — le
-        // guard n'a plus de `UserRepository` du tout (FR-R4, existence lue en
+        // guard n'a plus de `UserRepository` du tout (existence lue en
         // Postgres). L'assertion devient donc : le flux natif passe SI ET
         // SEULEMENT SI la ligne `users` existe.
         User::create([
@@ -429,7 +429,7 @@ class FederatedLoginEndpointTest extends TestCase
     /**
      * Guard configuré pour les sessions fédérées.
      *
-     * Story 49.2 — le garde-fou « le LDAP ne doit JAMAIS être interrogé pour un
+     * Le garde-fou « le LDAP ne doit JAMAIS être interrogé pour un
      * externe » était porté par un `shouldReceive('findByLogin')->never()` sur
      * un `UserRepository` mocké. Il est devenu STRUCTUREL : le guard n'a plus
      * de `UserRepository` en constructeur, il ne peut donc plus interroger

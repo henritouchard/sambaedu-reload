@@ -15,18 +15,18 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Stories 29.2 + 29.4 — Résolution du statut amont ({@see UpstreamLockResolver}).
+ * Résolution du statut amont ({@see UpstreamLockResolver}).
  *
- * 29.2 — locked → verrou, permissive/absent/severed/standalone → libre,
- * court-circuit NFR3 (≤ 1 requête, jamais `items`), clé non matchante → libre,
- * label différé Epic 30 → libre, primitive générique `isLocked`, identité de clé
+ * locked → verrou, permissive/absent/severed/standalone → libre,
+ * court-circuit (≤ 1 requête, jamais `items`), clé non matchante → libre,
+ * label différé → libre, primitive générique `isLocked`, identité de clé
  * alignée à l'octet sur le provider registry.
  *
- * 29.4 — `isCapabilityPermissive` (miroir de `isCapabilityLocked`) : permissive →
+ * `isCapabilityPermissive` (miroir de `isCapabilityLocked`) : permissive →
  * true / locked → false (pas de confusion), absent/severed/standalone → false,
- * clé non matchante → false, `label` → false (Epic 30). Bucketing locked+permissive
+ * clé non matchante → false, `label` → false. Bucketing locked+permissive
  * en ≤ 1 requête `items` (compteur). `capabilityUpstreamStatus` : précédence
- * verrouillé > permissif > local (AC #4).
+ * verrouillé > permissif > local.
  *
  * Tests HÔTE (php8.4 + pdo_sqlite), `RefreshDatabase`. SQLite n'applique pas
  * varchar/enum PG → on teste des DÉCISIONS (booléens/chaînes), pas des bornes.
@@ -57,7 +57,7 @@ class UpstreamLockResolverTest extends TestCase
      *
      * ⚠️ Crée un NOUVEAU `ControlHubContract` actif par appel (via la factory).
      * `UpstreamLockResolver` lit `where(active)->first()` (invariant ≤ 1 contrat
-     * actif garanti en réception 28.2) → n'appeler qu'UNE fois par test, sinon seul
+     * actif garanti en réception) → n'appeler qu'UNE fois par test, sinon seul
      * le 1ᵉʳ contrat est vu. Pour verrouiller plusieurs clés, utiliser
      * {@see lockItemsOnSameContract()}. [P4 review]
      */
@@ -251,7 +251,7 @@ class UpstreamLockResolverTest extends TestCase
         self::assertSame([], (new UpstreamLockResolver())->lockedRegistryKeys());
     }
 
-    // ── Tests 29.4 — isCapabilityPermissive + bucketing + capabilityUpstreamStatus ──
+    // Tests — isCapabilityPermissive + bucketing + capabilityUpstreamStatus
 
     /** Item amont `registry` `permissive`/`instance` ciblant cette clé. */
     private function permissiveItem(string $hive, string $path, string $name): ControlHubContractItem
@@ -350,7 +350,7 @@ class UpstreamLockResolverTest extends TestCase
     public function locked_and_permissive_items_are_bucketed_in_single_items_query(): void
     {
         // Un contrat avec un item `locked` (cap A) ET un item `permissive` (cap B).
-        // Les deux doivent être bucketisés en ≤ 1 requête `items` (AC #5).
+        // Les deux doivent être bucketisés en ≤ 1 requête `items`.
         $capA = $this->makeCapabilityWithKey('HKCU', 'Software\\BktA', 'KeyA');
         $capB = $this->makeCapabilityWithKey('HKCU', 'Software\\BktB', 'KeyB');
 
@@ -420,7 +420,7 @@ class UpstreamLockResolverTest extends TestCase
     {
         // Une capacité avec DEUX clés de projection distinctes : l'une est verrouillée
         // amont, l'autre est permissive. La précédence capabilityUpstreamStatus doit
-        // retourner 'locked' (AC #4 : verrouillé > permissif > local).
+        // retourner 'locked' (verrouillé > permissif > local).
         // Les deux items ont des clés différentes → pas de violation de contrainte unique.
         $cap = Capability::factory()->create();
         CapabilityProjection::factory()->for($cap)->keys([
@@ -444,7 +444,7 @@ class UpstreamLockResolverTest extends TestCase
         );
     }
 
-    // ── Canal `capabilities` : le verrou suit le label ───────────────────────
+    // Canal `capabilities` : le verrou suit le label
 
     #[Test]
     public function capabilities_item_locks_only_the_parcs_carrying_its_label(): void

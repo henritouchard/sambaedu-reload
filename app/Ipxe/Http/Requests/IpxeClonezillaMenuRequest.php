@@ -7,13 +7,11 @@ namespace App\Ipxe\Http\Requests;
 use Illuminate\Foundation\Http\FormRequest;
 
 /**
- * Story 3.7 — AC3.2.
- *
  * Validation permissive du body de `GET|POST /ipxe/clonezilla-menu`. Règles iso
- * `IpxeMaintenanceRequest` (3.2).
+ * `IpxeMaintenanceRequest`.
  *
  * `authorize()` retourne `true` — l'auth est portée par le middleware
- * `auth.v1.lan-only` (D5).
+ * `auth.v1.lan-only`.
  */
 class IpxeClonezillaMenuRequest extends FormRequest
 {
@@ -27,10 +25,8 @@ class IpxeClonezillaMenuRequest extends FormRequest
      */
     public function rules(): array
     {
-        // Post-review #4 — parité stricte iso `IpxeMaintenanceRequest`. Le
-        // service `IpxeService::handleClonezillaMenu()` LIT `product`
-        // (ligne 302) — il faut donc le valider. `session_ipxe` était orphelin
-        // (jamais lu), retiré.
+        // `IpxeService::handleClonezillaMenu()` LIT `product`, d'où sa
+        // validation ici. Mêmes règles que `IpxeMaintenanceRequest`.
         return [
             'mac' => ['nullable', 'string', 'max:64'],
             'uuid' => ['nullable', 'string', 'max:64'],

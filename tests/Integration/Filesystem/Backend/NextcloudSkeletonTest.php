@@ -16,11 +16,11 @@ use PHPUnit\Framework\TestCase;
 use Tests\Integration\Filesystem\Backend\Support\ThrowawayNextcloudBackend;
 
 /**
- * Story 60.3 — LE SQUELETTE JETABLE, contre une instance RÉELLE.
+ * LE SQUELETTE JETABLE, contre une instance RÉELLE.
  *
  * **Ce que ce test prouve, et lui seul** : que les cinq signatures du contrat sont
  * IMPLÉMENTABLES par une classe PHP parlant à un plan de fichiers étranger. Le
- * sondage d'ouverture d'epic avait validé les concepts en lignes de commande ; le
+ * sondage d'ouverture avait validé les concepts en lignes de commande ; le
  * backend d'aperçu, n'exécutant rien, ne prouve rien ; le double propagateur
  * transcrit des mesures sans jamais toucher le réseau. Il manquait ce maillon.
  *
@@ -123,14 +123,12 @@ class NextcloudSkeletonTest extends TestCase
         $plan = $this->plan();
         $backend = $this->backend;
 
-        // --- provision : un statut PAR NŒUD, racine comprise -----------------
         $report = $backend->provision($plan);
 
         $this->assertSame(2, $report->count());
         $this->assertNotNull($report->for(PlanNode::ROOT_PATH));
         $this->assertSame(FileBackendOutcome::Applique, $report->for(PlanNode::ROOT_PATH)->outcome);
 
-        // --- LA fuite : le dossier des enseignants n'est PAS refermable -------
         $profs = $report->for('_profs');
         $this->assertSame(
             FileBackendOutcome::NonExprimable,
@@ -140,7 +138,6 @@ class NextcloudSkeletonTest extends TestCase
         $this->assertTrue($profs->outcome->isModelLimit());
         $this->assertStringContainsString('classe', (string) $profs->detail);
 
-        // --- idempotence : un rejeu ne casse rien et ne ment pas -------------
         $replay = $backend->provision($plan);
         $this->assertSame(FileBackendOutcome::Conforme, $replay->for(PlanNode::ROOT_PATH)->outcome);
         $this->assertSame(FileBackendOutcome::NonExprimable, $replay->for('_profs')->outcome);
@@ -150,7 +147,6 @@ class NextcloudSkeletonTest extends TestCase
             'aucun code de transport ne remonte au-dessus de la ligne de contrat',
         );
 
-        // --- inspect : balayage, et vocabulaire de PLAN ----------------------
         $inspection = $backend->inspect($plan);
 
         $this->assertSame(2, $inspection->count());
@@ -169,7 +165,6 @@ class NextcloudSkeletonTest extends TestCase
         );
         $this->assertNotEmpty($leaked, 'la relecture doit rendre l\'octroi que le plan a clos ici');
 
-        // --- quota : décliner sans échouer, et dire POURQUOI -----------------
         $quota = $backend->quota($plan);
 
         $this->assertSame(['_profs'], array_map(static fn ($e): string => $e->path, $quota->entries));
@@ -180,7 +175,6 @@ class NextcloudSkeletonTest extends TestCase
         // personne, pas du dossier.
         $this->assertNotNull($backend->userQuota('spike603eleve'));
 
-        // --- deprovision : révoquer sans détruire ----------------------------
         $removal = $backend->deprovision($plan);
         $this->assertSame(2, $removal->count());
         $this->assertCount(0, $removal->failures());

@@ -24,7 +24,7 @@ func TestLoggerWritesStructuredLines(t *testing.T) {
 	if len(lines) != 2 {
 		t.Fatalf("2 lignes attendues, got %d : %q", len(lines), raw)
 	}
-	// Format [ISO 8601] [LEVEL] message — iso-24.2.
+	// Format [ISO 8601] [LEVEL] message.
 	if lines[0] != "[2026-06-12T10:30:00+02:00] [INFO] démarrage ok" {
 		t.Errorf("ligne 1 : %q", lines[0])
 	}

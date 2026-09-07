@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Filesystem\Backend\Nextcloud;
 
 /**
- * Story 61.3 — L'ÉTAT DE PERMISSIONS AVANCÉES RELU SUR UN CHEMIN.
+ * L'ÉTAT DE PERMISSIONS AVANCÉES RELU SUR UN CHEMIN.
  *
  * **Trois choses distinctes, et les confondre serait la fuite.**
  *

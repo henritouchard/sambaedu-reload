@@ -16,8 +16,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 24.1 — Ingestion des rapports de conformité agent (FR8) + stockage
- * D3 (FR9). Le SEUL écrivain des tables `agent_resource_states` /
+ * Ingestion des rapports de conformité agent et stockage de leur état
+ * courant. Le SEUL écrivain des tables `agent_resource_states` /
  * `agent_report_events` / `agent_report_history`.
  *
  * Reçoit un rapport DÉJÀ validé ({@see \App\Http\Requests\Api\V1\Agent\ReportRequest})
@@ -25,10 +25,9 @@ use Illuminate\Support\Facades\Log;
  * token, jamais le payload). Par item :
  *
  *  1. upsert de l'état courant par (workstation, type) — UNIQUE en base,
- *     volume borné D3 ; `reported_at` rafraîchi à CHAQUE rapport, même
- *     identique (fraîcheur = donnée UI, décision n° 4) ;
- *  2. journal {@see AgentReportEvent} pour les SEULS changements
- *     (décision n° 2) :
+ *     volume borné ; `reported_at` rafraîchi à CHAQUE rapport, même
+ *     identique (la fraîcheur est une donnée d'UI) ;
+ *  2. journal {@see AgentReportEvent} pour les SEULS changements :
  *      - ligne absente (premier rapport du type) : événement seulement si
  *        `status ≠ compliant` (un premier « tout va bien » n'est pas un
  *        changement) ;
@@ -37,21 +36,21 @@ use Illuminate\Support\Facades\Log;
  *        (la cible a bougé et l'agent a convergé silencieusement — le hash
  *        de la ligne d'état est mis à jour, c'est suffisant).
  *
- * Si `config('agent.report_history')` (flag D3, défaut off) : le payload
- * BRUT complet (`$rawPayload`, champs inconnus §9 inclus — décision Henri
- * review 24.1 #2 : table de debug, le brut diagnostique un agent émettant
- * des champs futurs) est conservé en append-only ({@see AgentReportHistory}).
+ * Si `config('agent.report_history')` (défaut off) : le payload BRUT complet
+ * (`$rawPayload`, champs inconnus §9 inclus) est conservé en append-only
+ * ({@see AgentReportHistory}). C'est une table de debug — le brut diagnostique
+ * un agent qui émettrait des champs futurs.
  *
  * Le tout sous `DB::transaction` : un rapport est atomique — jamais d'état
  * sans son événement. La transaction s'ouvre par un `lockForUpdate` sur la
- * ligne `workstations` (review 24.1 #5) : l'agent est séquentiel par design
- * (FR18) mais un retry réseau peut doubler un POST — sans verrou, deux
+ * ligne `workstations` : l'agent est séquentiel par design, mais un retry
+ * réseau peut doubler un POST — sans verrou, deux
  * ingestions concurrentes liraient toutes deux « ligne absente » et la
  * seconde insertion violerait l'UNIQUE (workstation_id, type) → 500. Le
  * verrou ligne sérialise par poste (no-op SQLite de test, réel Postgres —
- * pattern middleware 23.2) sans bloquer les autres postes.
+ * pattern middleware) sans bloquer les autres postes.
  *
- * Invariants de sécurité (defer review 23.1 résolu) : AUCUN hash calculé
+ * Invariants de sécurité : AUCUN hash calculé
  * ici — les hashes du rapport sont les chaînes opaques `StateHasher` émises
  * par `GET /state`, stockées et comparées en égalité de chaînes. Aucune
  * écriture hors `agent_*` (`agent_last_checkin_at` = middleware). Logs
@@ -84,7 +83,7 @@ class ReportIngestService
         /** @var list<array{type: string, status: AgentResourceStatus}> $driftEvents */
         $driftEvents = [];
 
-        // Story 27.5 — nombre de lignes d'inventaire upsertées (log
+        // Nombre de lignes d'inventaire upsertées (log
         // `agent.applications.reported`). Collecté APRÈS commit.
         $inventoryReported = 0;
 
@@ -93,7 +92,7 @@ class ReportIngestService
         $sessionPruned = 0;
 
         DB::transaction(function () use ($workstation, $report, $rawPayload, &$counts, &$driftEvents, &$inventoryReported, &$sessionPruned): void {
-            // Sérialisation per-poste (review 24.1 #5) : verrou sur la ligne
+            // Sérialisation per-poste : verrou sur la ligne
             // workstation AVANT toute lecture d'état — deux POST concurrents
             // du même poste ne peuvent plus courser l'updateOrCreate (UNIQUE
             // workstation_id+type). Aucune colonne workstations n'est écrite.
@@ -122,7 +121,7 @@ class ReportIngestService
                         'status' => $status,
                         'hash' => $item['hash'],
                         'detail' => $item['detail'] ?? null,
-                        // Rafraîchi MÊME si identique (décision n° 4).
+                        // Rafraîchi MÊME si identique.
                         'reported_at' => now(),
                     ],
                 );
@@ -143,10 +142,11 @@ class ReportIngestService
                     }
                 }
 
-                // Story 27.5 — AC4 : inventaire PAR APP additif sur l'item
+                // Inventaire PAR APP additif sur l'item
                 // `applications` (champ `inventory`). DONNÉE sous la ligne d'état
                 // par type (déjà upsertée ci-dessus, inchangée) — JAMAIS un
-                // verdict per-app (grain 27.8 intact, D1). Même transaction.
+                // verdict per-app : le grain par type reste intact. Même
+                // transaction.
                 if ($item['type'] === Application::TYPE_APPLICATIONS) {
                     $inventoryReported += $this->ingestApplicationsInventory(
                         $workstation,
@@ -188,7 +188,7 @@ class ReportIngestService
             }
         });
 
-        // AC5 — un warning par item créant un événement de dérive
+        // Un warning par item créant un événement de dérive
         // (drift/error entrant) : jamais de spam sur rapport identique
         // (eventDue = false → rien collecté).
         foreach ($driftEvents as $event) {
@@ -216,7 +216,7 @@ class ReportIngestService
             ]);
         }
 
-        // Story 27.5 — trace de l'inventaire applications upserté (AC4). Émis
+        // Trace de l'inventaire applications upserté. Émis
         // APRÈS commit (pas de trace d'un rollback). Silencieux si aucun item
         // `applications` (les autres types ne portent pas d'inventaire).
         if ($inventoryReported > 0) {
@@ -231,11 +231,11 @@ class ReportIngestService
     }
 
     /**
-     * Story 27.5 — AC4 : upsert l'inventaire PAR APP du poste (champ additif
+     * Upsert l'inventaire PAR APP du poste (champ additif
      * `inventory` de l'item `applications`) puis NETTOIE les lignes d'apps
      * absentes du rapport (level-triggered : une app retirée n'occupe plus de
      * siège). DONNÉE additive sous la ligne d'état par type — JAMAIS un verdict
-     * per-app (grain 27.8 intact). Appelée DANS la transaction d'ingestion.
+     * per-app (grain intact). Appelée DANS la transaction d'ingestion.
      *
      * @param  list<array<string, mixed>>  $inventory `[{app_id, status, detail?}]`
      * @return int nombre de lignes upsertées
@@ -276,8 +276,8 @@ class ReportIngestService
     }
 
     /**
-     * Règle de création d'événement (décision n° 2 — D3 : « seuls les
-     * événements de changement »). Comparaison `(status, hash)` en égalité
+     * Règle de création d'événement : seuls les changements font un
+     * événement. Comparaison `(status, hash)` en égalité
      * de chaînes OPAQUES — jamais de recalcul.
      */
     private function eventDue(?AgentResourceState $existing, AgentResourceStatus $status, string $hash): bool
@@ -289,7 +289,7 @@ class ReportIngestService
         }
 
         if ($existing->status === $status && $existing->hash === $hash) {
-            // Rapport identique au précédent : aucun événement (AC epic).
+            // Rapport identique au précédent : aucun événement.
             return false;
         }
 

@@ -23,23 +23,21 @@ use Tests\Feature\Oidc\Concerns\UsesOidcTestKeys;
 use Tests\TestCase;
 
 /**
- * Story 56.4 — **AC1 et AC2** : les scopes ACCORDÉS, et le downscope.
+ * Les scopes ACCORDÉS, et le downscope.
  *
- * ══════════════════════════════════════════════════════════════════════════
  *  CE QUE CE FICHIER PROTÈGE
  *
  *  Une révocation qui ne mordrait que sur les NOUVEAUX jetons serait une
  *  fausse promesse : l'extension continuerait de lire les groupes d'un élève
  *  pendant les 600 s du jeton en cours, et personne ne le verrait. La
- *  propriété centrale de la story est donc « effet IMMÉDIAT sur les jetons
+ *  propriété centrale est donc « effet IMMÉDIAT sur les jetons
  *  déjà émis, sans purge » — obtenue en recalculant le scope effectif à chaque
  *  usage, en UN point unique.
  *
  *  Chaque refus est adossé à un CONTRÔLE POSITIF joué juste avant : sans lui,
  *  un `/userinfo` cassé produirait exactement les mêmes assertions négatives.
- * ══════════════════════════════════════════════════════════════════════════
  *
- * ⚠️ Bypass du guard `sambaedu.auth` : patron 55.1/55.2.
+ * ⚠️ Bypass du guard `sambaedu.auth`, comme les autres suites OIDC.
  */
 class OidcGrantedScopesTest extends TestCase
 {
@@ -73,7 +71,7 @@ class OidcGrantedScopesTest extends TestCase
         parent::tearDown();
     }
 
-    // ── Fixtures ──────────────────────────────────────────────────────────
+    // Fixtures
 
     private function makeProf(): User
     {
@@ -179,9 +177,7 @@ class OidcGrantedScopesTest extends TestCase
         return (array) JWT::decode($idToken, new Key($this->testPublicKeyPem(), 'RS256'));
     }
 
-    // ══════════════════════════════════════════════════════════════════════
-    // AC2 — le downscope à l'ÉMISSION
-    // ══════════════════════════════════════════════════════════════════════
+    // Le downscope à l'ÉMISSION
 
     /**
      * CONTRÔLE POSITIF, joué en tête : un client pleinement consenti obtient
@@ -264,7 +260,7 @@ class OidcGrantedScopesTest extends TestCase
     }
 
     /**
-     * NON-RÉGRESSION 55.2 : le fail-closed vise le scope INCONNU, qui reste
+     * NON-RÉGRESSION : le fail-closed vise le scope INCONNU, qui reste
      * refusé à l'autorisation. Le non-accordé, lui, est réduit. Confondre les
      * deux transformerait chaque révocation en panne de SSO.
      */
@@ -291,12 +287,10 @@ class OidcGrantedScopesTest extends TestCase
         self::assertArrayNotHasKey('code', $query);
     }
 
-    // ══════════════════════════════════════════════════════════════════════
-    // AC2 — L'EFFET IMMÉDIAT SUR UN JETON DÉJÀ ÉMIS
-    // ══════════════════════════════════════════════════════════════════════
+    // L'EFFET IMMÉDIAT SUR UN JETON DÉJÀ ÉMIS
 
     /**
-     * LE test de la story : le jeton est émis AVANT la révocation, il n'est ni
+     * LE test du fichier : le jeton est émis AVANT la révocation, il n'est ni
      * purgé ni ré-émis, et pourtant `/userinfo` cesse de servir `groups`.
      */
     #[Test]
@@ -308,13 +302,13 @@ class OidcGrantedScopesTest extends TestCase
         $token = (string) $this->exchange($client, $this->obtainCode($client, $user, 'openid profile groups'))
             ->json('access_token');
 
-        // ── Contrôle POSITIF : avant révocation, `groups` est bien servi ──
+        // Contrôle POSITIF : avant révocation, `groups` est bien servi
         $before = $this->getJson('/oidc/userinfo', ['Authorization' => 'Bearer '.$token]);
         $before->assertOk();
         self::assertSame(['4B', 'TechnoCollege'], $before->json('groups'));
         self::assertSame('Professeur Dupont', $before->json('name'));
 
-        // ── La révocation : une écriture en base, rien d'autre ────────────
+        // La révocation : une écriture en base, rien d'autre
         app(OidcClientRegistry::class)->revokeScope((string) $client->client_id, 'groups');
 
         // Le jeton est TOUJOURS le même, TOUJOURS valide, jamais purgé.
@@ -348,9 +342,7 @@ class OidcGrantedScopesTest extends TestCase
         self::assertArrayNotHasKey('groups', $this->decode((string) $response->json('id_token')));
     }
 
-    // ══════════════════════════════════════════════════════════════════════
-    // AC1/AC2 — le registre : octroi fermé, révocation idempotente
-    // ══════════════════════════════════════════════════════════════════════
+    // Le registre : octroi fermé, révocation idempotente
 
     #[Test]
     public function the_registry_persists_granted_scopes_normalized(): void

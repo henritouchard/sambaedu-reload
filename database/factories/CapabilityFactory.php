@@ -8,7 +8,7 @@ use App\Models\Capability;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
- * Story 27.12 — factory de capacités (toggle windows par défaut). Les états
+ * Factory de capacités (toggle windows par défaut). Les états
  * `enum()`/`scalar()` règlent `value_type`/`options` pour les tests UI/validation.
  *
  * @extends Factory<Capability>

@@ -12,9 +12,9 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Tests `agent:reports:prune` — Story 24.1 (AC3).
+ * Tests `agent:reports:prune`.
  *
- * Les deux rétentions de `config/agent.php` (clés 23.5 consommées, pas
+ * Les deux rétentions de `config/agent.php` (clés consommées, pas
  * recréées) : events > `report_events_retention_days` (14 j) et history >
  * `report_history_retention_days` (30 j). La purge est INDIFFÉRENTE au flag
  * `report_history` (nettoie aussi les résidus d'un debug terminé).

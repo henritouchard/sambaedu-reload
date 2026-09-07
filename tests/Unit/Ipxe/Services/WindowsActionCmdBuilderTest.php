@@ -14,12 +14,10 @@ use Tests\Support\IpxeSchemaBootstrapper;
 use Tests\TestCase;
 
 /**
- * Story 3.8 — AC3.1-3.6 / T3.9.
- *
  * Tests unitaires de {@see WindowsActionCmdBuilder} :
  *  - Structure : 6 méthodes publiques `build*` qui retournent un string.
- *  - CRLF strict : `\r\n` only (D6 / AC3.3).
- *  - Sanitization : placeholders dynamiques sanitisés (AC3.4).
+ *  - CRLF strict : `\r\n` uniquement.
+ *  - Sanitization : placeholders dynamiques sanitisés.
  *  - Content : labels critiques présents (`:gpo`, `:autologon`, curl + uuid).
  */
 class WindowsActionCmdBuilderTest extends TestCase
@@ -150,9 +148,9 @@ class WindowsActionCmdBuilderTest extends TestCase
     #[Test]
     public function it_purges_agent_token_directory_before_generalize(): void
     {
-        // Story 23.3 — AC6 (divergence parité legacy ASSUMÉE) : sans purge,
+        // (divergence parité legacy ASSUMÉE) : sans purge,
         // N clones présenteraient le token du master → clone_detected →
-        // quarantaine de masse (mécanique 23.2).
+        // quarantaine de masse (mécanique).
         $ws = $this->makeWorkstation();
         $body = $this->builder->buildSysprep($ws);
 
@@ -171,9 +169,9 @@ class WindowsActionCmdBuilderTest extends TestCase
     #[Test]
     public function it_purges_agent_token_directory_in_sysprep_nosysprep_fallback(): void
     {
-        // Review 23.3 — le fallback :nosysprep (sysprep.exe KO) prépare lui
+        // Review — le fallback :nosysprep (sysprep.exe KO) prépare lui
         // aussi une capture d'image : sans purge, le token du master partirait
-        // dans les clones (AC6).
+        // dans les clones.
         $ws = $this->makeWorkstation();
         $body = $this->builder->buildSysprep($ws);
 
@@ -189,9 +187,9 @@ class WindowsActionCmdBuilderTest extends TestCase
     #[Test]
     public function it_purges_agent_token_directory_in_nosysprep_clone_path(): void
     {
-        // Review 23.3 — cmd_nosysprep = LE chemin clonage-sans-sysprep de
+        // Review — cmd_nosysprep = LE chemin clonage-sans-sysprep de
         // premier plan (dispatcher legacy : etape=sysprep&type=clonage) :
-        // sans purge, l'image capturée porterait le token du master (AC6).
+        // Sans purge, l'image capturée porterait le token du master.
         $ws = $this->makeWorkstation();
         $body = $this->builder->buildNosysprep($ws);
 

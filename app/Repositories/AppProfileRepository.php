@@ -9,16 +9,13 @@ use Illuminate\Pagination\LengthAwarePaginator;
 /**
  * Repository pur-SQL pour la gestion des profils applicatifs (AppProfiles).
  *
- * La lecture AD des CN sous OU=Parcs a été retirée (nettoyage post-38.7 :
+ * La lecture AD des CN sous OU=Parcs a été retirée (nettoyage postérieur :
  * OU=Parcs est en lecture seule, et seul l'import de migration
  * {@see \App\Services\AppProfile\AppProfileAdImporter} le consulte, via
  * DeviceGroupTagModel directement — pas via ce repository).
  */
 class AppProfileRepository
 {
-    // ========================================
-    // LECTURE SQL
-    // ========================================
 
     /**
      * Récupère tous les profils avec pagination
@@ -103,10 +100,6 @@ class AppProfileRepository
     {
         return AppProfile::count();
     }
-
-    // ========================================
-    // RELATIONS
-    // ========================================
 
     /**
      * Récupère les groupes associés à un profil

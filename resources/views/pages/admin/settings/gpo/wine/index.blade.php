@@ -12,7 +12,7 @@ use Livewire\Component;
 /**
  * Page Livewire SFC — UI admin native Wine (`/admin/settings/gpo/wine`).
  *
- * Story 16.3c — Volet 1 (AC1.1 → AC1.7). Story 16.9 — déplacement
+ * Volet 1 ( →). — déplacement
  * sous `/admin/settings/gpo/wine` (groupe admin).
  *
  * Remplace le legacy `gpo/wine.php` (79 lignes) :
@@ -21,7 +21,7 @@ use Livewire\Component;
  *                                 remplacement propre du `batch_command` legacy)
  *  - Action "Générer les raccourcis" → `ShortcutsService::importWineShortcuts`
  *  - Permission `server.admin` (Spatie + middleware via routes/web.php)
- *  - Channel logs `gpo` (catalogue Epic 16)
+ * - Channel logs `gpo` (catalogue)
  *  - Audit F7 corrigé : whitelist regex + Process::run mode array
  *  - Bug legacy `wine.php:52` (`if ($application = $select_application)` = assignment)
  *    NON reproduit — l'attribut `selected` est posé sur l'option strictement égale.
@@ -51,7 +51,7 @@ new #[Title('Wine — Gestion des images partagées | SE4FS')] class extends Com
 
     /**
      * Ouvre la modale de confirmation pour l'action "Générer l'image"
-     * (AC1.5 — UX critique : ~10 min d'exécution + lock idempotence).
+     * (UX critique : ~10 min d'exécution + lock idempotence).
      */
     public function confirmGenerateImage(): void
     {
@@ -70,7 +70,7 @@ new #[Title('Wine — Gestion des images partagées | SE4FS')] class extends Com
     }
 
     /**
-     * Action "Générer l'image" (AC1.3 / AC5.2).
+     * Action "Générer l'image".
      */
     public function generateImage(WineImageQueuer $queuer): void
     {
@@ -108,7 +108,7 @@ new #[Title('Wine — Gestion des images partagées | SE4FS')] class extends Com
     }
 
     /**
-     * Action "Générer les raccourcis" (AC1.4).
+     * Action "Générer les raccourcis".
      */
     public function generateShortcuts(ShortcutsService $service): void
     {
@@ -129,7 +129,7 @@ new #[Title('Wine — Gestion des images partagées | SE4FS')] class extends Com
         } catch (\InvalidArgumentException $e) {
             $this->toastError($e->getMessage(), 'Validation échouée');
         } catch (\Throwable $e) {
-            // Iso `generateImage()` (review #5 16.3c) : pas d'exposition du
+            // Iso `generateImage()` : pas d'exposition du
             // détail interne (paths FS `.tmp.<pid>`, etc.) côté UI. Détail
             // dans les logs `gpo`.
             Log::channel('gpo')->error(
@@ -197,7 +197,7 @@ new #[Title('Wine — Gestion des images partagées | SE4FS')] class extends Com
                         name="application"
                         class="select select-bordered"
                         data-testid="wine-prefix-select">
-                        {{-- AC1.6 — `selected` sur option strictement égale, pas d'assignment.
+                        {{-- `selected` sur option strictement égale, pas d'assignment.
                              @legacy-bug fixed: assignment instead of comparison wine.php:52 --}}
                         <option value="" @selected($selectedApplication === '')>
                             Conteneur par défaut (.wine)

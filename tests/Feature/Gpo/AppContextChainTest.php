@@ -11,24 +11,22 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 16.7 — AC7.5 (origine). Story 16.15 — AC7.6 (migration Cache + test bi-compat).
- *
  * Test bout-en-bout : l'écriture via `CacheAppContextWriter` doit être
  * **lisible sans modification** par le lecteur `CacheAppContextRepository`.
  *
- * Nouveau test bi-compat AC7.6 : vérifie l'interop APCu legacy (D3/D4) —
- * un payload écrit par CacheAppContextWriter doit être lisible par
- * `apcu_fetch('apps.'.$id)` direct (garantit que le store `app_context`
- * avec `prefix => ''` est bien physiquement équivalent à apcu_store direct).
+ * Bi-compat APCu legacy : un payload écrit par CacheAppContextWriter doit être
+ * lisible par `apcu_fetch('apps.'.$id)` direct (garantit que le store
+ * `app_context` avec `prefix => ''` est bien physiquement équivalent à
+ * apcu_store direct).
  */
 class AppContextChainTest extends TestCase
 {
     protected function setUp(): void
     {
         parent::setUp();
-        // Story 16.15 — AC7.6 : Cache::store('app_context')->flush() au lieu de apcu_clear_cache().
+        // Cache::store('app_context')->flush au lieu de apcu_clear_cache.
         Cache::store('app_context')->flush();
-        // Isolation cross-driver (review #4) : nécessaire pour le test bi-compat
+        // Isolation cross-driver : nécessaire pour le test bi-compat
         // qui mixe store Laravel et apcu_* directs.
         if (function_exists('apcu_clear_cache')) {
             apcu_clear_cache();
@@ -79,7 +77,7 @@ class AppContextChainTest extends TestCase
     }
 
     /**
-     * AC7.6 — Test bi-compat interop APCu legacy (D3/D4 Story 16.15).
+     * Test bi-compat interop APCu legacy.
      *
      * Vérifie que le payload écrit par `CacheAppContextWriter` via
      * `Cache::store('app_context')` est lisible par `apcu_fetch('apps.'.$id)`
@@ -93,7 +91,7 @@ class AppContextChainTest extends TestCase
         if (! function_exists('apcu_fetch') || ! function_exists('apcu_enabled') || ! apcu_enabled()) {
             self::markTestSkipped('APCu non disponible en CLI — test bi-compat à exécuter en VM (AC10.2)');
         }
-        // Review #1 : si le driver effectif du store app_context n'est pas `apc`
+        // Si le driver effectif du store app_context n'est pas `apc`
         // (typique en testing où phpunit.xml force APP_CONTEXT_CACHE_DRIVER=array),
         // le writer pose dans un autre backend et apcu_fetch direct ne trouve rien.
         // Le test bi-compat n'a de sens que quand les deux côtés (Cache + apcu_*)
@@ -120,7 +118,7 @@ class AppContextChainTest extends TestCase
 
         $writer->write($id, $ctx, 1800);
 
-        // Lecture directe APCu — doit retourner le même payload (interop legacy shim D3/D4).
+        // Lecture directe APCu — doit retourner le même payload (interop legacy shim).
         $success = false;
         $fetched = apcu_fetch('apps.' . $id, $success);
 

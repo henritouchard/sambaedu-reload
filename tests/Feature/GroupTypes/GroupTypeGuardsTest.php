@@ -23,7 +23,7 @@ use ReflectionMethod;
 use Tests\TestCase;
 
 /**
- * Story 62.2 — LES GARDES : immuabilité de la clé, vocabulaire aux deux points
+ * LES GARDES : immuabilité de la clé, vocabulaire aux deux points
  * d'écriture, refus de suppression nommés.
  *
  * Chaque test de refus vérifie DEUX choses : que le refus a lieu, et qu'il n'a
@@ -46,10 +46,6 @@ class GroupTypeGuardsTest extends TestCase
         UserGroupObserver::enableSync();
         parent::tearDown();
     }
-
-    // =========================================================================
-    // AC2 — la clé : dérivée, bornée, figée
-    // =========================================================================
 
     #[Test]
     public function the_key_is_derived_from_the_label(): void
@@ -111,10 +107,6 @@ class GroupTypeGuardsTest extends TestCase
         $this->assertSame('Cercle', GroupTypeCatalog::label('club'));
         $this->assertSame('fa-solid fa-guitar', GroupTypeCatalog::icon('club'));
     }
-
-    // =========================================================================
-    // AC4 — le vocabulaire au point d'étranglement du service
-    // =========================================================================
 
     /**
      * On éprouve `validateData()` DIRECTEMENT, par réflexion.
@@ -220,10 +212,6 @@ class GroupTypeGuardsTest extends TestCase
         }
     }
 
-    // =========================================================================
-    // AC6 — le vocabulaire au second point d'écriture : l'accrochage
-    // =========================================================================
-
     #[Test]
     public function attaching_a_template_to_an_unknown_type_is_refused_by_name(): void
     {
@@ -263,10 +251,10 @@ class GroupTypeGuardsTest extends TestCase
     }
 
     /**
-     * L'invariant 60.5 est INCHANGÉ : un type ne porte qu'une recette d'ARBRE,
+     * L'invariant est INCHANGÉ : un type ne porte qu'une recette d'ARBRE,
      * mais plusieurs recettes PLATES.
      *
-     * Non-régression : la story 62.2 ne re-durcit pas l'unicité relâchée en 60.5.
+     * Non-régression : la ne re-durcit pas l'unicité relâchée en 60.5.
      */
     #[Test]
     public function the_single_tree_attachment_invariant_is_untouched(): void
@@ -304,10 +292,6 @@ class GroupTypeGuardsTest extends TestCase
             'nodes_spec' => [],
         ]);
     }
-
-    // =========================================================================
-    // AC7 — les refus de suppression
-    // =========================================================================
 
     #[Test]
     public function the_nine_static_types_are_never_deletable_even_unused(): void
@@ -380,7 +364,7 @@ class GroupTypeGuardsTest extends TestCase
      *
      * L'asymétrie est voulue : `user_groups.type` n'a jamais été normalisé (chacun
      * compte les siens, l'écran montre la réalité) ; `attached_group_type`, lui,
-     * EST normalisé en minuscules à l'écriture depuis 60.5, et `attachedTo()`
+     * EST normalisé en minuscules à l'écriture depuis, et `attachedTo()`
      * compare déjà en `LOWER()`.
      */
     #[Test]

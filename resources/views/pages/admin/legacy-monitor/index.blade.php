@@ -16,8 +16,8 @@ new #[Title('Legacy Monitor - Instance SE4FS')] class extends Component {
     public string $filterMethod = '';
     #[Url]
     public string $filterIp = '';
-    // Story 38.2 — filtre sur l'origine de la réponse (tombstone natif vs proxy
-    // catchall). Critère GO 38.6 : zéro hit `source='catchall'` sur les routes
+    // Filtre sur l'origine de la réponse (tombstone natif vs proxy
+    // catchall). Critère GO : zéro hit `source='catchall'` sur les routes
     // clients, hits `tombstone` en décroissance.
     #[Url]
     public string $filterSource = '';

@@ -9,23 +9,20 @@ use App\Services\ControlHub\OrderedApplicationProvisioner;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 31.3 — Listener déclenchant l'approvisionnement des applications ordonnées par
+ * Listener déclenchant l'approvisionnement des applications ordonnées par
  * le contrat amont (controlHub) à chaque mutation du contrat.
  *
  * 2ᵉ consommateur de {@see ControlHubContractChanged} (à côté de
- * {@see ReconcileImposedWorkstationGroups}, 30.3). L'ingestion 28.2 n'est PAS modifiée :
- * elle émet l'événement APRÈS commit, uniquement sur mutation (jamais sur no-op — NFR4).
+ * {@see ReconcileImposedWorkstationGroups}). L'ingestion n'est PAS modifiée :
+ * elle émet l'événement APRÈS commit, uniquement sur mutation (jamais sur no-op).
  *
  * Listener SYNCHRONE (pas de `ShouldQueue`) : la matérialisation est DIRECTE (« Option B »,
  * aucun fetch réseau — pas d'install serveur), donc rien à différer. L'événement étant
  * dispatché après le commit de l'ingestion, le provisionneur ne peut pas faire rollback
  * de l'ingestion validée.
  *
- * NFR3 — sans contrat amont actif, l'événement n'est jamais émis ; le provisionneur
+ * Sans contrat amont actif, l'événement n'est jamais émis ; le provisionneur
  * lui-même est un no-op total s'il est invoqué sans contrat actif.
- *
- * ⚠️ GARDE-FOU R3 : vocabulaire « amont » exclusivement, terme prohibé proscrit.
- * [Source: prd-contrat-manage-se5.md#R3]
  */
 class ProvisionOrderedApplications
 {

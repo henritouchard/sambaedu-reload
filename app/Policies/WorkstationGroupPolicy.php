@@ -22,7 +22,7 @@ class WorkstationGroupPolicy
     /**
      * Définition des gates pour cette policy.
      *
-     * Story 7.1 : ajout de `manage-workstationGroup` pour les opérations
+     * Ajout de `manage-workstationGroup` pour les opérations
      * de contrôle (batch actions, schedules, wallpaper...). Reprend
      * `computer.control` — délégation scopée OU droit global — plutôt que
      * `computer.install` (réservé à l'admin au niveau global).
@@ -42,7 +42,7 @@ class WorkstationGroupPolicy
     /**
      * Vérifie si l'utilisateur peut voir la liste des WorkstationGroups.
      *
-     * Story 7.1 (QA e2e 2026-04-24) : accepte aussi les délégués scopés.
+     * Accepte aussi les délégués scopés.
      * Un user sans droit global `computer.view` mais avec au moins une
      * délégation positive active sur une salle doit pouvoir ouvrir
      * `/app/parc` — le listing est ensuite filtré par `scopedUser()` dans
@@ -68,14 +68,14 @@ class WorkstationGroupPolicy
      * Vérifie si l'utilisateur peut voir un WorkstationGroup spécifique.
      * Supporte les délégations scopées.
      *
-     * Scoping intentionnel (Story 7.1, décision Henri 2026-04-23) :
+     * Scoping intentionnel :
      *  - Groupes physiques : délégation scopée via `canOnWorkstationGroup`.
      *  - Groupes logiques (conteneurs hiérarchiques non-physical) : accès
      *    UNIQUEMENT via droit global `computer.view`. Un délégué sur un
      *    groupe physique NE VOIT PAS les groupes logiques parents, même s'il
      *    pourrait naviguer via breadcrumb. Ce comportement est volontaire :
-     *    les salles physiques ont des hiérarchies mais les groupes logiques
-     *    de rangement ne sont pas cible de délégation en 7.1.
+     *    les salles physiques ont des hiérarchies, mais les groupes logiques
+     *    de rangement ne sont pas cible de délégation.
      *  - Cf. `docs/domains/rights-management.md` (section Limitations).
      */
     public function view(?Authenticatable $user, ?WorkstationGroup $group = null): bool
@@ -113,7 +113,7 @@ class WorkstationGroupPolicy
     }
 
     /**
-     * Story 7.1 — Vérifie si l'utilisateur peut gérer un WorkstationGroup
+     * Vérifie si l'utilisateur peut gérer un WorkstationGroup
      * (actions batch, schedules, …).
      *
      * Autorise si :
@@ -133,7 +133,7 @@ class WorkstationGroupPolicy
     }
 
     /**
-     * Story 29.1 — Vérifie si l'utilisateur peut assigner des applications WPKG
+     * Vérifie si l'utilisateur peut assigner des applications WPKG
      * (profils/applications/options) sur un WorkstationGroup.
      *
      * Calqué à l'identique sur {@see manage()} : on remplace le Gate GLOBAL
@@ -142,17 +142,17 @@ class WorkstationGroupPolicy
      *
      * Autorise si :
      *  - groupe physique → délégation scopée `wpkg.assign` active sur ce group
-     *    via {@see PermissionService::canOnWorkstationGroup()} ;
+     *  via {@see PermissionService::canOnWorkstationGroup()} ;
      *  - OU (fallback) droit global Spatie `wpkg.assign` (admin/technicien).
      *
      * Sans group (`null`, ex. poste nomade sans salle physique) → se rabat sur
      * le droit global UNIQUEMENT : pas de fausse ouverture, seul l'admin global
-     * passe (AC #5).
+     * passe.
      *
      * NOTE : l'exclusion négative active (qui prévaut même sur le droit global)
      * et l'expiration (`->active()`) sont DÉJÀ honorées par
-     * `canOnWorkstationGroup` — ne pas les réimplémenter ici (AC #3, #4). Le
-     * fallback global préserve la non-régression admin/technicien (AC #2).
+     * `canOnWorkstationGroup` — ne pas les réimplémenter ici. Le fallback global
+     * préserve la non-régression admin/technicien.
      */
     public function assignWpkg(?Authenticatable $user, ?WorkstationGroup $group = null): bool
     {
@@ -165,17 +165,17 @@ class WorkstationGroupPolicy
     }
 
     /**
-     * Story 29.6 — Vérifie si l'utilisateur peut écrire un override de capacité
+     * Vérifie si l'utilisateur peut écrire un override de capacité
      * (onglet « Options / Capacités ») sur un WorkstationGroup.
      *
-     * Jumelle EXACTE de {@see assignWpkg()} (patron 29.1) : on remplace le droit
+     * Jumelle EXACTE de {@see assignWpkg} : on remplace le droit
      * Spatie GLOBAL `app.customize` (aveugle au périmètre, qui ouvrait l'écriture
      * d'overrides sur n'importe quel parc dès lors que `groupId` était falsifiable
      * côté client) par une enveloppe de policy scopée par salle physique.
      *
      * Autorise si :
      *  - groupe physique → délégation scopée `app.customize` active sur ce group
-     *    via {@see PermissionService::canOnWorkstationGroup()} ;
+     *  via {@see PermissionService::canOnWorkstationGroup()} ;
      *  - OU (fallback) droit global Spatie `app.customize` (admin/technicien).
      *
      * Sans group (`null`, ex. `WorkstationGroup::find()` sur un id inexistant) → se
@@ -184,10 +184,10 @@ class WorkstationGroupPolicy
      *
      * NOTE : l'exclusion négative active (qui prévaut même sur le droit global) et
      * l'expiration (`->active()`) sont DÉJÀ honorées par `canOnWorkstationGroup` —
-     * ne pas les réimplémenter ici (AC #3, #4). Le fallback global préserve la
-     * non-régression admin/technicien (AC #2). La convention physique→délégation /
+     * ne pas les réimplémenter ici. Le fallback global préserve la
+     * non-régression admin/technicien. La convention physique→délégation /
      * logique→global (`canCheckDelegation`) est volontaire — à porter telle quelle,
-     * comme view/manage/assignWpkg (AC #5).
+     * comme view/manage/assignWpkg.
      */
     public function customize(?Authenticatable $user, ?WorkstationGroup $group = null): bool
     {

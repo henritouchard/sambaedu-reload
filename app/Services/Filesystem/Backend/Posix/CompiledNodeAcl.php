@@ -5,15 +5,14 @@ declare(strict_types=1);
 namespace App\Services\Filesystem\Backend\Posix;
 
 /**
- * Story 60.4 — ce qu'un nœud de plan donne, une fois compilé pour POSIX : une
+ * Ce qu'un nœud de plan donne, une fois compilé pour POSIX : une
  * liste d'entrées à poser, et la liste de ce qui n'a PAS pu être écrit.
  *
  * Les deux voyagent ensemble parce qu'elles décrivent le même passage : poser les
- * entrées sans dire ce qui manque, c'est exactement le silence que cette story
+ * entrées sans dire ce qui manque, c'est exactement le silence que ce couple
  * supprime.
  *
- * ---------------------------------------------------------------------------
- * **Story 62.4 — deux ajouts, tous deux imposés par les quatre verbes.**
+ * **deux ajouts, tous deux imposés par les quatre verbes.**
  *
  *  - `fileAcls` — la liste à poser sur les FICHIERS quand elle DIFFÈRE de celle des
  *    dossiers. Elle est VIDE dans l'immense majorité des cas, et sa vacuité
@@ -26,8 +25,7 @@ namespace App\Services\Filesystem\Backend\Posix;
  *    un attribut du DOSSIER et non d'une entrée. Elle voyage donc ici, décidée une
  *    fois pour tout le nœud, et jamais recalculée par l'exécution.
  *
- * ---------------------------------------------------------------------------
- * **Story 62.5 — une TROISIÈME liste, et elle ne ressemble à aucune des deux.**
+ * **une TROISIÈME liste, et elle ne ressemble à aucune des deux.**
  *
  * `traversalAcls` porte les COULOIRS D'ACCÈS dérivés
  * ({@see PosixTraversalPlanner}) : ce que des sujets doivent avoir sur CE nœud

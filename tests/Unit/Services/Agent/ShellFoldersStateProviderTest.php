@@ -33,7 +33,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Tests Unit `ShellFoldersStateProvider` — Story 58.1 (type `folders`, §7.12).
+ * Tests Unit `ShellFoldersStateProvider`.
  *
  * Ce que ces tests protègent réellement : la redirection du Bureau et le
  * placement des raccourcis DOIVENT désigner le même dossier. Quand ils ont
@@ -57,7 +57,7 @@ class ShellFoldersStateProviderTest extends TestCase
     {
         parent::setUp();
         // Ciblage Postgres-pur : aucune raison de déclencher la synchro AD
-        // (host sans LDAP). Iso discipline NFR7.
+        // (host sans LDAP).
         WorkstationGroupObserver::disableSync();
         UserGroupObserver::disableSync();
         UserGroupUserPivotObserver::disableSync();
@@ -77,7 +77,6 @@ class ShellFoldersStateProviderTest extends TestCase
         return TargetContext::for($this->ws, func_num_args() > 0 ? $user : $this->user);
     }
 
-    // --- Identité du provider dans le contrat --------------------------------
 
     #[Test]
     public function it_declares_the_folders_type_exclusive_and_machine_user_scoped(): void
@@ -96,7 +95,6 @@ class ShellFoldersStateProviderTest extends TestCase
         self::assertContains('folders', \App\Services\Agent\StateContract::RESOURCE_TYPES);
     }
 
-    // --- Émission ------------------------------------------------------------
 
     #[Test]
     public function it_emits_exactly_one_broadcast_desktop_candidate(): void
@@ -129,11 +127,10 @@ class ShellFoldersStateProviderTest extends TestCase
         self::assertTrue($this->provider->itemsFor($this->ctx(null))->isEmpty());
     }
 
-    // --- Le chemin : même matrice que `shortcuts` ----------------------------
 
     /**
      * Matrice {SharedLocal, PersonalLocal, Nomade} — l'axe « politique home » a
-     * disparu en 63.2, le Bureau ne dépend plus que du parc.
+     * disparu, le Bureau ne dépend plus que du parc.
      *
      * Elle est VOLONTAIREMENT identique à `ShortcutsStateProviderTest::desktopPathMatrix()`
      * — c'est la même décision serveur, prise une seule fois
@@ -206,10 +203,9 @@ class ShellFoldersStateProviderTest extends TestCase
         self::assertSame($expected, $items->first()->payload['path']);
     }
 
-    // --- L'invariant de la story ---------------------------------------------
 
     /**
-     * LE test de la story 58.1 : la redirection et le placement des `.lnk`
+     * LE test du fichier : la redirection et le placement des `.lnk`
      * désignent le MÊME dossier, dans toute la matrice.
      *
      * Sans cet invariant, `shortcuts` dépose des raccourcis dans un dossier que
@@ -257,18 +253,17 @@ class ShellFoldersStateProviderTest extends TestCase
         );
     }
 
-    // --- Pureté (NFR7) --------------------------------------------------------
 
     #[Test]
     public function it_reads_no_authoring_table_no_setting_and_never_touches_ad(): void
     {
-        // Aucune table d'authoring derrière ce type, et depuis la Story 63.2
-        // plus la moindre ligne de RÉGLAGE : la valeur dérive du seul
-        // environnement du parc. La seule lecture admise est donc celle du
-        // resolver d'environnement (`workstation_groups`) — jamais `shortcuts`,
-        // jamais `network_shares`, jamais `system_settings`, et surtout jamais
-        // les colonnes de ciblage AD-CN legacy (`ad_users`/`ad_user_groups`,
-        // NFR7 / critère Keycloak).
+        // Aucune table d'authoring derrière ce type, et pas la moindre ligne de
+        // RÉGLAGE : la valeur dérive du seul environnement du parc. La seule
+        // lecture admise est donc celle du resolver d'environnement
+        // (`workstation_groups`) — jamais `shortcuts`, jamais `network_shares`,
+        // jamais `system_settings`, et surtout jamais les colonnes de ciblage
+        // AD-CN legacy (`ad_users`/`ad_user_groups`) : ce canal doit rester
+        // indépendant de l'annuaire.
         $ctx = $this->ctx();
 
         $statements = [];

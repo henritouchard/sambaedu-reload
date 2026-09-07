@@ -19,7 +19,7 @@ use Symfony\Component\HttpFoundation\Response;
  * (TTL 20 min max, purgé automatiquement à expiration).
  *
  * Les deux formats (PDF + CSV) sont autorisés avant expiration — on ne
- * purge PAS le listing après un téléchargement (AC 9).
+ * purge PAS le listing après un téléchargement.
  */
 class PasswordResetExportController extends Controller
 {
@@ -55,7 +55,7 @@ class PasswordResetExportController extends Controller
         }
 
         // Vérification propriété du token — seul l'opérateur qui a déclenché le reset peut télécharger.
-        // Le middleware `signed` protège contre la forge mais pas contre le partage de token (#1 review 2.6).
+        // Le middleware `signed` protège contre la forge mais pas contre le partage de token.
         if ((int) ($payload['operator_id'] ?? 0) !== (int) auth()->id()) {
             abort(403, 'Token non autorisé');
         }

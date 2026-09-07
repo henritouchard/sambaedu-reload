@@ -367,7 +367,7 @@ class ParcController extends Controller
     /**
      * Actions de masse sur les machines d'un parc (endpoint JSON legacy).
      *
-     * ⚠️ Story 4-3 (D5) — Cet endpoint reste volontairement **synchrone** pour
+     * ⚠️ Cet endpoint reste volontairement **synchrone** pour
      * préserver la compatibilité avec les scripts externes et les crons legacy
      * qui consomment la réponse JSON (code retour, results[] par machine).
      *
@@ -376,7 +376,7 @@ class ParcController extends Controller
      * `WorkstationGroupService::executeGroupMachinesAction()` avec dispatch
      * async (1 `MachinePowerActionTask` par machine + `DispatchMachinePowerActionJob`).
      *
-     * À terme (story ultérieure), migrer les consommateurs restants vers l'API
+     * À terme, migrer les consommateurs restants vers l'API
      * ControlHub + `ControlHubTask`, puis déprécier ce endpoint.
      */
     public function massAction(Request $request, string $parcId): JsonResponse
@@ -504,9 +504,6 @@ class ParcController extends Controller
         }
     }
 
-    /**
-     * Import CSV
-     */
     public function importCsv(Request $request): RedirectResponse
     {
         $request->validate([
@@ -532,9 +529,6 @@ class ParcController extends Controller
         return back();
     }
 
-    /**
-     * Export CSV
-     */
     public function exportCsv(string $parcId = null): \Symfony\Component\HttpFoundation\BinaryFileResponse|RedirectResponse
     {
         try {

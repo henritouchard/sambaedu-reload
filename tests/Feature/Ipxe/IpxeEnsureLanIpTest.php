@@ -10,11 +10,11 @@ use Tests\Support\IpxeSchemaBootstrapper;
 use Tests\TestCase;
 
 /**
- * Story 3.1 — AC8.2 / T6.5.
+ * T6.5.
  *
  * Tests feature de la sécurité LAN-only sur `/ipxe/boot` :
  *
- *  - IP publique → 403 + JSON `code=bootstrap.not_lan` (reuse 16.11
+ *  - IP publique → 403 + JSON `code=bootstrap.not_lan` (reuse
  *    `JwtErrorCodes::BOOTSTRAP_NOT_LAN`).
  *  - IP RFC1918 (192.168.x.y) → 200.
  *  - IP loopback (127.x.x.x) → 200 (config standard).

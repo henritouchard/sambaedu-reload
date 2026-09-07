@@ -364,7 +364,6 @@ class LegacyParcBridgeService
                         ]);
                         $stats['updated']++;
                     } else {
-                        // Créer
                         WorkstationGroup::create([
                             'name' => $legacy->nom_parc,
                             'display_name' => $legacy->nom_parc_wpkg ?? $legacy->nom_parc,

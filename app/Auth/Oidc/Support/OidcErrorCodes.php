@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace App\Auth\Oidc\Support;
 
 /**
- * Story 55.1 — Catalogue des codes d'erreur INTERNES du fournisseur OIDC
+ * Catalogue des codes d'erreur INTERNES du fournisseur OIDC
  * (calque de {@see \App\Auth\V1\Support\JwtErrorCodes}).
  *
  * ⚠️ **Ces codes ne sortent JAMAIS dans une réponse HTTP.** Ils vont dans le
  * journal (channel `oidc`), et rien d'autre. Le contrat public rendu au client
- * est celui d'OAuth 2.0 (RFC 6749 §5.2 / OIDC Core §3.1.2.6) :
+ * est celui d'OAuth (RFC 6749 §5.2 / OIDC Core §3.1.2.6) :
  * `invalid_request`, `invalid_client`, `invalid_grant`, `invalid_scope`,
  * `unsupported_response_type`, `unsupported_grant_type`.
  *
@@ -38,7 +38,7 @@ final class OidcErrorCodes
     public const UNSUPPORTED_RESPONSE_TYPE = 'oidc.unsupported_response_type';
     public const SCOPE_MISSING_OPENID = 'oidc.scope_missing_openid';
 
-    // Story 55.2 — l'ensemble des scopes est FERMÉ
+    // L'ensemble des scopes est FERMÉ
     // ({@see \App\Auth\Oidc\Support\OidcClaimsResolver::supportedScopes()}) :
     // un scope inconnu est refusé, jamais ignoré. Ignorer reviendrait à
     // « accorder » un scope dont personne ne connaît la sémantique.
@@ -59,13 +59,13 @@ final class OidcErrorCodes
     public const CODE_VERIFIER_MISSING = 'oidc.code_verifier_missing';
     public const CODE_VERIFIER_MISMATCH = 'oidc.code_verifier_mismatch';
 
-    // Story 55.2 — l'utilisateur du code (ou du jeton) n'est plus résoluble :
+    // L'utilisateur du code (ou du jeton) n'est plus résoluble :
     // compte supprimé entre l'autorisation et l'échange, ou entre l'émission
     // du jeton et l'appel à `/userinfo`. Fail-closed : AUCUN jeton, AUCUNE
     // donnée — jamais un id_token aux claims partiels.
     public const USER_MISSING = 'oidc.user_missing';
 
-    // Correctif review 55.2 — le compte existe mais est DÉSACTIVÉ
+    // Correctif review — le compte existe mais est DÉSACTIVÉ
     // (`users.is_active = false`). Traité exactement comme un compte disparu :
     // aucun jeton, aucune donnée, réponse indistincte. Seul le journal les
     // sépare, pour que l'exploitant comprenne pourquoi une intégration cesse
@@ -78,7 +78,7 @@ final class OidcErrorCodes
     // colonne ne gardait donc absolument rien.
     public const USER_INACTIVE = 'oidc.user_inactive';
 
-    // --- `/userinfo` (Story 55.2). Ces trois codes ne se distinguent QUE dans
+    // --- `/userinfo`. Ces trois codes ne se distinguent QUE dans
     //     le journal : la réponse HTTP est un 401 `invalid_token` indistinct,
     //     même doctrine que le token endpoint (pas d'oracle).
     public const ACCESS_TOKEN_MISSING = 'oidc.access_token_missing';
@@ -86,7 +86,7 @@ final class OidcErrorCodes
     public const ACCESS_TOKEN_EXPIRED = 'oidc.access_token_expired';
 
     /**
-     * Story 56.4 — le jeton est VALIDE, mais le scope requis par l'endpoint
+     * Le jeton est VALIDE, mais le scope requis par l'endpoint
      * appelé n'est pas dans son scope EFFECTIF (jamais demandé, ou accordé puis
      * RÉVOQUÉ depuis l'émission).
      *

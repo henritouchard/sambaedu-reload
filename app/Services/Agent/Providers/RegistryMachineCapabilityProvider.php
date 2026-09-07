@@ -8,15 +8,15 @@ use App\Enums\StateScope;
 use App\Models\CapabilityProjection;
 
 /**
- * Story 27.12 — provider `registry` CAPABILITY-FIRST de la ruche MACHINE (HKLM).
+ * Provider `registry` CAPABILITY-FIRST de la ruche MACHINE (HKLM).
  *
  * `scope()=Machine` : les items sont appliqués par le SERVICE SYSTEM (le compagnon
  * de session n'a pas les droits HKLM). Ce provider émet les clés `hive=HKLM`
- * **et `hive=HKU`** (Story 35.3) des projections registry des capacités.
+ * **et `hive=HKU`** des projections registry des capacités.
  * SUPERSEDE l'ancien `RegistryMachineStateProvider`. Toute la logique vit dans
  * {@see AbstractCapabilityStateProvider}.
  *
- * **Ruche `HKU` (Story 35.3).** Une clé `hive: 'HKU'` est une cible LOGIQUE de
+ * **Ruche `HKU`.** Une clé `hive: 'HKU'` est une cible LOGIQUE de
  * portée machine : le service SYSTEM (seul à pouvoir écrire les ruches des
  * autres utilisateurs) la FAN-OUT vers `HKU\.DEFAULT` (écran de logon) + chaque
  * ruche utilisateur chargée (`HKU\<SID>`), à chaque cycle — fan-out interne au
@@ -38,7 +38,7 @@ final class RegistryMachineCapabilityProvider extends AbstractCapabilityStatePro
     }
 
     /**
-     * HKLM (comportement historique) + HKU (Story 35.3) — SEULE surcharge du
+     * HKLM (comportement historique) + HKU — SEULE surcharge du
      * prédicat : tous les autres providers gardent le défaut byte-identique.
      */
     protected function handlesHive(string $hive): bool

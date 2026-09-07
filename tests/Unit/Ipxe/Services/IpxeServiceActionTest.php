@@ -15,7 +15,7 @@ use Tests\TestCase;
 use Tests\Support\IpxeAuthTestHelper;
 
 /**
- * Story 3.2 — AC3.3 / T4.6.
+ * T4.6.
  *
  * Tests unitaires de {@see IpxeService::handleAction()}.
  */
@@ -60,7 +60,7 @@ class IpxeServiceActionTest extends TestCase
         self::assertSame(200, $response->getStatusCode());
         $body = (string) $response->getContent();
         self::assertStringStartsWith('#!ipxe', $body);
-        // Story 4.10 — chain absolu (chemin complet) pour eviter le doublement
+        // Chain absolu (chemin complet) pour eviter le doublement
         // `/ipxe/action/action/...` d'un relatif sur une route 2 niveaux.
         self::assertStringContainsString('/ipxe/action/rescuecd##params', $body);
     }
@@ -89,8 +89,8 @@ class IpxeServiceActionTest extends TestCase
 
         self::assertSame(200, $response->getStatusCode());
         $body = (string) $response->getContent();
-        // URL absolue (fix 2026-06-04) — un `kernel Win10/wimboot` relatif se
-        // résolvait contre `/ipxe/action/` → 410 → abort iPXE.
+        // URL absolue : un `kernel Win10/wimboot` relatif se résout contre
+        // `/ipxe/action/`, d'où un 410 et l'abandon du boot iPXE.
         self::assertMatchesRegularExpression('#^kernel https?://[^/]+/ipxe/Win10/wimboot$#m', $body);
         self::assertStringContainsString('initrd --name winpeshl.ini', $body);
     }
@@ -134,15 +134,9 @@ class IpxeServiceActionTest extends TestCase
         self::assertSame(1, $count);
     }
 
-    /* ------------------------------------------------------------------
-     * Story 3.2 — Correctif review #6 (assertions headers complètes)
-     * ------------------------------------------------------------------ */
-
     #[Test]
     public function it_returns_secure_headers_in_all_paths(): void
     {
-        // Fix review #6 — assertions complètes des 3 headers de sécurité
-        // (D10) dans le rendu d'action, iso `IpxeServiceAdminTest`.
         $response = $this->service->handleAction($this->makeRequest([
             'mac' => 'aa:bb:cc:dd:ee:01',
             'uuid' => '12345678-1234-1234-1234-123456789abc',

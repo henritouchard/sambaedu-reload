@@ -34,7 +34,7 @@ class WallpaperUploadService
     public function __construct(
         private readonly WallpaperAssetCollector $collector = new WallpaperAssetCollector(),
     ) {
-        // Protection contre les bombes pixel (post-review #10)
+        // Protection contre les bombes pixel.
         self::configureImagickLimits();
     }
 
@@ -130,7 +130,7 @@ class WallpaperUploadService
             : ($isDefault ? 'défaut étab' : 'unknown');
 
         // Pour un défaut étab, on AJOUTE `is_default` au WHERE afin de ne pas
-        // matcher des rows orphans historiques (post-review #4).
+        // matcher des rows orphans historiques.
         $matchCriteria = [
             'type' => $type,
             'owner_type' => $ownerType,
@@ -295,7 +295,7 @@ class WallpaperUploadService
             throw new \InvalidArgumentException("Extension non supportée : {$ext}");
         }
 
-        // MIME check en complément de l'extension (client-controllable) — post-review #5.
+        // MIME check en complément de l'extension, elle-même contrôlable par le client.
         $mime = (string) $file->getMimeType();
         $allowedMimes = ['image/jpeg', 'image/png', 'image/gif', 'image/bmp', 'image/webp'];
         if (! in_array($mime, $allowedMimes, true)) {

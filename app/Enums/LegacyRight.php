@@ -32,10 +32,6 @@ enum LegacyRight: int
     // Droits serveur
     case ServerAdmin = 0x8000;
 
-    // ========================================================================
-    // COMPOSITES (combinaisons de bits)
-    // ========================================================================
-
     /** Aucun droit */
     public static function none(): int
     {
@@ -73,10 +69,6 @@ enum LegacyRight: int
     {
         return 0xFFFF;
     }
-
-    // ========================================================================
-    // LABELS & DESCRIPTIONS
-    // ========================================================================
 
     public function label(): string
     {
@@ -141,10 +133,6 @@ enum LegacyRight: int
             self::ServerAdmin => 'server',
         };
     }
-
-    // ========================================================================
-    // HELPERS
-    // ========================================================================
 
     /**
      * Vérifie si un bitmask contient ce droit

@@ -1,4 +1,4 @@
-{{-- Story 7.1 — Onglet Historique (AC6) --}}
+{{-- Onglet Historique --}}
 <div class="space-y-4">
 
     {{-- Filtres --}}

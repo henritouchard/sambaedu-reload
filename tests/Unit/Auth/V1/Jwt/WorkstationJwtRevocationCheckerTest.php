@@ -14,8 +14,6 @@ use Tests\Concerns\IssuesWorkstationJwt;
 use Tests\TestCase;
 
 /**
- * Story 16.10 — D4 / AC7.1.
- *
  * Tests `WorkstationJwtRevocationChecker` — 4 cas matrix :
  *
  *  1. Cache hit revoked → true
@@ -102,7 +100,8 @@ class WorkstationJwtRevocationCheckerTest extends TestCase
     }
 
     /**
-     * Q3 review 16.10 — check workstation-wide.
+     * La révocation d'un poste invalide tous ses jetons émis avant elle, sans
+     * qu'aucun `jti` n'ait été révoqué individuellement.
      */
     #[Test]
     public function workstation_revocation_invalidates_jwt_with_iat_before_revoked_at(): void

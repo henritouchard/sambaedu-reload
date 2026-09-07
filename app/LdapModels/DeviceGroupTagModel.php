@@ -92,10 +92,6 @@ class DeviceGroupTagModel extends BaseGroup
             ->first();
     }
 
-    // ============================================
-    // ACCESSEURS SÉMANTIQUES - Masquent la complexité LDAP
-    // ============================================
-
     /**
      * Récupère un attribut de manière sécurisée depuis les données déjà chargées
      * 

@@ -7,7 +7,7 @@ namespace App\Services\Agent\Releases;
 use RuntimeException;
 
 /**
- * Story 25.1 — Refus métier d'une opération sur les releases agent (AC1).
+ * Refus métier d'une opération sur les releases agent.
  *
  * Levée par {@see ReleaseCreationService} : création refusée (fichier
  * absent/illisible, hash divergent, version dupliquée, formats invalides —

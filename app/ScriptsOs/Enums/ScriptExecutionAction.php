@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace App\ScriptsOs\Enums;
 
 /**
- * Story 16.12 — D1 / D2.
- *
  * Type d'évènement déclencheur d'une exécution de script côté poste.
  *
  *  - `logon`     — script user-logon (Windows GPO User Logon / Linux session logon)

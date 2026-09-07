@@ -16,7 +16,7 @@ use Tests\Traits\CreatesDhcpSchema;
 use Tests\Traits\CreatesPermissionSchema;
 
 /**
- * Story 8.1 — Tests Feature import CSV avec rapport (AC5).
+ * Tests Feature import CSV avec rapport.
  *
  * Couvre :
  *  - import 5 lignes mixtes (3 OK, 2 erreurs) via fichier fixture ;

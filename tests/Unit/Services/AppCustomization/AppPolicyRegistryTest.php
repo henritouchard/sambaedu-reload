@@ -12,9 +12,6 @@ use App\Services\AppCustomization\Contracts\AppPolicyAdapter;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
-/**
- * Tests unit — registry (AC 1).
- */
 class AppPolicyRegistryTest extends TestCase
 {
     private function registry(): AppPolicyRegistry

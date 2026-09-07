@@ -9,7 +9,7 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 4-4 — Purge quotidienne des runs d'historique > 30 jours.
+ * -4 — Purge quotidienne des runs d'historique > 30 jours.
  *
  * Pattern identique à `error-logs:prune`. Scheduler ->daily() dans Kernel.
  */

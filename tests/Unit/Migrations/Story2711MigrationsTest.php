@@ -10,9 +10,8 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 27.11 — vérifie up()/down() idempotents des 2 migrations (SQLite) :
+ * Vérifie up/down idempotents des 2 migrations (SQLite) :
  * `applications.executable` (nullable) + `native_applications` (table dédiée).
- * Le `migrate --force` sur la VM/PostgreSQL reste une action humaine d'Henri.
  */
 class Story2711MigrationsTest extends TestCase
 {

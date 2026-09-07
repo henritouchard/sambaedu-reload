@@ -22,13 +22,12 @@ use Livewire\Attributes\Url;
 use Livewire\Component;
 
 /**
- * Story 6.1 — Onglet Imprimantes dans /parc.
+ * Onglet Imprimantes dans /parc.
  *
  * Liste fusionnée CUPS + SER : enrichit chaque imprimante CUPS détectée avec
  * les métadonnées SER (description_ser, rattachements parc) et inversement.
  * Les imprimantes orphan (SER seul) ne sont visibles que côté admin. Sous le
- * filtre « Toutes » (all), les orphans apparaissent avec un badge pour les admins
- * (fix #6 — solution 2).
+ * filtre « Toutes » (all), les orphans apparaissent avec un badge pour les admins.
  *
  * Guards : double-couche — `Gate::allows` UX douce sur les ouvertures de modale,
  * `Gate::authorize` sur les méthodes mutantes (abort 403 si payload forgé).
@@ -76,7 +75,6 @@ new class extends Component {
     public array $editWorkstationGroupIds = [];
     public string $editUri = '';
 
-    // ===== Story 6.2 — Drivers Windows =====
     /** @var array{samba: ?array{smb_name:string,smb_driver:string,smb_comment:string}, ser: list<array<string,mixed>>} */
     public array $printerDrivers = ['samba' => null, 'ser' => []];
 
@@ -98,7 +96,6 @@ new class extends Component {
      */
     public ?array $pendingAttachDriver = null;
 
-    // ===== Panneau global « Pilotes Windows publiés » (ex-onglet Drivers) =====
     // Inventaire global des pilotes publiés sur Samba, fusionné avec l'audit
     // SER (orphelins, sources, rattachements). Réservé admin (manage-printer).
     // Repliable + lazy-load : le listing `rpcclient enumdrivers` n'est déclenché
@@ -220,7 +217,7 @@ new class extends Component {
             $serQuery->forUser($user);
             $serQuery->nonOrphan();
         } else {
-            // Fix #6 : filtre 'all' inclut les orphans (badge affiché dans la vue).
+            // Le filtre 'all' inclut les orphans (badge affiché dans la vue).
             // 'attached' et 'unattached' excluent les orphans (non rattachables en pratique).
             if ($this->filter === 'orphans') {
                 $serQuery->orphans();
@@ -296,10 +293,6 @@ new class extends Component {
         }
         return $this->permissionService->getAuthorizedWorkstationGroups($user, 'server.admin')->isNotEmpty();
     }
-
-    // ========================================================================
-    // ADD
-    // ========================================================================
 
     /**
      * Ouvre la modale d'ajout. Déclenchable depuis le dropdown d'actions
@@ -393,7 +386,7 @@ new class extends Component {
             $this->toastError($e->getMessage());
             return;
         } catch (\Throwable $e) {
-            // CUPS a commit mais SER a échoué → rollback CUPS best-effort (fix #1).
+            // CUPS a commit mais SER a échoué → rollback CUPS best-effort.
             if ($cupsCommitted) {
                 Log::warning('PrintersTab: rollback CUPS après échec SER', [
                     'name' => $this->newName,
@@ -408,7 +401,7 @@ new class extends Component {
                     ]);
                 }
             }
-            // Fix #1 : message générique — ne pas exposer les détails techniques.
+            // Message générique — ne pas exposer les détails techniques.
             Log::error('PrintersTab: erreur ajout imprimante', [
                 'name' => $this->newName,
                 'error' => $e->getMessage(),
@@ -419,7 +412,7 @@ new class extends Component {
         }
 
         $this->toastSuccess("Imprimante {$this->newName} créée");
-        // Fix #15 : avertissement si le reload Samba a échoué.
+        // Avertissement si le reload Samba a échoué.
         if (!$sambaOk) {
             $this->toastWarning('Reload Samba échoué — les postes verront l\'imprimante au prochain redémarrage du service.');
         }
@@ -427,10 +420,6 @@ new class extends Component {
         $this->resetAddForm();
         $this->loadPrinters();
     }
-
-    // ========================================================================
-    // EDIT
-    // ========================================================================
 
     public function openEditModal(string $cupsName): void
     {
@@ -462,16 +451,16 @@ new class extends Component {
             ? $printer->workstationGroups->pluck('id')->all()
             : [];
 
-        // Story 6.2 — charger la section drivers Windows. Fail-soft sur
+        // Charger la section drivers Windows. Fail-soft sur
         // SambaUnavailableException : la modale s'ouvre, banner affiché,
-        // actions désactivées (cohérent fix #1 6.1).
+        // actions désactivées.
         $this->loadPrinterDrivers($cupsName);
 
         $this->showEditModal = true;
     }
 
     /**
-     * Story 6.2 — Charge la liste des drivers Samba+SER pour l'imprimante éditée.
+     * Charge la liste des drivers Samba+SER pour l'imprimante éditée.
      */
     private function loadPrinterDrivers(string $cupsName): void
     {
@@ -529,7 +518,7 @@ new class extends Component {
 
         try {
             DB::transaction(function () use ($printer, &$sambaOk) {
-                // Fix #7 : ne passer à CUPS que les champs réellement modifiés.
+                // Ne passer à CUPS que les champs réellement modifiés.
                 $cupsRow = collect($this->printers)->firstWhere('cups_name', $this->editingCupsName);
                 $changes = [];
 
@@ -591,7 +580,7 @@ new class extends Component {
         }
 
         $this->toastSuccess('Configuration mise à jour');
-        // Fix #15 : avertissement reload Samba.
+        // Avertissement si le reload Samba a échoué.
         if (!$sambaOk) {
             $this->toastWarning('Reload Samba échoué — les postes verront la modification au prochain redémarrage du service.');
         }
@@ -599,10 +588,6 @@ new class extends Component {
         $this->editingCupsName = null;
         $this->loadPrinters();
     }
-
-    // ========================================================================
-    // DELETE
-    // ========================================================================
 
     public function deletePrinter(string $cupsName): void
     {
@@ -622,23 +607,19 @@ new class extends Component {
         }
 
         $this->toastSuccess("Imprimante {$cupsName} supprimée");
-        // Fix #15 : avertissement reload Samba.
+        // Avertissement si le reload Samba a échoué.
         if (!$sambaOk) {
             $this->toastWarning('Reload Samba échoué — les postes verront la suppression au prochain redémarrage du service.');
         }
         $this->loadPrinters();
     }
 
-    // ========================================================================
-    // TOGGLE ENABLE/DISABLE
-    // ========================================================================
-
     public function togglePrinterState(string $cupsName): void
     {
         $printer = Printer::find($cupsName);
         Gate::authorize('manage-printer', $printer);
 
-        // Fix #19 : refetch l'état live depuis CUPS plutôt que la cache mémoire.
+        // Refetch l'état live depuis CUPS plutôt que le cache mémoire.
         try {
             $liveCupsRow = $this->cupsService->getPrinter($cupsName);
         } catch (\Throwable $e) {
@@ -670,10 +651,6 @@ new class extends Component {
 
         $this->loadPrinters();
     }
-
-    // ========================================================================
-    // STORY 6.2 — UPLOAD / DETACH / DELETE DRIVERS WINDOWS
-    // ========================================================================
 
     public function openUploadDriverModal(): void
     {
@@ -748,7 +725,7 @@ new class extends Component {
 
     public function uploadDriver(): void
     {
-        // Fix #15 — re-valider l'imprimante cible avant tout. Un
+        // Re-valider l'imprimante cible avant tout. Un
         // editingCupsName forgé via $wire.set sur un printer supprimé
         // entretemps doit échouer tôt et lisiblement (pas un INSERT
         // silencieusement catché en générique).
@@ -787,7 +764,6 @@ new class extends Component {
         $driverDisplayName = $this->newDriverDisplayName;
 
         try {
-            // Étape 1 — lecture définition driver sur pivot.
             $driverDef = $this->driverService->getDriverDefinition($this->newDriverPivot, $this->newDriverName);
 
             // Étape 2 — copie fichiers depuis pivot vers /var/lib/samba/printers/x64/.
@@ -968,7 +944,7 @@ new class extends Component {
     }
 
     /**
-     * Story 6.2 — Détache un driver de l'imprimante éditée (`setdriver
+     * Détache un driver de l'imprimante éditée (`setdriver
      * "<printer>" ""`). Supprime la ligne SER `printer_drivers`
      * correspondante (le driver Samba reste publié — il peut être
      * réattaché ailleurs).
@@ -1017,15 +993,15 @@ new class extends Component {
     }
 
     /**
-     * Story 6.2 — Supprime un driver Samba via `rpcclient deldriver`.
-     * Protection D8 : refuse si le driver est rattaché à ≥ 1 imprimante
+     * Supprime un driver Samba via `rpcclient deldriver`.
+     * Refuse si le driver est rattaché à ≥ 1 imprimante
      * dans la table SER `printer_drivers` (l'admin doit détacher d'abord).
      */
     public function deleteDriver(string $driverName, string $architecture = 'x64'): void
     {
         Gate::authorize('manage-printer');
 
-        // D8 — protection rattachements.
+        // Protection des rattachements.
         $attached = PrinterDriver::query()
             ->where('driver_name', $driverName)
             ->where('architecture', $architecture)
@@ -1086,10 +1062,6 @@ new class extends Component {
             $this->toastError('Une erreur interne est survenue lors de la suppression du driver.');
         }
     }
-
-    // ========================================================================
-    // PANNEAU GLOBAL « PILOTES WINDOWS PUBLIÉS » (ex-onglet Drivers)
-    // ========================================================================
 
     /**
      * Replie / déplie le panneau global. Lazy-load au premier dépliage :
@@ -1606,7 +1578,7 @@ new class extends Component {
                     ])
                 </x-molecules.modal.section>
 
-                {{-- Story 6.2 — Drivers Windows (section dans modale édit) --}}
+                {{-- Drivers Windows (section dans modale édit) --}}
                 @can('manage-printer')
                     <x-molecules.modal.section title="Drivers Windows">
                         @unless ($sambaAvailable)
@@ -1730,6 +1702,6 @@ new class extends Component {
         </x-molecules.modal>
     @endteleport
 
-    {{-- Story 6.2 — Modale upload driver (partial dédié) --}}
+    {{-- Modale upload driver (partial dédié) --}}
     @include('pages.parc._partials.upload-driver-modal')
 </div>

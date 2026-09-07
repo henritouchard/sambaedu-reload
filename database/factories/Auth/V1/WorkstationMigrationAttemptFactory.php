@@ -10,16 +10,15 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 
 /**
- * Story 16.11 — AC6.3.
  *
  * Factory pour `WorkstationMigrationAttempt`. Génère un row valide :
  *  - status par défaut = `enrolled` (cas heureux le plus fréquent).
  *  - started_at = now.
  *
  * États :
- *  - `started()`        : status='started', uuid nullable.
- *  - `succeeded()`      : status='enrolled', finished_at=now.
- *  - `failed()`         : status='failed', error_code default.
+ *  - `started()` : status='started', uuid nullable.
+ *  - `succeeded()` : status='enrolled', finished_at=now.
+ *  - `failed()` : status='failed', error_code default.
  *  - `forUuid($uuid)`   : fige le workstation_uuid.
  *  - `withErrorCode($c)`: fige un error_code.
  *

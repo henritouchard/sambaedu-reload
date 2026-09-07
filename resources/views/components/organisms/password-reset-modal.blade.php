@@ -9,7 +9,7 @@ use Livewire\Attributes\On;
 use Livewire\Component;
 
 /**
- * Modale Livewire SFC — Réinitialisation des mots de passe (story 2.6).
+ * Modale Livewire SFC — Réinitialisation des mots de passe.
  *
  * Déclenchée via `open-password-reset-modal` avec `{ users: [...logins], groups: [...ids] }`.
  *

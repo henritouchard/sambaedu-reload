@@ -97,7 +97,7 @@ class WorkstationMembershipRemoveTest extends TestCase
             'is_active' => true,
         ]);
 
-        // 2. Story 38.7 — l'Observer ne crée plus d'AppProfile : on le crée
+        // 2. — l'Observer ne crée plus d'AppProfile : on le crée
         // EXPLICITEMENT et on l'attache pour le scénario.
         $appProfile = AppProfile::create(['name' => $groupName, 'is_active' => true]);
         $workstationGroup->appProfiles()->attach($appProfile->id);
@@ -132,7 +132,7 @@ class WorkstationMembershipRemoveTest extends TestCase
             'La relation pivot ne doit plus exister après retrait'
         );
         
-        // 8. L'OU existe toujours ; AUCUN CN n'est écrit dans OU=Parcs (38.7).
+        // 8. L'OU existe toujours ; AUCUN CN n'est écrit dans OU=Parcs.
         $this->assertOuExistsInComputers($groupName);
         $this->assertCnNotExistsInParcs($groupName);
 
@@ -229,7 +229,7 @@ class WorkstationMembershipRemoveTest extends TestCase
     }
 
     /**
-     * Story 38.7 — vérifie qu'AUCUN CN n'existe dans OU=Parcs (lecture seule).
+     * Vérifie qu'AUCUN CN n'existe dans OU=Parcs (lecture seule).
      */
     private function assertCnNotExistsInParcs(string $name): void
     {
@@ -263,7 +263,7 @@ class WorkstationMembershipRemoveTest extends TestCase
     private function cleanupProfile(string $name): void
     {
         try {
-            // Story 38.7 — suppression directe d'un éventuel CN résiduel.
+            // Suppression directe d'un éventuel CN résiduel.
             DeviceGroupTagModel::in($this->dnHelper->parcs())
                 ->where('cn', '=', $name)
                 ->first()?->delete();

@@ -17,7 +17,7 @@ use Tests\Support\WpkgSchemaBootstrapper;
 use Tests\TestCase;
 
 /**
- * Story 15.5 / Fix #11 — Tests de la table « incidents 24h » du dashboard.
+ * Tests de la table « incidents 24h » du dashboard.
  *
  * Vérifie que la déduplication par `workstation_id` fonctionne : un poste
  * qui rapporte 3 fois `failed` ne produit qu'une seule ligne (le dernier

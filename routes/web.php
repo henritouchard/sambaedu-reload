@@ -6,7 +6,7 @@ use App\Http\Controllers\Ipxe\WindowsIsoUploadController;
 use App\Http\Controllers\WallpaperController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\ChangePasswordController;
-// Story 27.14 — Extinction du canal legacy : les imports `AppPolicyController`
+// Extinction du canal legacy : les imports `AppPolicyController`
 // (canal config app legacy) et `MigrationController` (passthrough fragment
 // legacy) ont été retirés avec leurs routes (`app-policy.canonical`,
 // `migration.legacy.*`).
@@ -29,7 +29,7 @@ Route::get('/', function () {
 });
 
 // Route de test avec middleware sambaedu.auth
-// Story 20.4 (post-review P-5) : `federated.audit` ajouté pour rendre TOTAL
+// `federated.audit` ajouté pour rendre TOTAL
 // l'invariant « toute route `sambaedu.auth` porte `federated.audit` » (cf.
 // tests/Architecture/FederatedAuditCoverageTest). No-op fonctionnel ici (GET de
 // debug non sensible, hors allowlist → aucune écriture), mais ferme l'angle mort
@@ -60,9 +60,8 @@ Route::prefix("authentication")->name("auth.")->group(function () {
 
 });
 
-
 // Route pour l'interface utilisateur modernisée
-// Story 20.4 — `federated.audit` APRÈS `sambaedu.auth` : journalise les actions
+// `federated.audit` APRÈS `sambaedu.auth` : journalise les actions
 // des sessions fédérées (no-op pour l'AD locale, ne touche pas le flux LDAP).
 Route::prefix('app')->middleware(['sambaedu.auth', 'federated.audit'])->name('app.')->group(function () {
     Route::livewire('/dashboard', 'pages::dashboard.index')->name('dashboard');
@@ -70,7 +69,7 @@ Route::prefix('app')->middleware(['sambaedu.auth', 'federated.audit'])->name('ap
     Route::livewire('/workers', 'pages::workers.index')->name('workers.index');
     Route::livewire('/workers/{pid}', 'pages::workers.[pid].index')->whereNumber('pid')->name('workers.show');
 
-    // Story 7.2 — AC8 : middleware can: sur routes sensibles.
+    // Middleware can: sur routes sensibles.
     Route::livewire('/users', 'pages::users.index')
         ->middleware('can:user.read')
         ->name('users');
@@ -80,21 +79,13 @@ Route::prefix('app')->middleware(['sambaedu.auth', 'federated.audit'])->name('ap
         ->middleware(['sambaedu.auth', 'sambaedu.admin', 'can:user.modify'])
         ->name('users.new');
 
-    // // Actions groupées sur les utilisateurs (nécessite droits admin)
-    // Route::middleware(['sambaedu.auth', 'sambaedu.admin'])->group(function () {
-    //     Route::post('/users/bulk-enable', [UsersController::class, 'bulkEnable'])->name('users.bulk-enable');
-    //     Route::post('/users/bulk-disable', [UsersController::class, 'bulkDisable'])->name('users.bulk-disable');
-    //     Route::post('/users/bulk-reset-password', [UsersController::class, 'bulkResetPassword'])->name('users.bulk-reset-password');
-    //     Route::post('/users/bulk-assign-groups', [UsersController::class, 'bulkAssignGroupsStore'])->name('users.bulk-assign-groups.store');
-    // });
-
     // Gestion des droits (nécessite droits admin)
-    // Story 7.1 — Review #5 : middleware `can:user.assign.right` pour bloquer
-    // tout accès à la page (y compris computed `historyEntries`) par un non-admin.
+    // Le middleware `can:user.assign.right` bloque tout accès à la page (y
+    // compris le computed `historyEntries`) pour un non-admin.
     Route::livewire('/rights-management', 'pages::rights-management.index')
         ->middleware('can:user.assign.right')
         ->name('rights-management');
-    // Story 7.2 — création / édition d'un profil (rôle Spatie).
+    // Création / édition d'un profil (rôle Spatie).
     Route::livewire('/rights-management/profiles/new', 'pages::rights-management.profiles.new.index')
         ->middleware('can:user.assign.right')
         ->name('rights-management.profiles.create');
@@ -103,11 +94,11 @@ Route::prefix('app')->middleware(['sambaedu.auth', 'federated.audit'])->name('ap
         ->middleware('can:user.assign.right')
         ->name('rights-management.profiles.show');
 
-    // Groupes d'utilisateurs — Story 7.2 AC8 : middleware can: user.read.
+    // Groupes d'utilisateurs : middleware can: user.read.
     // La création passe désormais par la modale `group-form-modal` (event
     // `open-user-group-modal`) sur la page /users, gardée par `can:user.modify` ;
     // l'ancienne route /users/groups/new a été retirée avec sa page.
-    // Story 38.5 : la route legacy /users/groups/legacy-new (embed
+    // La route legacy /users/groups/legacy-new (embed
     // annu2/add_group.php) a été retirée — création native livrée, route orpheline.
     Route::livewire('/users/groups/{id}', 'pages::users.groups.[id].index')
         ->whereNumber('id')
@@ -132,7 +123,7 @@ Route::prefix('app')->middleware(['sambaedu.auth', 'federated.audit'])->name('ap
         ->middleware('signed')
         ->name('users.password-reset.csv');
 
-    // Utilisateur individuel — Story 7.2 AC8.
+    // Utilisateur individuel —.
     Route::livewire('/users/{login}', 'pages::users.[login].index')
         ->middleware('can:user.read')
         ->name('user.show');
@@ -144,13 +135,13 @@ Route::prefix('app')->middleware(['sambaedu.auth', 'federated.audit'])->name('ap
     Route::livewire('/shortcuts/new', 'pages::shortcuts.new.index')->name('shortcuts.new');
     Route::livewire('/shortcuts/{id}', 'pages::shortcuts.[id].index')->name('shortcuts.show');
 
-    // Routes Livewire pour les règles d'accès aux dossiers (Story 36.4).
-    // Permissions DÉDIÉES folderrule.* (D6) — refnum + admin machines. Le
-    // contrôle PAR PARC des (dé)assignations est dans le service (piège #9).
+    // Routes Livewire pour les règles d'accès aux dossiers.
+    // Permissions DÉDIÉES folderrule.* — refnum + admin machines. Le
+    // contrôle PAR PARC des (dé)assignations est dans le service.
     //
-    // Correction review #1 : middleware `can:viewAny-folderrule` (GATE
+    // Middleware `can:viewAny-folderrule` (GATE
     // policy-backed) et NON `can:folderrule.view` (permission Spatie nue). Comme
-    // `/app/parc` (`can:viewAny-workstationGroup`, story 7.1), le gate laisse
+    // `/app/parc` (`can:viewAny-workstationGroup`), le gate laisse
     // entrer un délégué scopé parc SANS droit global — le middleware `folderrule.view`
     // fermait la porte avant que le scoping (`canOnWorkstationGroup`) n'entre en jeu.
     Route::livewire('/folder-rules', 'pages::folder-rules.index')
@@ -161,10 +152,6 @@ Route::prefix('app')->middleware(['sambaedu.auth', 'federated.audit'])->name('ap
         ->whereNumber('id')
         ->name('folder-rules.show');
 
-    // ========================================
-    // Paramètres du Parc - Profils applicatifs et catalogue
-    // Story 7.2 AC8 : can:computer.install sur l'index.
-    // ========================================
     Route::prefix('parc-settings')->name('parc-settings.')->group(function () {
         // Page principale avec onglets profils/applications
         Route::livewire('/', 'pages::parc-settings.index')
@@ -176,13 +163,12 @@ Route::prefix('app')->middleware(['sambaedu.auth', 'federated.audit'])->name('ap
             ->middleware('can:computer.install')
             ->name('profiles.show');
 
-        // Applications
         Route::livewire('/applications/{id}', 'pages::parc-settings.applications.index')
             ->middleware('can:computer.install')
             ->name('applications.show');
 
-        // Fonds d'écran défauts établissement (story 4.7 AC 8)
-        // Gate wallpaper.manage — page admin (post-review #6).
+        // Fonds d'écran par défaut de l'établissement.
+        // Gate wallpaper.manage — page admin.
         Route::livewire('/wallpapers', 'pages::parc-settings.wallpapers.index')
             ->middleware('can:wallpaper.manage')
             ->name('wallpapers');
@@ -193,33 +179,18 @@ Route::prefix('app')->middleware(['sambaedu.auth', 'federated.audit'])->name('ap
             ->middleware('can:wallpaper.manage')
             ->name('overlay-messages');
 
-        // Personnalisation applications (story 4.8 — Firefox, Thunderbird…)
+        // Personnalisation applications (Firefox, Thunderbird…)
         Route::livewire('/app-customizations', 'pages::parc-settings.app-customizations.index')
             ->middleware('can:app.customize')
             ->name('app-customizations');
 
-        // NOTE (27.3 / 27.3bis) : les réglages registre et les associations par
+        // NOTE : les réglages registre et les associations par
         // défaut s'appliquent PAR WorkstationGroup. Ils ne sont donc PAS des pages
         // parc-settings globales mais des ONGLETS de la page d'un groupe
         // (`parc/groups/{id}?tab=registry|associations`, composants Livewire
         // `pages::parc.groups._partials.{registry,associations}-tab`).
     });
 
-    // // Gestion des parcs (Livewire)
-    // Route::livewire('/parcs', 'pages::parcs.index')->name('parcs');
-    // Route::livewire('/parcs/new', 'pages::parcs.new.index')->middleware(['sambaedu.auth', 'sambaedu.admin'])->name('parcs.new');
-    // Route::livewire('/parcs/{parc}', 'pages::parcs.[parc].index')->name('parc.show');
-
-
-
-    // ========================================
-    // Gestion du Parc (Section 1 - MySQL source)
-    // Story 7.2 AC8 : middleware `can:viewAny-workstationGroup` sur les routes
-    // de lecture — accepte les droits globaux ET les délégués scopés (au moins
-    // une délégation positive active). Le scoping fin par ressource est appliqué
-    // dans les mount Livewire via `Gate::allows('view', $group|$machine)`.
-    // Actions fines (control, élévation) sont gardées au niveau Policy dans les composants.
-    // ========================================
     Route::prefix('parc')->name('parc.')->group(function () {
         // Page principale avec onglets machines/groupes
         Route::livewire('/', 'pages::parc.index')
@@ -234,32 +205,25 @@ Route::prefix('app')->middleware(['sambaedu.auth', 'federated.audit'])->name('ap
             ->middleware('can:viewAny-workstationGroup')
             ->name('groups.show');
 
-        // Historique d'exécution d'une programmation (story 4-4 AC9)
+        // Historique d'exécution d'une programmation (-4)
         Route::livewire('/groups/{id}/schedules/{scheduleId}/runs', 'pages::parc.groups.[id].schedules.[scheduleId].runs.index')
             ->whereNumber('id')
             ->whereNumber('scheduleId')
             ->middleware('can:viewAny-workstationGroup')
             ->name('groups.schedules.runs');
 
-        // Machines — scoping fin via MachinePolicy (Story 7.2).
+        // Machines — scoping fin via MachinePolicy.
         Route::livewire('/machines/{id}', 'pages::parc.machines.[id].index')
             ->middleware('can:viewAny-workstationGroup')
             ->name('machines.show');
     });
 
-    // ========================================
-    // Story 8.1 — Réseau / DHCP (FR20 + FR22)
-    // Permissions :
-    //   - viewAny-dhcp (= server.admin) : lecture liste + baux + rapport.
-    //   - manage-dhcp  (= server.admin) : create / edit / delete / import.
-    // (cf. App\Policies\DhcpPolicy, Story 7.2 / Epic 7)
-    // ========================================
     Route::prefix('network/dhcp')->name('network.dhcp')->group(function () {
         Route::livewire('/', 'pages::network.dhcp.index')
             ->middleware('can:viewAny-dhcp')
             ->name('');
 
-        // Review code 8.1 #7 (Q3) : page `/new` supprimée — la modale
+        // Pas de page `/new` : la modale
         // create/edit de `/index` est la voie unique pour créer une
         // réservation (pas de duplication).
 
@@ -273,11 +237,6 @@ Route::prefix('app')->middleware(['sambaedu.auth', 'federated.audit'])->name('ap
             ->name('.import.report');
     });
 
-    // ========================================
-    // Story 15.5 — Dashboard d'état déploiement WPKG (transversal aux parcs).
-    // Permission lecture : viewAny-workstationGroup (cohérence 15.4).
-    // Permission re-évaluation : wpkg.assign (drill-down vue détail poste).
-    // ========================================
     Route::prefix('wpkg/deployments')->name('wpkg.deployments')->group(function () {
         // /app/wpkg/deployments
         Route::livewire('/', 'pages::wpkg.deployments.index')
@@ -297,8 +256,8 @@ Route::prefix('app')->middleware(['sambaedu.auth', 'federated.audit'])->name('ap
             ->name('.workstation');
     });
 
-    // Miniature wallpaper (UI admin) — story 4.7 AC 8
-    // Gate wallpaper.manage (post-review #6) — principe least-privilege, même
+    // Miniature wallpaper (UI admin).
+    // Gate wallpaper.manage — principe de moindre privilège, même
     // si le contenu n'est pas sensible.
     Route::get('/wallpapers/{wallpaper}/thumbnail', [WallpaperController::class, 'thumbnail'])
         ->middleware('can:wallpaper.manage')
@@ -311,30 +270,6 @@ Route::prefix('app')->middleware(['sambaedu.auth', 'federated.audit'])->name('ap
 
 });
 
-// ========================================
-// Story 16.9 — Redirections 301 des anciennes URLs /app/gpo/* vers
-// /admin/settings/gpo/* (les vues Livewire vivent désormais sous le
-// groupe admin, cf. plus bas).
-//
-// Déclarées AU TOP-LEVEL (hors du groupe `app/` middleware `sambaedu.auth`)
-// car les redirections HTTP 301 sont publiques par nature — protéger le
-// /app/gpo legacy par sambaedu.auth ferait que le middleware intercept la
-// requête (302 vers /authentication/login) AVANT que le 301 ne se déclenche.
-// La cible /admin/settings/gpo/* est elle-même protégée par sambaedu.auth +
-// sambaedu.admin + can:server.admin, donc aucune perte de sécurité.
-//
-// Conservation des noms `app.gpo.*` pour ne pas casser les appels existants
-// `route('app.gpo.index')` qui sont en cours de migration vers
-// `route('admin.gpo.index')`. Permanent (301) — aucun retour arrière prévu.
-//
-// Ordre critique : routes statiques (wine, wpkg-deployment) AVANT la route
-// paramétrée `/app/gpo/{guid}` (iso-Piège 1 / Story 16.6 fix #2). La regex
-// GUID ne matche pas `wine`/`wpkg-deployment` mais on rend l'ordre explicite.
-//
-// Sécurité anti open-redirect : la regex GUID stricte (iso-Story 16.2 fix
-// #9) est appliquée AUSSI sur les routes de redirection paramétrées pour
-// bloquer toute valeur arbitraire.
-// ========================================
 Route::permanentRedirect('/app/gpo/wine', '/admin/settings/gpo/wine')
     ->name('app.gpo.wine');
 
@@ -342,7 +277,7 @@ Route::permanentRedirect('/app/gpo/wpkg-deployment', '/admin/settings/gpo/wpkg-d
     ->name('app.gpo.wpkg-deployment');
 
 // Routes paramétrées : closure pour interpoler le `{guid}` (Route::permanentRedirect
-// ne supporte pas l'interpolation des paramètres). Regex GUID iso 16.2 fix #9.
+// ne supporte pas l'interpolation des paramètres).
 Route::get('/app/gpo/{guid}', fn (string $guid) => redirect('/admin/settings/gpo/' . $guid, 301))
     ->where('guid', '\{?[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\}?')
     ->name('app.gpo.show');
@@ -370,26 +305,26 @@ Route::prefix('admin')->middleware(['sambaedu.auth', 'sambaedu.admin', 'federate
     Route::livewire('/control-hub', 'pages::control-hub.index')->name('controlHub.control-hub');
 
     // Legacy Monitor est désormais un onglet de « Migration SE4 → SE5 »
-    // (/admin/settings/migration). Error Logger capte AUSSI les exceptions
+    // (admin/settings/migration). Error Logger capte AUSSI les exceptions
     // Laravel (diagnostic runtime SE5, pas seulement legacy) : il vit dans
     // l'onglet « Logs » de /admin/settings/system-status. Les routes redirigent
     // vers l'onglet correspondant ; les noms restent stables pour les liens et
-    // bookmarks existants. Décision Henri 2026-07-17.
+    // bookmarks existants.
     Route::redirect('/legacy-monitor', '/admin/settings/migration?tab=legacy-monitor')
         ->name('legacy-monitor');
     Route::redirect('/error-logger', '/admin/settings/system-status?tab=logs')
         ->name('error-logger');
 
     // Navigation legacy (menus SE4FS embarqués) SUPPRIMÉE — plus d'accès à
-    // l'ancienne interface (extinction se4, décision Henri 2026-07-17).
+    // l'ancienne interface (extinction du canal SE4).
 
-    // Lecteurs réseau gérés (Story 34.2) — déplacé sous /admin (admin-only,
-    // décision Henri 2026-07-16). Le groupe impose déjà `sambaedu.admin` ; on
+    // Lecteurs réseau gérés — déplacés sous /admin (admin-only).
+    // Le groupe impose déjà `sambaedu.admin` ; on
     // CONSERVE en plus la permission fine `networkshare.view` (defense-in-depth,
     // iso mount() des pages). Noms : `admin.shares` / `admin.shares.show`.
     //
-    // La LISTE est désormais l'onglet « Lecteurs réseaux » de /admin/settings/files
-    // (décision Henri 2026-07-17) : `/admin/shares` redirige vers cet onglet (le
+    // La LISTE est désormais l'onglet « Lecteurs réseaux » de /admin/settings/files :
+    // `/admin/shares` redirige vers cet onglet (le
     // nom `admin.shares` reste stable pour les liens existants, ex. retour du
     // détail). Le DÉTAIL d'un partage reste une sous-page dédiée.
     Route::redirect('/shares', '/admin/settings/files?tab=lecteurs-reseaux')->name('shares');
@@ -399,9 +334,9 @@ Route::prefix('admin')->middleware(['sambaedu.auth', 'sambaedu.admin', 'federate
         ->name('shares.show');
 
     // Synchronisation depuis l'AD — désormais l'onglet « Sync from AD » de
-    // /admin/settings/migration (décision Henri 2026-07-17). La route redirige
+    // /admin/settings/migration. La route redirige
     // vers cet onglet ; le nom `admin.sync-from-ad` reste stable. On CONSERVE
-    // `can:server.admin` (Story 7.2 AC8, action critique) : un non-admin est
+    // `can:server.admin` (action critique) : un non-admin est
     // bloqué avant la redirection.
     Route::redirect('/sync-from-ad', '/admin/settings/migration?tab=sync-from-ad')
         ->middleware('can:server.admin')
@@ -416,16 +351,15 @@ Route::prefix('admin')->middleware(['sambaedu.auth', 'sambaedu.admin', 'federate
         ->middleware('can:server.admin')
         ->name('settings');
 
-    // /admin/quotas — l'onglet « Quotas & FS » a été RETIRÉ (décision Henri
-    // 2026-08-05) : sa grille de quotas par défaut par profil n'appliquait rien à
-    // personne — elle écrivait une clé de réglage que la résolution ne lisait pas.
-    // La story 63.4 a soldé la grille et posé un plafond d'INSTANCE en carte dans le
-    // bloc « Réglages » de l'onglet des emplacements, écrit là où la résolution le
-    // lit. La route redirige vers la page hôte ; le nom `admin.quotas` reste stable
-    // pour les liens et bookmarks existants.
+    // /admin/quotas — l'onglet « Quotas & FS » a été RETIRÉ : sa grille de quotas
+    // par défaut par profil n'appliquait rien à personne — elle écrivait une clé
+    // de réglage que la résolution ne lisait pas. Un plafond d'INSTANCE l'a
+    // remplacée, en carte dans le bloc « Réglages » de l'onglet des emplacements,
+    // écrit là où la résolution le lit. La route redirige vers la page hôte ; le
+    // nom `admin.quotas` reste stable pour les liens et bookmarks existants.
     //
-    // ⚠️ La cible SUIT la clé d'onglet : `personnels-partages` a disparu avec la
-    // story 63.3, et une redirection qui viserait encore cette clé retomberait
+    // ⚠️ La cible SUIT la clé d'onglet : `personnels-partages` a disparu, et une
+    // redirection qui viserait encore cette clé retomberait
     // silencieusement sur le premier onglet — l'UI redeviendrait injoignable sans
     // que rien ne le dise. C'est exactement ce que
     // `FilePolicyPageTest::the_tabs_targeted_by_the_legacy_redirects_survive_mount()`
@@ -433,8 +367,8 @@ Route::prefix('admin')->middleware(['sambaedu.auth', 'sambaedu.admin', 'federate
     Route::redirect('/quotas', '/admin/settings/files?tab=emplacements')->name('quotas');
 
     // /admin/settings/profils-itinerants — Profils itinérants est désormais l'onglet
-    // « Profils itinérants » de /admin/settings/files (décision Henri 2026-07-17, iso
-    // migration quotas/shares). La route redirige vers cet onglet ; le nom
+    // « Profils itinérants » de /admin/settings/files (iso migration
+    // quotas/shares). La route redirige vers cet onglet ; le nom
     // `admin.settings.profils-itinerants` reste stable pour les liens et bookmarks.
     Route::redirect('/settings/profils-itinerants', '/admin/settings/files?tab=roaming')
         ->name('settings.profils-itinerants');
@@ -452,13 +386,13 @@ Route::prefix('admin')->middleware(['sambaedu.auth', 'sambaedu.admin', 'federate
         ->middleware('can:server.admin')
         ->name('settings.files');
 
-    // /admin/settings/groups — Story 62.1 : « Groupes & droits », page HÔTE à
-    // onglets du modèle groupes/rôles/droits (Epic 62). UN SEUL onglet pour
+    // Admin/settings/groups : « Groupes & droits », page HÔTE à
+    // onglets du modèle groupes/rôles/droits. UN SEUL onglet pour
     // l'instant — « Rôles », le catalogue des rôles d'arête (clé immuable ⇔
     // libellé modifiable, ordre d'affichage, refus de suppression nommés). Les
-    // onglets « Types de groupes » (62.2) et « Arborescences » (62.6) viendront
+    // onglets « Types de groupes » et « Arborescences » viendront
     // ici : on n'affiche pas d'onglet fantôme avant qu'il existe.
-    // `can:server.admin` SEUL (Q4 = A, décision Henri 2026-08-08) : aucune
+    // `can:server.admin` SEUL : aucune
     // permission Spatie nouvelle, comme toutes les pages /admin/settings.
     Route::livewire('/settings/groups', 'pages::admin.settings.groups.index')
         ->middleware('can:server.admin')
@@ -476,13 +410,13 @@ Route::prefix('admin')->middleware(['sambaedu.auth', 'sambaedu.admin', 'federate
         ->middleware('can:server.admin')
         ->name('settings.groups.tree');
 
-    // /admin/settings/app-profiles — Story 36.7 : catalogue des profils applicatifs
+    // Admin/settings/app-profiles : catalogue des profils applicatifs
     // itinérants (Firefox/Thunderbird…) redirigés vers le home réseau. Édition du
     // `spec` de la projection `app_profile` de la capacité `roaming_app_profile`
     // (ajout / modification / activation-désactivation par entrée), chaque écriture
     // validée par l'AppProfileAuthoringGuard via l'observer. Gate `server.admin`
     // (cohérent avec les autres /admin/settings/*). L'ACTIVATION par utilisateur se
-    // fait ailleurs (section « Capacités » des pages groupes d'utilisateurs, AC4).
+    // fait ailleurs (section « Capacités » des pages groupes d'utilisateurs).
     Route::livewire('/settings/app-profiles', 'pages::admin.settings.app-profiles.index')
         ->middleware('can:server.admin')
         ->name('settings.app-profiles');
@@ -491,7 +425,7 @@ Route::prefix('admin')->middleware(['sambaedu.auth', 'sambaedu.admin', 'federate
     // regroupant les outils de migration / observabilité du canal legacy (Sync
     // from AD, Logs scripts, Error Logger, Legacy Monitor), tous voués à
     // disparaître une fois le parc entièrement bascule agent. Chaque onglet
-    // embarque la feature (composant Livewire imbriqué). Décision Henri 2026-07-17.
+    // embarque la feature (composant Livewire imbriqué).
     Route::livewire('/settings/migration', 'pages::admin.settings.migration.index')
         ->middleware('can:server.admin')
         ->name('settings.migration');
@@ -519,42 +453,28 @@ Route::prefix('admin')->middleware(['sambaedu.auth', 'sambaedu.admin', 'federate
         ->name('settings.os');
 
     // /admin/settings/agent — Console de pilotage de la flotte agent desired-state
-    // (rings/releases 25.1, enrôlements porte 2 25.3, progression 25.5, catalogue
-    // d'outils 25.6). Déplacée depuis /app/parc-settings/agent : c'est une fonction
+    // (rings/releases, enrôlements porte 2, progression, catalogue
+    // d'outils). Déplacée depuis /app/parc-settings/agent : c'est une fonction
     // d'administration serveur (gate `can:server.admin`, redirect 301 ci-dessous).
     Route::livewire('/settings/agent', 'pages::admin.settings.agent.index')
         ->middleware('can:server.admin')
         ->name('settings.agent');
 
-    // /admin/settings/parc-defaults — Story 27.17 : surface d'édition consolidée
+    // Admin/settings/parc-defaults : surface d'édition consolidée
     // de la couche Broadcast (« config par défaut du parc »). Page à onglets qui
     // regroupe l'édition des DÉFAUTS établissement de plusieurs domaines
     // (Wallpaper, Lockscreen, Registre/capacités, Apps défaut parc, Outils agent)
     // — la maille Broadcast (StateCompiler::specificity() plancher), overridable
-    // par une config plus spécifique. Tout en `can:server.admin` (décision Henri).
-    // L'onglet Overlay est ajouté par la story 27.18.
+    // par une config plus spécifique. Tout en `can:server.admin`.
     Route::livewire('/settings/parc-defaults', 'pages::admin.settings.parc-defaults.index')
         ->middleware('can:server.admin')
         ->name('settings.parc-defaults');
 
-    // ========================================
-    // Story 54.1 — Bibliothèque d'EXTENSIONS (socle Epic 54).
-    // `/admin/extensions`      : catalogue multi-sources en lecture seule.
-    // `/admin/extensions/{id}` : fiche d'une extension (manifest = source de
-    //                            vérité : version, description, scopes,
-    //                            dépendances).
-    // Protection 3 couches : middlewares du groupe admin
-    // (`sambaedu.auth` + `sambaedu.admin` + `federated.audit`) + `can:server.admin`
-    // par route + double garde `Gate::allows('server.admin')` dans `mount()`.
-    // Aucune nouvelle SambaPermission : `server.admin` suffit.
-    // Ordre : route statique AVANT la route paramétrée (`whereNumber` borne en
-    // plus l'identifiant à un entier).
-    // ========================================
     Route::livewire('/extensions', 'pages::admin.extensions.index')
         ->middleware('can:server.admin')
         ->name('extensions');
 
-    // Story 56.1 — `/admin/extensions/sources` : gestion des SOURCES de
+    // `/admin/extensions/sources` : gestion des SOURCES de
     // catalogue (ajout d'un dépôt tiers avec pin de clé Ed25519, activation,
     // retrait, actualisation). ⚠️ Déclarée AVANT `/extensions/{id}` :
     // `whereNumber('id')` borne déjà l'identifiant, mais la convention
@@ -564,7 +484,7 @@ Route::prefix('admin')->middleware(['sambaedu.auth', 'sambaedu.admin', 'federate
         ->middleware('can:server.admin')
         ->name('extensions.sources');
 
-    // Story 56.5 — `/admin/extensions/journal` : le journal d'audit FR36 en
+    // `/admin/extensions/journal` : le journal d'audit en
     // LECTURE (intégrations, installations, échecs, mises à jour, révocations,
     // actes de source). ⚠️ Déclarée AVANT `/extensions/{id}`, même raison que
     // `/sources` ci-dessus : `whereNumber('id')` borne déjà l'identifiant, mais
@@ -611,18 +531,6 @@ Route::prefix('admin')->middleware(['sambaedu.auth', 'sambaedu.admin', 'federate
         ->middleware('can:server.admin')
         ->name('ipxe.iso-windows.upload-chunk');
 
-
-    // ========================================
-    // Story 16.9 — Exposition UI admin GPO sous `/admin/settings/gpo/*`.
-    // Déplacement structurel des 5 pages Livewire SFC GPO livrées en Phase 1
-    // (Stories 16.2, 16.3c, 16.5, 16.6) depuis `/app/gpo/*`. Permission
-    // `can:server.admin` (iso-Phase 1) + middlewares de groupe `admin`
-    // (`sambaedu.auth + sambaedu.admin`). Ordre critique : routes statiques
-    // (wine, wpkg-deployment) AVANT la route paramétrée `{guid}` (Piège 1 /
-    // iso-pattern Story 16.6 fix #2).
-    // Les anciennes URLs `/app/gpo/*` sont conservées en redirection 301
-    // permanente (cf. groupe `app/` plus haut dans ce fichier).
-    // ========================================
     Route::prefix('settings/gpo')->name('gpo.')->group(function () {
         // Routes statiques Wine et WPKG-deployment AVANT la route {guid} paramétrée.
         Route::livewire('/wine', 'pages::admin.settings.gpo.wine.index')
@@ -633,19 +541,8 @@ Route::prefix('admin')->middleware(['sambaedu.auth', 'sambaedu.admin', 'federate
             ->middleware('can:server.admin')
             ->name('wpkg-deployment');
 
-        // ============================================================
-        // Ordre critique (anti-régression piège 1 de 16.9) : les routes
-        // statiques DOIVENT précéder la route paramétrée `/{guid}`.
-        //
-        // La vue inverse OU → GPOs (`/by-ou`, Story 16.14) a été supprimée :
-        // les deux seuls périmètres qui comptent (postes ET comptes) sont
-        // désormais évalués en permanence par l'onglet « GPO » de
-        // /admin/settings/migration, tandis que `by-ou` demandait de savoir
-        // quelle OU inspecter et calculait faux sur les liens ENFORCED.
-        // ============================================================
-
         // Route détail paramétrée {guid} (regex Microsoft GUID, accolades
-        // optionnelles — iso-pattern Story 16.2 fix #9 anti open-redirect).
+        // optionnelles — pattern anti open-redirect).
         Route::livewire('/{guid}', 'pages::admin.settings.gpo.[guid].index')
             ->where('guid', '\{?[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\}?')
             ->middleware('can:server.admin')
@@ -674,15 +571,9 @@ Route::prefix('admin')->middleware(['sambaedu.auth', 'sambaedu.admin', 'federate
             ->name('index');
     });
 
-    // ========================================
-    // Story 16.12 — UI Livewire de consultation des logs d'exécution scripts.
-    // `/admin/settings/scripts-logs/` (index paginé + bandeau indicateurs)
-    // `/admin/settings/scripts-logs/{id}` (détail UUID-format constraint).
-    // Permission `server.admin` (iso 16.9) + double check dans mount().
-    // ========================================
     Route::prefix('settings/scripts-logs')->name('scripts-logs.')->group(function () {
         // L'INDEX est désormais l'onglet « Logs scripts » de
-        // /admin/settings/migration (décision Henri 2026-07-17) : la liste y est
+        // /admin/settings/migration : la liste y est
         // embarquée. `/admin/settings/scripts-logs` redirige vers cet onglet ; le
         // nom `admin.scripts-logs.index` reste stable (retour du détail, liens).
         // Le DÉTAIL d'un log reste une sous-page dédiée.
@@ -774,10 +665,10 @@ Route::get('admin/gpo/del-roam.sh', [\App\Http\Controllers\Admin\RoamingProfileC
     ->middleware(\App\Http\Middleware\AllowSe4FsScript::class)
     ->name('admin.gpo.del-roam-script');
 
-// Story 27.14 — les 6 routes legacy `migration.legacy.{firefox,thunderbird,
-// network,veyon,associations,applications}` (ex-16.13bis) et la route
-// `app-policy.canonical` (`/api/policies/{kind}/{id}`, canal config app legacy
-// story 4.8) ont été SUPPRIMÉES avec l'extinction du canal de config legacy.
+// Les 6 routes legacy `migration.legacy.{firefox,thunderbird,
+// network,veyon,associations,applications}` et la route
+// `app-policy.canonical` (`/api/policies/{kind}/{id}`, canal config app legacy)
+// ont été SUPPRIMÉES avec l'extinction du canal de config legacy.
 
 /*
 |--------------------------------------------------------------------------
@@ -1217,7 +1108,6 @@ Route::post('/auth/federated/callback', [
 */
 $tombstone = \App\Http\Controllers\LegacyTombstoneController::class;
 
-// --- /gpo/* ---
 Route::match(['GET', 'POST'], '/gpo/applications.php', [$tombstone, 'applications'])
     ->middleware(['local.request', 'throttle:300,1'])
     ->name('legacy.tombstone.applications')
@@ -1258,13 +1148,11 @@ Route::match(['GET', 'POST'], '/gpo/thunderbird_out.php', [$tombstone, 'json'])
     ->name('legacy.tombstone.thunderbird')
     ->withoutMiddleware(['web']);
 
-// --- /partages/* ---
 Route::match(['GET', 'POST'], '/partages/cloud_out.php', [$tombstone, 'script'])
     ->middleware(['local.request', 'throttle:300,1'])
     ->name('legacy.tombstone.cloud')
     ->withoutMiddleware(['web']);
 
-// --- /wpkg/* (XML vide valide + puits de logs) ---
 Route::match(['GET', 'POST'], '/wpkg/hosts_xml_out.php', [$tombstone, 'xml'])
     ->defaults('element', '<wpkg/>')
     ->middleware(['local.request', 'throttle:300,1'])
@@ -1293,7 +1181,6 @@ Route::match(['GET', 'POST'], '/wpkg/download_prefix.php', [$tombstone, 'script'
     ->name('legacy.tombstone.download-prefix')
     ->withoutMiddleware(['web']);
 
-// --- /ipxe/* ---
 // Le démon Linux `autorun` fait `eval` du corps en boucle → commentaire bash
 // STRICT (`#`). DÉCLARÉE AVANT la variante `{version}/action.php` ci-dessous :
 // le littéral doit gagner (sinon `{version}=linux` capturerait cette URL).
@@ -1491,9 +1378,6 @@ Route::post('/dhcp/dnsupdate.php', App\Http\Controllers\DhcpDnsUpdateController:
 */
 Route::match(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD'], '{path}', [App\Http\Controllers\LegacyCatchallController::class, 'handle'])
     ->where('path', '.*');
-
-
-
 
 /*
 |--------------------------------------------------------------------------

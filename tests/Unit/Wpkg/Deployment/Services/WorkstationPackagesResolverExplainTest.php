@@ -16,8 +16,8 @@ use Tests\Support\WpkgSchemaBootstrapper;
 use Tests\TestCase;
 
 /**
- * Story 37.1 — `explainPackages()` (provenance par `app_id`) et son INVARIANT
- * vis-à-vis de `computePackages()` (AC3/AC5) : les clés de la map d'origines,
+ * `explainPackages` (provenance par `app_id`) et son INVARIANT
+ * vis-à-vis de `computePackages` : les clés de la map d'origines,
  * dans l'ordre, sont EXACTEMENT l'ensemble cible byte-identique historique.
  */
 class WorkstationPackagesResolverExplainTest extends TestCase
@@ -42,7 +42,7 @@ class WorkstationPackagesResolverExplainTest extends TestCase
 
     /**
      * Construit un poste avec assignations MIXTES (direct poste, via profil poste,
-     * app parc, profil parc, dépendance transitive) — le scénario AC4 complet.
+     * app parc, profil parc, dépendance transitive) — le scénario complet.
      *
      * @return array{0:Workstation, 1:WorkstationGroup}
      */
@@ -84,7 +84,7 @@ class WorkstationPackagesResolverExplainTest extends TestCase
         [$ws] = $this->seedMixedWorkstation('PCTINV');
         $resolver = new WorkstationPackagesResolver();
 
-        // Invariant AC3 (ordre compris).
+        // Invariant (ordre compris).
         self::assertSame(
             $resolver->computePackages($ws->name)->all(),
             array_keys($resolver->explainPackages($ws->name)),
@@ -141,7 +141,7 @@ class WorkstationPackagesResolverExplainTest extends TestCase
     #[Test]
     public function dependency_with_two_parents_attributes_smallest_parent_pk(): void
     {
-        // Review #3 — une dépendance partagée par DEUX apps racines dans le même
+        // Une dépendance partagée par DEUX apps racines dans le même
         // batch BFS : le parent attribué (« Dépendance de X ») doit être
         // DÉTERMINISTE = la plus petite `application_id` (PK) parente, grâce à
         // l'`orderBy('application_id')`. On choisit des app_id dont l'ordre

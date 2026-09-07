@@ -7,18 +7,18 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 16.11 — AC6.1 / T1.1.
+ * T1.1.
  *
  * Table `workstations_migration_status` : état stable de migration d'un poste.
  *
- * Un poste qui a réussi son enrôlement transitoire bootstrap → JWT (16.10)
+ * Un poste qui a réussi son enrôlement transitoire bootstrap → JWT
  * dispose d'une row ici (upsert sur `workstation_uuid`). Le middleware
  * `InjectBootstrapFragment` consulte cette table pour décider de préfixer
  * ou non le fragment de bootstrap dans les réponses legacy `*_out.php`.
  *
  * Conventions importantes :
  *
- *  - **Pas de FK** vers `workstations.uuid` (cf. Dev Notes 16.10 / 16.11) :
+ *  - **Pas de FK** vers `workstations.uuid` (cf. Dev Notes) :
  *    un poste peut s'enrôler avant d'apparaître dans la table `workstations`
  *    Eloquent. On stocke `workstation_uuid` libre + index unique.
  *  - **Unique constraint** sur `workstation_uuid` : un poste a au plus une

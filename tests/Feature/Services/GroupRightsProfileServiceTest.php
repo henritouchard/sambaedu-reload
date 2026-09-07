@@ -17,11 +17,11 @@ use Tests\TestCase;
 use Tests\Traits\CreatesPermissionSchema;
 
 /**
- * Story 49.1 (AC2, AC3, AC4, AC5, AC10, AC11) — réconciliation des profils de
+ * Réconciliation des profils de
  * droits portés par les groupes.
  *
- * Couvre les 5 scénarios d'AC11 + le technicien fédéré (AC3) + le compte
- * protégé (AC10) + le no-op de `setProfile` + le piège du DERNIER PORTEUR (AC4)
+ * Couvre les 5 scénarios d' + le technicien fédéré + le compte
+ * protégé + le no-op de `setProfile` + le piège du DERNIER PORTEUR
  * + le re-run `reprojectAll` sans écriture + le **test-verrou anti-`syncRoles`**.
  *
  * L'observer pivot est SUSPENDU dans ce fichier (`disableProfileReconcile()`) :
@@ -55,10 +55,6 @@ class GroupRightsProfileServiceTest extends TestCase
         parent::tearDown();
     }
 
-    // ========================================================================
-    // Helpers
-    // ========================================================================
-
     private function role(string $name): Role
     {
         return Role::firstOrCreate(['name' => $name, 'guard_name' => 'web']);
@@ -72,7 +68,7 @@ class GroupRightsProfileServiceTest extends TestCase
             'is_active' => true,
         ]);
 
-        // `source` n'est délibérément PAS `fillable` (Epic 20 : l'origine d'un
+        // `source` n'est délibérément PAS `fillable` ( : l'origine d'un
         // compte n'est jamais mass-assignée) — on la pose explicitement.
         $user->source = $source;
         $user->save();
@@ -96,10 +92,6 @@ class GroupRightsProfileServiceTest extends TestCase
         return User::find($user->id)->roles()->pluck('name')->sort()->values()->all();
     }
 
-    // ========================================================================
-    // AC11-1 — appartenance ⇒ profil ; sortie ⇒ retrait
-    // ========================================================================
-
     #[Test]
     public function joining_a_carrier_group_grants_the_profile_and_leaving_removes_it(): void
     {
@@ -118,14 +110,10 @@ class GroupRightsProfileServiceTest extends TestCase
         self::assertSame([], $this->roleNames($alice));
     }
 
-    // ========================================================================
-    // AC11-2 / NFR-R2 — LE TEST-VERROU : `syncRoles` est interdit
-    // ========================================================================
-
     /**
      * Ce test échouerait si quelqu'un « simplifiait » la réconciliation en
      * `syncRoles` : la délégation manuelle serait détruite. C'est le sinistre
-     * central que la story prévient.
+     * central qu'on prévient ici.
      */
     #[Test]
     public function manual_delegations_survive_reconciliation_forever(): void
@@ -170,10 +158,6 @@ class GroupRightsProfileServiceTest extends TestCase
             . 'il effacerait toutes les délégations manuelles du parc.'
         );
     }
-
-    // ========================================================================
-    // AC11-3 / AC4 — changement de profil porté, y compris DERNIER PORTEUR
-    // ========================================================================
 
     #[Test]
     public function changing_the_carried_profile_removes_the_former_one_from_all_members(): void
@@ -264,10 +248,6 @@ class GroupRightsProfileServiceTest extends TestCase
         $this->service->setProfile($group, 999999);
     }
 
-    // ========================================================================
-    // AC5 / AC11-4 — cumul pur, aucune précédence
-    // ========================================================================
-
     #[Test]
     public function membership_in_two_carrier_groups_cumulates_both_profiles(): void
     {
@@ -297,10 +277,6 @@ class GroupRightsProfileServiceTest extends TestCase
         self::assertSame(['profil-b'], $this->roleNames($u));
     }
 
-    // ========================================================================
-    // AC11-5 — GÉNÉRICITÉ : aucun littéral scolaire câblé
-    // ========================================================================
-
     /**
      * Jeu de groupes NON scolaire (zéro occurrence de `prof`/`eleve`) : le
      * comportement est strictement identique. C'est le test qui prouve que rien
@@ -326,10 +302,6 @@ class GroupRightsProfileServiceTest extends TestCase
         self::assertNull(Role::where('name', 'prof')->first());
         self::assertNull(Role::where('name', 'eleve')->first());
     }
-
-    // ========================================================================
-    // AC3 — périmètre borné : fédérés hors-jeu
-    // ========================================================================
 
     #[Test]
     public function a_federated_technician_keeps_its_role_through_a_full_reprojection(): void
@@ -367,10 +339,6 @@ class GroupRightsProfileServiceTest extends TestCase
         self::assertSame([], $this->roleNames($externe));
     }
 
-    // ========================================================================
-    // AC10 — compte protégé `admin` intouché
-    // ========================================================================
-
     #[Test]
     public function the_protected_admin_account_is_never_touched(): void
     {
@@ -392,10 +360,6 @@ class GroupRightsProfileServiceTest extends TestCase
         $this->service->reprojectAll();
         self::assertSame(['super-admin'], $this->roleNames($admin));
     }
-
-    // ========================================================================
-    // AC4 — re-projection idempotente + fail-soft
-    // ========================================================================
 
     #[Test]
     public function reprojectAll_backfills_then_is_a_strict_no_op_on_rerun(): void
@@ -483,10 +447,6 @@ class GroupRightsProfileServiceTest extends TestCase
         self::assertSame(2, $stats['errors']);
         self::assertSame(0, $stats['assigned']);
     }
-
-    // ========================================================================
-    // Classification dérivée (D3)
-    // ========================================================================
 
     #[Test]
     public function carried_role_ids_are_read_from_database_and_deduplicated(): void

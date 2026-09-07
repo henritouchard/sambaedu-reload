@@ -14,12 +14,12 @@ use Tests\TestCase;
 use Tests\Support\IpxeAuthTestHelper;
 
 /**
- * Story 3.3 — AC9.2 / T6.3.
+ * T6.3.
  *
  * Tests Feature de la route native `GET|POST /ipxe/enrollment/name`.
  *
  * `AdMachineManager` est **mocké** dans le container pour éviter tout appel
- * `samba-tool` réel (iso pattern 16.7).
+ * `samba-tool` réel (iso pattern).
  */
 class IpxeEnrollmentNameEndpointTest extends TestCase
 {
@@ -102,7 +102,7 @@ class IpxeEnrollmentNameEndpointTest extends TestCase
             'name' => 'pc-create-22',
         ]);
 
-        // F13 (review 3.3) : MachineBootLog peuplé pour le flow name (created).
+        // F13 (review) : MachineBootLog peuplé pour le flow name (created).
         self::assertDatabaseHas('machine_boot_logs', [
             'action' => 'ipxe_enroll_name',
             'machine_name' => 'pc-create-22',
@@ -131,7 +131,7 @@ class IpxeEnrollmentNameEndpointTest extends TestCase
         $body = (string) $response->getContent();
         self::assertStringContainsString('deja enregistree', $body);
 
-        // F13 (review 3.3) : MachineBootLog peuplé même sur cas idempotent (same_name).
+        // F13 (review) : MachineBootLog peuplé même sur cas idempotent (same_name).
         self::assertDatabaseHas('machine_boot_logs', [
             'action' => 'ipxe_enroll_name',
             'machine_name' => 'pc-existing-33',
@@ -161,7 +161,7 @@ class IpxeEnrollmentNameEndpointTest extends TestCase
         self::assertStringContainsString('ERREUR', $body);
         self::assertStringContainsString('pc-taken-44', $body);
 
-        // F13 (review 3.3) : aucun MachineBootLog créé pour le poste rejeté (UUID `...555`).
+        // F13 (review) : aucun MachineBootLog créé pour le poste rejeté (UUID `...555`).
         self::assertDatabaseMissing('machine_boot_logs', [
             'action' => 'ipxe_enroll_name',
             'machine_name' => 'pc-taken-44',
@@ -190,7 +190,7 @@ class IpxeEnrollmentNameEndpointTest extends TestCase
             'uuid' => '99999999-9999-9999-9999-999999999999',
         ]);
 
-        // F13 (review 3.3) : aucun MachineBootLog créé sur tentative d'injection.
+        // F13 (review) : aucun MachineBootLog créé sur tentative d'injection.
         self::assertDatabaseMissing('machine_boot_logs', [
             'action' => 'ipxe_enroll_name',
             'workstation_id' => null,
@@ -222,7 +222,7 @@ class IpxeEnrollmentNameEndpointTest extends TestCase
             'name' => 'new-name-66',
         ]);
 
-        // F13 (review 3.3) : MachineBootLog peuplé pour le flow name (renamed).
+        // F13 (review) : MachineBootLog peuplé pour le flow name (renamed).
         self::assertDatabaseHas('machine_boot_logs', [
             'action' => 'ipxe_enroll_name',
             'machine_name' => 'new-name-66',

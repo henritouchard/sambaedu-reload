@@ -11,17 +11,15 @@ use Illuminate\Support\Facades\Schema;
  * Trait mutualisant la création du schéma SQLite `:memory:` pour les tests
  * Spatie (permissions, rôles, délégations, userGroups, workstation_groups).
  *
- * Story 7.2 — évite de dupliquer les ~10 Schema::create dans chaque test
+ * Évite de dupliquer les ~10 Schema::create dans chaque test
  * Feature/Unit qui touche aux Policies ou au PermissionService.
  *
- * Correction review 7.2 #4 / #M5 :
- *  - schéma `users` aligné sur la migration prod (firstname, lastname,
- *    school_code, school_name, email, ad_guid, dn) pour éviter les bugs
- *    silencieux observer + requêtes qui référencent des colonnes absentes ;
- *  - flag `$createdPermissionSchema` (bool) remplacé par `$createdTables`
- *    (array) — `dropPermissionSchema` ne drop que les tables que le trait a
- *    effectivement créées, évitant de casser des tables présentes avant
- *    l'appel au trait.
+ * Deux invariants :
+ *  - le schéma `users` est aligné sur la migration de production (firstname,
+ *    lastname, school_code, school_name, email, ad_guid, dn), faute de quoi un
+ *    observer ou une requête référençant une colonne absente casse en silence ;
+ *  - `$createdTables` retient ce que le trait a réellement créé, pour que
+ *    `dropPermissionSchema()` ne détruise jamais une table posée avant lui.
  */
 trait CreatesPermissionSchema
 {
@@ -51,9 +49,9 @@ trait CreatesPermissionSchema
                 $table->text('dn')->nullable();
                 $table->string('ad_guid', 36)->nullable();
                 $table->string('role', 50)->default('autre');
-                // Story 20.1 / 49.1 — origine du compte : 'ad' (défaut) ou
+                // Origine du compte : 'ad' (défaut) ou
                 // 'federated'. La réconciliation des profils de droits est
-                // bornée à `source='ad'` (AC3).
+                // bornée à `source='ad'`.
                 $table->string('source', 16)->default('ad');
                 $table->string('school_code', 255)->nullable();
                 $table->string('school_name', 255)->nullable();
@@ -62,10 +60,10 @@ trait CreatesPermissionSchema
                 $table->integer('ad_rights_bitmask')->default(0);
                 $table->timestamp('ad_synced_at')->nullable();
                 $table->timestamp('pwd_reset_at')->nullable();
-                // Story 14.4 — AC1 : colonne password_changed_at pour les filtres audit
+                // Colonne password_changed_at pour les filtres audit
                 $table->timestamp('password_changed_at')->nullable();
                 $table->json('quota_snapshot')->nullable();
-                // Story 26.3 — snapshot taille profil itinérant (badge tableau).
+                // Snapshot taille profil itinérant (badge tableau).
                 $table->json('profile_snapshot')->nullable();
                 $table->timestamps();
             });
@@ -80,7 +78,7 @@ trait CreatesPermissionSchema
                 $table->string('type');
                 $table->text('ad_dn')->nullable();
                 $table->string('ad_guid')->nullable();
-                // Story 49.1 (AC1) — profil de droits porté par le groupe.
+                // Profil de droits porté par le groupe.
                 // Pas de FK ici : le schéma hand-rolled crée `roles` APRÈS
                 // `user_groups` (le filet `restrictOnDelete` est vérifié par le
                 // test de migration, qui joue les vraies migrations).
@@ -89,7 +87,7 @@ trait CreatesPermissionSchema
             });
             $this->createdTables[] = 'user_groups';
         } elseif (!Schema::hasColumn('user_groups', 'rights_profile_id')) {
-            // Table créée par un autre test avant 49.1 : on la complète.
+            // Table créée par un autre test avant : on la complète.
             Schema::table('user_groups', function (Blueprint $table) {
                 $table->unsignedBigInteger('rights_profile_id')->nullable();
             });
@@ -99,9 +97,9 @@ trait CreatesPermissionSchema
             Schema::create('user_group_user', function (Blueprint $table) {
                 $table->unsignedBigInteger('user_group_id');
                 $table->unsignedBigInteger('user_id');
-                // Story 4.14 — attribut d'arête « professeur principal ».
+                // Attribut d'arête « professeur principal ».
                 $table->boolean('is_head_teacher')->default(false);
-                // Story 42.1 — rôle d'arête (parité avec la migration).
+                // Rôle d'arête (parité avec la migration).
                 $table->string('role', 20)->default('member');
                 $table->primary(['user_group_id', 'user_id']);
             });
@@ -223,20 +221,20 @@ trait CreatesPermissionSchema
             $this->createdTables[] = 'system_settings';
         }
 
-        // Story 5.2 — la table polyvalente d'audit accueille aussi les
-        // opérations partages (target_type='share'). Story 5.1c+5.1d
+        // La table polyvalente d'audit accueille aussi les
+        // opérations partages (target_type='share').+5.1d
         // l'utilisaient déjà pour les quotas. On la crée localement pour
         // les tests qui touchent aux services Filesystem partages.
         if (!Schema::hasTable('quota_audit_logs')) {
             Schema::create('quota_audit_logs', function (Blueprint $table) {
                 $table->id();
                 $table->unsignedBigInteger('quota_rule_id')->nullable();
-                // Review 5.2 #9 — alignement test/prod : la migration
-                // `2026_02_20_100000_create_quota_tables.php` utilise
-                // `action(20)` et `target_type(20)`. Les actions Story 5.2
-                // tiennent toutes dans 20 caractères (`create_share`=12,
+                // Alignement test/prod : la migration
+                // `2026_02_20_100000_create_quota_tables.php` déclare
+                // `action(20)` et `target_type(20)`. Les actions tiennent
+                // toutes dans 20 caractères (`create_share`=12,
                 // `toggle_echange`=14, `archive_share`=13, `resync_class`=12,
-                // `sync_user`=9). Aligner évite la dette de divergence.
+                // `sync_user`=9).
                 $table->string('action', 20);
                 $table->string('performed_by', 255);
                 $table->string('target_type', 20);
@@ -254,8 +252,8 @@ trait CreatesPermissionSchema
 
     protected function dropPermissionSchema(): void
     {
-        // Review 7.2 #4/M5 — on drop uniquement les tables que le trait a
-        // effectivement créées dans ce test. Le drop s'effectue en ordre
+        // On ne drop que les tables que le trait a effectivement créées dans ce
+        // test. Le drop s'effectue en ordre
         // inverse de création pour respecter les FK (delegation_history →
         // delegations → model_has_* / roles / permissions → workstation_groups
         // → user_group_user → user_groups → users).

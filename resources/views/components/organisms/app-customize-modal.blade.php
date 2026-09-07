@@ -10,7 +10,7 @@ use Livewire\Component;
 /**
  * Modale générique de personnalisation applicative.
  *
- * Story 4.8 — Task 4.4 (AC 7, 8). Écoute `open-app-customize-modal` depuis
+ * Écoute `open-app-customize-modal` depuis
  * les `app-customization-card` puis délègue au composant form spécifique
  * retourné par `adapter->renderFormComponent()`.
  */

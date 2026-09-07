@@ -61,10 +61,6 @@ class UserServiceUpdateTest extends TestCase
         parent::tearDown();
     }
 
-    // =========================================================================
-    // Tests updatePersonalInfo() — Permissions (D1)
-    // =========================================================================
-
     #[Test]
     public function updatePersonalInfo_rejects_when_no_permission(): void
     {
@@ -78,10 +74,6 @@ class UserServiceUpdateTest extends TestCase
         $this->assertFalse($result['success']);
         $this->assertStringContainsString('droits', $result['message']);
     }
-
-    // =========================================================================
-    // Tests validatePersonalInfo() — Validation (public, découplée)
-    // =========================================================================
 
     #[Test]
     public function validatePersonalInfo_requires_prenom(): void
@@ -155,10 +147,6 @@ class UserServiceUpdateTest extends TestCase
         $this->assertNotEmpty($errors);
         $this->assertStringContainsString('description', $errors[0]);
     }
-
-    // =========================================================================
-    // Tests updatePersonalInfo() — LDAP attributes mapping
-    // =========================================================================
 
     #[Test]
     public function updatePersonalInfo_sets_ldap_attributes_correctly(): void

@@ -107,7 +107,7 @@ class LegacyBootstrapShimsTest extends TestCase
         parent::tearDown();
     }
 
-    // ── Stubs & Include Path ─────────────────────────────────────────────
+    // Stubs & Include Path
 
     /**
      * Le bootstrap prépend legacy/stubs/ dans l'include_path.
@@ -178,7 +178,7 @@ class LegacyBootstrapShimsTest extends TestCase
         $response->assertSee('ADMIN_UI_STUB_OK');
     }
 
-    // ── Shims LDAP ───────────────────────────────────────────────────────
+    // Shims LDAP
 
     /**
      * Les fonctions LDAP shimmées sont disponibles pour les modules.
@@ -225,7 +225,7 @@ class LegacyBootstrapShimsTest extends TestCase
         $response->assertSee('ROLE_FUNCS:is_eleve,is_prof');
     }
 
-    // ── Runtime Legacy (autoload, CWD) ───────────────────────────────────
+    // Runtime Legacy (autoload, CWD)
 
     /**
      * Le bridge vendor/autoload.php dans legacy/modules/ fonctionne.
@@ -254,10 +254,10 @@ class LegacyBootstrapShimsTest extends TestCase
         $response->assertSee('test-cwd');
     }
 
-    // ── AC3 : Pas d'erreur récurrente ──────────────────────────────────
+    // : Pas d'erreur récurrente
 
     /**
-     * AC3 — L'exécution d'un module Tier 1 ne génère pas d'erreur dans le error logger.
+     * L'exécution d'un module Tier 1 ne génère pas d'erreur dans le error logger.
      */
     public function test_module_execution_does_not_generate_error_logs(): void
     {

@@ -15,7 +15,7 @@ use Tests\TestCase;
 use Tests\Traits\CreatesPermissionSchema;
 
 /**
- * Story 7.2 (AC6, AC12) — Cache Spatie + invalidation post-mutation.
+ * Cache Spatie + invalidation post-mutation.
  *
  * Garantit :
  *  - la mutation d'un rôle invalide le cache de permissions
@@ -88,7 +88,7 @@ class PermissionCacheInvalidationTest extends TestCase
 
     public function test_delegation_revocation_does_not_require_cache_flush(): void
     {
-        // AC6 — Les délégations ne sont PAS stockées dans les tables Spatie,
+        // Les délégations ne sont PAS stockées dans les tables Spatie,
         // elles sont résolues dynamiquement par `canOnWorkstationGroup`. Une
         // révocation ne nécessite donc aucune invalidation cache Spatie.
         //

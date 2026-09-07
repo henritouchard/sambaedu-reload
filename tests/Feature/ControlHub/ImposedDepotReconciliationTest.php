@@ -30,16 +30,16 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 51.1 — Réconciliation du dépôt IMPOSÉ par le contrat amont (controlHub) :
- * bascule EXCLUSIVE du canal dépôts (D2).
+ * Réconciliation du dépôt IMPOSÉ par le contrat amont (controlHub) :
+ * bascule EXCLUSIVE du canal dépôts.
  *
  * Couvre : matérialisation depuis catalogue (projection JSON table→table, purge, champs
- * d'affichage AC1) ; transfert des communes (status/pivots intacts, depot_id re-pointé) ;
+ * D'affichage) ; transfert des communes (status/pivots intacts, depot_id re-pointé) ;
  * désinstallation en cascade du hors-catalogue (pivots, ligne supprimée, apps depot_id NULL
  * INTOUCHÉES) ; ordre transfert→désinstall→suppression (une commune n'est PAS détruite par
- * la cascade FK) ; invalidation du cache par-poste (piège #2) ; catalogue vide = pas de
- * bascule (AC9) ; standalone no-op (NFR3) ; idempotence re-jeu ; échec isolé → dépôt
- * conservé (AC11) ; R3.
+ * la cascade FK) ; invalidation du cache par-poste ; catalogue vide = pas de
+ * bascule ; standalone no-op ; idempotence re-jeu ; échec isolé → dépôt
+ * conservé ; aucun identifiant livré ne contient « central ».
  *
  * Tests HÔTE (php8.4 + pdo_sqlite, `RefreshDatabase`, `CACHE_DRIVER=array`). On mocke la
  * régénération fichier (`PackagesXmlService`/`WpkgBundleGenerator`) pour isoler du FS ;
@@ -47,7 +47,8 @@ use Tests\TestCase;
  * varchar/enum PG → on teste des DÉCISIONS (présence/absence/count/valeur), jamais des
  * bornes de colonne ; on matche sur `app_id`/`app_key` (string).
  *
- * ⚠️ GARDE-FOU R3 : aucun « central » ; vocabulaire « imposé » / « amont » / `Imposed` / `Upstream`.
+ * ⚠️ RÈGLE DE NOMMAGE : aucun identifiant livré ne contient « central » ;
+ * vocabulaire « imposé » / « amont » / `Imposed` / `Upstream`.
  */
 class ImposedDepotReconciliationTest extends TestCase
 {
@@ -99,7 +100,7 @@ class ImposedDepotReconciliationTest extends TestCase
         ]);
     }
 
-    // ── AC4 — matérialisation (projection + purge + champs AC1) ───────────────
+    // — matérialisation (projection + purge + champs)
 
     #[Test]
     public function it_materializes_a_single_imposed_depot_and_projects_the_catalog(): void
@@ -125,7 +126,7 @@ class ImposedDepotReconciliationTest extends TestCase
         self::assertTrue($imposed->first()->is_primary);
         self::assertSame(ImposedDepotReconciler::IMPOSED_DEPOT_URL, $imposed->first()->url);
 
-        // Projection : 2 depot_applications avec champs AC1 présents/absents.
+        // Projection : 2 depot_applications avec champs présents/absents.
         $ff = DepotApplication::where('depot_id', $imposed->first()->id)->where('app_id', 'firefox')->first();
         self::assertNotNull($ff);
         self::assertSame('Mozilla Firefox', $ff->name);
@@ -163,7 +164,7 @@ class ImposedDepotReconciliationTest extends TestCase
         self::assertSame(1, $result->purged);
     }
 
-    // ── AC5 — transfert des communes (jamais désinstall/réinstall) ────────────
+    // — transfert des communes (jamais désinstall/réinstall)
 
     #[Test]
     public function a_common_application_is_transferred_without_touching_status_or_pivots(): void
@@ -201,7 +202,7 @@ class ImposedDepotReconciliationTest extends TestCase
         self::assertSame(1, $result->transferred);
     }
 
-    // ── AC6 — désinstallation en cascade du hors-catalogue ────────────────────
+    // — désinstallation en cascade du hors-catalogue
 
     #[Test]
     public function an_out_of_catalog_application_is_deleted_with_full_cascade(): void
@@ -267,7 +268,7 @@ class ImposedDepotReconciliationTest extends TestCase
     #[Test]
     public function an_app_on_the_imposed_depot_that_left_the_catalog_is_uninstalled(): void
     {
-        // Review 51.1 #4 (convergence stricte D2) — une app transférée sur le dépôt imposé
+        // Convergence stricte — une app transférée sur le dépôt imposé
         // à une version ANTÉRIEURE du catalogue, puis RETIRÉE du catalogue, doit être
         // désinstallée (pas seulement voir sa depot_application purgée).
         $contract = ControlHubContract::factory()->create();
@@ -296,9 +297,9 @@ class ImposedDepotReconciliationTest extends TestCase
     #[Test]
     public function a_duplicate_app_id_on_a_second_depot_is_destroyed_freeing_its_depot(): void
     {
-        // Review 51.1 #5 (décision Henri) — deux lignes Application du MÊME app_id sur deux
+        // Deux lignes Application du MÊME app_id sur deux
         // dépôts classiques (miroir). La 1ʳᵉ est transférée ; la 2ᵉ, redondante, est
-        // DÉTRUITE (unicité) → son dépôt d'origine devient supprimable (AC7).
+        // DÉTRUITE (unicité) → son dépôt d'origine devient supprimable.
         $contract = ControlHubContract::factory()->create();
         $this->catalogApp($contract, 'firefox', ['display_name' => 'Firefox']);
 
@@ -320,7 +321,7 @@ class ImposedDepotReconciliationTest extends TestCase
         self::assertSame(Depot::where('is_imposed', true)->first()->id, Application::where('app_id', 'firefox')->first()->depot_id);
         self::assertSame(1, $result->transferred);
         self::assertSame(1, $result->duplicatesRemoved);
-        // Les deux dépôts classiques, désormais non référencés, sont supprimés (AC7).
+        // Les deux dépôts classiques, désormais non référencés, sont supprimés.
         self::assertNull(Depot::find($depot1->id));
         self::assertNull(Depot::find($depot2->id));
         self::assertSame(2, $result->depotsDeleted);
@@ -350,7 +351,7 @@ class ImposedDepotReconciliationTest extends TestCase
 
         $this->reconciler()->reconcile();
 
-        // Piège #2 : le detach Eloquent n'émet pas l'événement → le réconciliateur
+        // Le detach Eloquent n'émet pas l'événement → le réconciliateur
         // invalide explicitement les entrées AVANT le detach.
         self::assertFalse(Cache::has(WorkstationPackagesResolver::cacheKey('PC-DIRECT')));
         self::assertFalse(Cache::has(WorkstationPackagesResolver::cacheKey('PC-GROUP')));
@@ -359,7 +360,7 @@ class ImposedDepotReconciliationTest extends TestCase
     #[Test]
     public function uninstalling_invalidates_cache_of_workstations_reached_only_via_an_app_profile(): void
     {
-        // Review 51.1 #1 — le resolver agrège aussi `appProfiles.applications` et
+        // Le resolver agrège aussi `appProfiles.applications` et
         // `groups.appProfiles.applications` ; un poste servi UNIQUEMENT via un profil
         // (aucune assignation directe) doit voir son cache invalidé, sinon il sert un
         // profiles.xml périmé jusqu'à expiration du cache.
@@ -393,7 +394,7 @@ class ImposedDepotReconciliationTest extends TestCase
         self::assertFalse(Cache::has(WorkstationPackagesResolver::cacheKey('PC-PROFILE-GROUP')));
     }
 
-    // ── AC7 + piège #1 — ordre transfert → désinstall → suppression ───────────
+    // Ordre transfert → désinstall → suppression
 
     #[Test]
     public function order_invariant_a_common_app_is_not_destroyed_by_the_fk_cascade_of_depot_deletion(): void
@@ -443,7 +444,7 @@ class ImposedDepotReconciliationTest extends TestCase
         self::assertSame(1, Depot::where('is_imposed', true)->count());
     }
 
-    // ── AC9 — catalogue vide = verrou sans bascule ────────────────────────────
+    // — catalogue vide = verrou sans bascule
 
     #[Test]
     public function an_empty_catalog_triggers_no_switchover_at_all(): void
@@ -468,8 +469,6 @@ class ImposedDepotReconciliationTest extends TestCase
         self::assertSame(0, $result->depotsDeleted);
     }
 
-    // ── NFR3 — standalone no-op total ─────────────────────────────────────────
-
     #[Test]
     public function without_an_active_contract_reconcile_is_a_total_noop(): void
     {
@@ -490,7 +489,7 @@ class ImposedDepotReconciliationTest extends TestCase
         self::assertSame(0, $result->materialized);
     }
 
-    // ── AC11 — idempotence re-jeu ─────────────────────────────────────────────
+    // — idempotence re-jeu
 
     #[Test]
     public function replaying_reconcile_on_a_converged_state_is_a_zero_op(): void
@@ -508,9 +507,9 @@ class ImposedDepotReconciliationTest extends TestCase
 
         $second = $this->reconciler()->reconcile();
 
-        // AC11 — re-jeu convergé = ZÉRO-OP STRICT : aucune écriture, TOUS les compteurs à
+        // Re-jeu convergé = ZÉRO-OP STRICT : aucune écriture, TOUS les compteurs à
         // zéro, y compris `materialized` (la matérialisation ne compte QUE sur diff réel,
-        // pas sur le simple rafraîchissement de `last_checked_at` — review 51.1 #3).
+        // pas sur le simple rafraîchissement de `last_checked_at`).
         self::assertSame(0, $second->materialized);
         self::assertSame(0, $second->transferred);
         self::assertSame(0, $second->uninstalled);
@@ -542,7 +541,7 @@ class ImposedDepotReconciliationTest extends TestCase
         self::assertSame($imposed->id, $promoted->id, 'toujours le MÊME dépôt (point d\'entrée unique)');
     }
 
-    // ── AC11 — échec de désinstall isolé → dépôt d'origine conservé ───────────
+    // — échec de désinstall isolé → dépôt d'origine conservé
 
     #[Test]
     public function a_failed_uninstall_isolates_and_keeps_its_origin_depot(): void
@@ -584,7 +583,7 @@ class ImposedDepotReconciliationTest extends TestCase
         self::assertSame(0, $result->depotsDeleted);
     }
 
-    // ── AC3 — ordre des listeners (invariant) ─────────────────────────────────
+    // — ordre des listeners (invariant)
 
     #[Test]
     public function the_imposed_depot_listener_is_registered_after_ordered_provisioning(): void
@@ -627,7 +626,7 @@ class ImposedDepotReconciliationTest extends TestCase
         );
     }
 
-    // ── R3 — aucun identifiant « central » ────────────────────────────────────
+    // Aucun identifiant « central »
 
     #[Test]
     public function r3_no_central_identifier_in_delivered_classes(): void

@@ -9,7 +9,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Tests Feature `ShortcutsService::importWineShortcuts` — Story 16.3c AC2.2.
+ * Tests Feature `ShortcutsService::importWineShortcuts` —.
  *
  * Hook test : binding container `legacy.get_wine_shortcuts` permet de
  * remplacer le helper legacy par un mock côté tests sans charger

@@ -19,11 +19,11 @@ use Tests\Support\WpkgSchemaBootstrapper;
 use Tests\TestCase;
 
 /**
- * Story 15.5 / AC1.5 — Tests `ActiveDeploymentForWorkstationQuery`.
+ * Tests `ActiveDeploymentForWorkstationQuery`.
  *
  * Couvre les 3 axes de matching :
  *   - workstation_ids
- *   - group_ids (et alias legacy `workstation_group_ids` 15.4)
+ *  - group_ids (et alias legacy `workstation_group_ids`)
  *   - profile_ids
  *
  * + cas d'ambiguïté : 2+ déploiements actifs → log warning, retourne le
@@ -39,7 +39,7 @@ final class ActiveDeploymentForWorkstationQueryTest extends TestCase
 
         WpkgSchemaBootstrapper::bootstrap();
 
-        // Bootstrap des tables 15.1 manquantes pour ce test.
+        // Bootstrap des tables manquantes pour ce test.
         if (! Schema::hasTable('wpkg_deployments')) {
             Schema::create('wpkg_deployments', function (Blueprint $t) {
                 $t->uuid('id')->primary();
@@ -136,7 +136,7 @@ final class ActiveDeploymentForWorkstationQueryTest extends TestCase
             'updated_at' => now(),
         ]);
 
-        // 15.4 utilise `workstation_group_ids` — la query doit l'accepter.
+        // L'appelant utilise `workstation_group_ids` — la query doit l'accepter.
         $id = $this->insertDeployment(['workstation_group_ids' => [$g->id]]);
 
         $query = new ActiveDeploymentForWorkstationQuery();

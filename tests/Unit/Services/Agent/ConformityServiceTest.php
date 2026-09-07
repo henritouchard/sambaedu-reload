@@ -18,9 +18,9 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Tests Unit `ConformityService` — Story 24.7 (AC1, AC2, AC3).
+ * Tests Unit `ConformityService`.
  *
- * worst-status (précédence error > drift > compliant — Story 27.8 :
+ * Worst-status (précédence error > drift > compliant :
  * `drifted_allowed` retiré), compteurs par statut + dérivés (jamais rapporté /
  * muet), exceptions datées groupées par type, périmètre = postes ENRÔLÉS.
  * Lecture pure (aucun HTTP).
@@ -69,7 +69,7 @@ class ConformityServiceTest extends TestCase
         ]);
     }
 
-    // ── worst-status ────────────────────────────────────────────────────
+    // worst-status
 
     #[Test]
     public function worst_status_applies_precedence_error_over_drift_over_compliant(): void
@@ -94,13 +94,13 @@ class ConformityServiceTest extends TestCase
         self::assertArrayNotHasKey($ws->id, $worst);
     }
 
-    // ── summary counters + dérivés ──────────────────────────────────────
+    // summary counters + dérivés
 
     #[Test]
     public function summary_counts_each_category_on_enrolled_perimeter(): void
     {
         // 1 exception (drift), 1 conforme, 1 jamais rapporté, 1 muet, 1 NON
-        // enrôlé (hors périmètre). Story 27.8 : plus de catégorie « dérive tolérée ».
+        // enrôlé (hors périmètre). : plus de catégorie « dérive tolérée ».
         $exc = $this->enrolled();
         $this->state($exc, 'wallpaper', AgentResourceStatus::Drift);
 
@@ -137,7 +137,7 @@ class ConformityServiceTest extends TestCase
         self::assertSame(0, $summary['compliant']);
     }
 
-    // ── périmètre groupe ────────────────────────────────────────────────
+    // périmètre groupe
 
     #[Test]
     public function summary_scopes_to_group_members(): void
@@ -156,7 +156,7 @@ class ConformityServiceTest extends TestCase
         self::assertSame(1, $summary['exceptions']);
     }
 
-    // ── exceptionsFor : règles → exceptions seules, datées ──────────────
+    // exceptionsFor : règles → exceptions seules, datées
 
     #[Test]
     public function exceptions_for_lists_only_non_compliant_per_reported_type(): void
@@ -223,7 +223,7 @@ class ConformityServiceTest extends TestCase
         self::assertSame(ConformityService::DERIVED_SILENT, $block['exceptions'][0]['status']);
     }
 
-    // ── statesFor / recentEventsFor ─────────────────────────────────────
+    // statesFor / recentEventsFor
 
     #[Test]
     public function states_for_returns_current_states_ordered_by_type(): void

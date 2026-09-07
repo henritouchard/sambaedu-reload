@@ -26,7 +26,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 63.3 — L'ÉCRAN « EMPLACEMENTS ET CLOUD ».
+ * L'ÉCRAN « EMPLACEMENTS ET CLOUD ».
  *
  * Trois questions, dans cet ordre : quel cloud (choix EXCLUSIF, avec sa page de
  * connexion et elle seule), où vit l'espace personnel, où vit l'espace partagé.
@@ -91,7 +91,7 @@ class FileLocationsScreenTest extends TestCase
     }
 
     /**
-     * Story 63.5 — une application du catalogue INSTALLÉE, dont la recette décrit
+     * Une application du catalogue INSTALLÉE, dont la recette décrit
      * une désinstallation, et DÉSIGNÉE comme client du produit.
      */
     private function designatedClient(
@@ -126,10 +126,6 @@ class FileLocationsScreenTest extends TestCase
         self::decide(FileBackendName::Posix, FileBackendName::Posix, ActiveCloud::OpenCloud);
     }
 
-    // =====================================================================
-    // AC1 — l'onglet, et les clés mortes
-    // =====================================================================
-
     #[Test]
     public function the_host_page_opens_on_the_locations_tab(): void
     {
@@ -145,10 +141,6 @@ class FileLocationsScreenTest extends TestCase
             Livewire::test(self::HOST, ['tab' => $deadKey])->assertSet('tab', 'emplacements');
         }
     }
-
-    // =====================================================================
-    // AC2 — le cloud, choix EXCLUSIF, et sa page de connexion
-    // =====================================================================
 
     #[Test]
     public function the_cloud_is_a_single_choice_with_the_three_frozen_labels(): void
@@ -215,10 +207,6 @@ class FileLocationsScreenTest extends TestCase
         self::assertStringNotContainsString(self::NEXTCLOUD_PAGE, $html);
         self::assertStringNotContainsString(self::OPENCLOUD_PAGE, $html);
     }
-
-    // =====================================================================
-    // AC3 — les deux emplacements, et l'effet sur le poste
-    // =====================================================================
 
     #[Test]
     public function each_space_states_the_effect_it_produces_on_the_workstation(): void
@@ -309,10 +297,6 @@ class FileLocationsScreenTest extends TestCase
         self::assertStringContainsString('data-testid="espace-perso-option-posix"', $html);
     }
 
-    // =====================================================================
-    // AC4 — une position non posable est ABSENTE, avec son motif
-    // =====================================================================
-
     #[Test]
     public function without_an_active_cloud_the_cloud_position_is_absent_and_the_reason_is_shown(): void
     {
@@ -374,12 +358,8 @@ class FileLocationsScreenTest extends TestCase
         self::assertStringNotContainsString('espace-perso-refusal', $html);
     }
 
-    // =====================================================================
-    // AC8 — le bloc « Réglages » et sa phrase d'honnêteté
-    // =====================================================================
-
     /**
-     * ⚠️ **Ce test a changé de sujet avec la story 63.4, et pas de propriété.** Le
+     * ⚠️ **Ce test a changé de sujet, pas de propriété.** Le
      * bloc « Réglages » ne portait que le chemin d'accès au cloud : sans cloud, il
      * était vide, donc absent. Il porte désormais aussi le plafond des espaces
      * personnels et la corbeille des répertoires personnels — deux réglages du
@@ -400,7 +380,7 @@ class FileLocationsScreenTest extends TestCase
     }
 
     /**
-     * Story 63.5 — LA PHRASE D'HONNÊTETÉ DE 63.3 A DISPARU, et c'est un livrable.
+     * LA PHRASE D'HONNÊTETÉ DE A DISPARU, et c'est un livrable.
      *
      * Elle disait que la pose du client était livrée par un chantier séparé. Ce
      * chantier est arrivé : la garder ferait de cet écran un écran qui promet
@@ -432,7 +412,7 @@ class FileLocationsScreenTest extends TestCase
     }
 
     /**
-     * Story 63.4 — les deux cartes sont MONTÉES dans le bloc « Réglages ». Ce sont
+     * Les deux cartes sont MONTÉES dans le bloc « Réglages ». Ce sont
      * des composants ENFANTS : `Livewire::test()` n'en rend qu'un jalon `wire:name`,
      * et c'est ce jalon qu'on interroge — leur contenu a sa propre suite.
      */
@@ -473,15 +453,13 @@ class FileLocationsScreenTest extends TestCase
      * ⚠️ **CORRECTION DE REVUE — LES DEUX CARTES NE DÉPENDENT D'AUCUNE DÉCISION
      * D'EMPLACEMENT.**
      *
-     * ---------------------------------------------------------------------------
      * Elles étaient montées à l'intérieur de la condition qui masque les contrôles
      * d'emplacement. Or cette condition est fausse dès qu'un bandeau de reprise est
      * affiché — c'est-à-dire sur TOUTE instance dont la reprise n'a pas été jouée,
      * soit exactement celles que la migration de bascule vient de modifier.
      * L'administrateur n'aurait alors pu ni voir ni corriger le plafond qu'on venait
-     * d'écrire pour lui, ni régler la grâce, ni la corbeille : l'orphelinat que cette
-     * story solde, reconduit sous une autre forme.
-     * ---------------------------------------------------------------------------
+     * d'écrire pour lui, ni régler la grâce, ni la corbeille : l'orphelinat qu'on
+     * solde ici, reconduit sous une autre forme.
      */
     #[Test]
     public function the_quota_and_trash_cards_survive_a_pending_adoption_banner(): void
@@ -521,10 +499,6 @@ class FileLocationsScreenTest extends TestCase
             $html,
         );
     }
-
-    // =====================================================================
-    // AC6 — les trois branches de la reprise
-    // =====================================================================
 
     #[Test]
     public function a_brand_new_instance_shows_the_defaults_and_can_save(): void
@@ -689,10 +663,6 @@ class FileLocationsScreenTest extends TestCase
         self::assertStringNotContainsString(self::NEXTCLOUD_PAGE, $html);
     }
 
-    // =====================================================================
-    // L'écran ne se contredit plus après une connexion complétée
-    // =====================================================================
-
     /**
      * **L'ÉCRAN SE CONTREDISAIT** (correction de revue) : l'administrateur
      * choisissait le cloud, l'enregistrait, complétait sa connexion dans le bloc
@@ -732,10 +702,6 @@ class FileLocationsScreenTest extends TestCase
         self::assertStringContainsString('espace-perso-option-nextcloud', $html);
         self::assertStringNotContainsString('est incomplète', self::readable($html));
     }
-
-    // =====================================================================
-    // Un geste qui ne change RIEN n'est jamais refusé
-    // =====================================================================
 
     /**
      * **NE PAS ENFERMER L'ADMINISTRATEUR** (correction de revue). La posabilité
@@ -789,10 +755,6 @@ class FileLocationsScreenTest extends TestCase
         self::assertSame($before, SystemSetting::get(FileLocationService::SETTING_KEY));
     }
 
-    // =====================================================================
-    // Ce que l'écran dit AVANT le refus
-    // =====================================================================
-
     /** La fenêtre se referme, et l'écran le dit à côté du bouton. */
     #[Test]
     public function the_screen_warns_that_the_choice_freezes_once_an_account_exists(): void
@@ -840,10 +802,6 @@ class FileLocationsScreenTest extends TestCase
         );
     }
 
-    // =====================================================================
-    // Le rendu ne parle jamais à l'instance, et la garde est double
-    // =====================================================================
-
     #[Test]
     public function rendering_the_screen_sends_nothing_over_the_network(): void
     {
@@ -871,11 +829,6 @@ class FileLocationsScreenTest extends TestCase
 
         Livewire::test(self::COMPONENT)->assertStatus(403);
     }
-
-    // =====================================================================
-    // Story 63.5 — LA DÉSIGNATION DU CLIENT, ET LA POSITION QUI N'EST PAS
-    // PROPOSÉE TANT QU'ELLE N'EST PAS TENABLE
-    // =====================================================================
 
     #[Test]
     public function without_a_designation_the_client_position_is_absent_with_its_reason(): void
@@ -1039,10 +992,6 @@ class FileLocationsScreenTest extends TestCase
         self::assertSame('web', FilePolicyService::globalConfig()['cloud_access_path']);
     }
 
-    // =====================================================================
-    // AC6 — l'avertissement de version d'agent
-    // =====================================================================
-
     #[Test]
     public function a_park_at_the_bound_raises_no_version_warning(): void
     {
@@ -1100,10 +1049,10 @@ class FileLocationsScreenTest extends TestCase
     }
 
     /**
-     * Story 63.5 — UNE POSITION PERSISTÉE QUI N'EST PLUS TENABLE EST DITE, pas
+     * UNE POSITION PERSISTÉE QUI N'EST PLUS TENABLE EST DITE, pas
      * corrigée en douce.
      *
-     * Le cas est réel : la story 63.3 enregistrait `client_natif` SANS aucune
+     * Le cas est réel : la enregistrait `client_natif` SANS aucune
      * garde (la position n'avait alors aucun effet), et un changement de cloud
      * suffit à le reproduire.
      */
@@ -1111,7 +1060,7 @@ class FileLocationsScreenTest extends TestCase
     public function a_persisted_client_position_that_no_longer_holds_is_named_on_screen(): void
     {
         $this->nextcloudInstance();
-        // Payload « à la 63.3 » : la position est persistée, aucune application
+        // Payload « » : la position est persistée, aucune application
         // n'est désignée.
         FilePolicyService::patchGlobal(['cloud_access_path' => 'client_natif']);
 
@@ -1137,15 +1086,10 @@ class FileLocationsScreenTest extends TestCase
 
         Livewire::test(self::COMPONENT)->call('save');
 
-        // L'invariant de l'epic : aucun réglage persisté n'est perdu. Le geste
+        // L'invariant : aucun réglage persisté n'est perdu. Le geste
         // d'enregistrement ne gouverne pas le chemin d'accès.
         self::assertSame('client_natif', FilePolicyService::globalConfig()['cloud_access_path']);
     }
-
-    // =====================================================================
-    // Story 63.5 (correction de revue) — LE BROUILLON DU BLOC 1 N'EST PAS LE
-    // CLOUD ACTIF, et RIEN de ce que le bloc 3 écrit ne s'ancre dessus
-    // =====================================================================
 
     /**
      * LE TROU DE TEST QUE CETTE CORRECTION COMBLE : aucune suite ne faisait
@@ -1265,7 +1209,7 @@ class FileLocationsScreenTest extends TestCase
     }
 
     /**
-     * AC6 — L'AVERTISSEMENT DE VERSION EST INCONDITIONNEL (correction de revue).
+     * L'AVERTISSEMENT DE VERSION EST INCONDITIONNEL (correction de revue).
      * Il informe et n'interdit rien : c'est AVANT de s'engager sur une
      * désignation qu'il est le plus utile.
      */

@@ -14,7 +14,6 @@ namespace App\Gpo\Services;
  * Path configurable via `config('sambaedu.gpo.wine.prefix_base')` ; fallback
  * hardcodé legacy si la clé est absente (parité iso `wine.php:43`).
  *
- * Story 16.3c — AC1.2.
  *
  * @legacy-port path="sambaedu/gpo/wine.php:43-49"
  */

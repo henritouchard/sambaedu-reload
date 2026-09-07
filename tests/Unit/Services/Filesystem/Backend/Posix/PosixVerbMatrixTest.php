@@ -21,7 +21,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 62.4 — LA MATRICE DE DÉGRADATION, BRANCHE PAR BRANCHE.
+ * LA MATRICE DE DÉGRADATION, BRANCHE PAR BRANCHE.
  *
  * Les QUINZE combinaisons non vides des quatre verbes, chacune avec sa
  * classification et le niveau qu'elle produit. Ce n'est pas une table de vérité
@@ -75,7 +75,6 @@ class PosixVerbMatrixTest extends TestCase
     public static function matrix(): array
     {
         return [
-            // --- rendu EXACT, et les deux ancres du référentiel figé -----------
             'lire — l\'ancre de la lecture seule' => [[self::L], [self::L], 'rx', 'rx', false],
             'les quatre — l\'ancre de l\'écriture pleine' => [PlanGrant::VERBS, PlanGrant::VERBS, 'rwx', 'rwx', false],
             'editer seul' => [[self::E], [self::E], 'x', 'wx', false],
@@ -86,7 +85,6 @@ class PosixVerbMatrixTest extends TestCase
                 [self::E, self::C, self::S], [self::E, self::C, self::S], 'wx', 'wx', false,
             ],
 
-            // --- rendu DÉGRADÉ mais COMPLET : la restriction de suppression ----
             'creer seul — déposer sans effacer' => [[self::C], [self::C], 'wx', 'x', true],
             'lire + creer — le dépôt de devoirs' => [[self::L, self::C], [self::L, self::C], 'rwx', 'rx', true],
             'editer + creer' => [[self::E, self::C], [self::E, self::C], 'wx', 'wx', true],
@@ -94,7 +92,6 @@ class PosixVerbMatrixTest extends TestCase
                 [self::L, self::E, self::C], [self::L, self::E, self::C], 'rwx', 'rwx', true,
             ],
 
-            // --- NON EXPRIMABLE : supprimer sans creer -------------------------
             'supprimer seul — rien n\'est rendu' => [[self::S], [], '', '', false],
             'lire + supprimer' => [[self::L, self::S], [self::L], 'rx', 'rx', false],
             'editer + supprimer' => [[self::E, self::S], [self::E], 'x', 'wx', false],
@@ -180,10 +177,6 @@ class PosixVerbMatrixTest extends TestCase
         self::assertCount(4, $declined, 'quatre portent la suppression sans la création : non exprimables');
     }
 
-    // =========================================================================
-    // La restriction est une propriété du NŒUD
-    // =========================================================================
-
     #[Test]
     public function a_node_asking_to_deposit_without_erasing_carries_the_restriction(): void
     {
@@ -256,10 +249,6 @@ class PosixVerbMatrixTest extends TestCase
         self::assertSame([FileBackendOutcome::NonExprimable], $compiled->refusalOutcomes());
     }
 
-    // =========================================================================
-    // La pose DIFFÉRENCIÉE
-    // =========================================================================
-
     #[Test]
     public function a_grant_whose_files_and_directories_differ_produces_two_lists(): void
     {
@@ -305,10 +294,6 @@ class PosixVerbMatrixTest extends TestCase
         self::assertFalse($compiled->restrictsDeletion, 'un octroi suspendu ne demande rien');
         self::assertSame([], $compiled->refusals);
     }
-
-    // =========================================================================
-    // Décor
-    // =========================================================================
 
     private ?int $groupId = null;
 

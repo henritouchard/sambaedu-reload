@@ -8,21 +8,19 @@ declare(strict_types=1);
  * NE PAS confondre avec `config/filesystems.php` (pluriel — disques Laravel
  * Storage). Ce fichier porte les racines métier de la couche d'exécution.
  *
- * ---------------------------------------------------------------------------
  * **DEUX racines sont déclarées ici, et elles sont DISJOINTES.**
  *
- *  1. `shares_root` — les répertoires réseau nommés (story 34.1). Exposée en SMB
+ * 1. `shares_root` — les répertoires réseau nommés. Exposée en SMB
  *     par le partage `[partages]` : ce qui vit dessous est VISIBLE des postes.
  *  2. `class_trees_root` — les arbres de classe matérialisés par la chaîne
- *     générique recette → plan → backend (story 60.5). Racine NEUVE, volontairement
+ * générique recette → plan → backend. Racine NEUVE, volontairement
  *     HORS de `shares_root` : l'y loger exposerait chaque arbre de classe dans la
  *     liste des partages vue par les utilisateurs. Aucune exposition SMB n'est
- *     livrée par la story 60.5 — l'arbre neuf se vérifie en lecture d'ACL côté
+ * livrée par la — l'arbre neuf se vérifie en lecture d'ACL côté
  *     serveur, le temps de la comparaison avec l'arbre historique. Une racine
  *     dédiée est aussi ce qui permettra d'y monter un disque séparé sans toucher
  *     une ligne de code.
  *
- * ---------------------------------------------------------------------------
  * **UNE racine n'est PAS déclarée ici, et c'est délibéré : `classes_root`.**
  *
  * C'est la racine de l'arbre de classe HISTORIQUE, celui que SE5 continue de

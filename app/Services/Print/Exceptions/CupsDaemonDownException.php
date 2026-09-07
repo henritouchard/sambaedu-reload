@@ -11,6 +11,6 @@ namespace App\Services\Print\Exceptions;
  * Distincte de `CupsCommandException` (erreur métier d'une commande individuelle)
  * pour permettre aux appelants de différencier « CUPS down » de « commande invalide ».
  * Le `PrintersSyncCommand` l'attrape pour interrompre la synchronisation sans
- * marquer tous les rows SER comme orphelins (Story 6.1 AC9, fix #12).
+ * marquer tous les rows SER comme orphelins.
  */
 class CupsDaemonDownException extends \RuntimeException {}

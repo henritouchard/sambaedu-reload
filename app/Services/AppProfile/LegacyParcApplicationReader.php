@@ -11,16 +11,16 @@ use Illuminate\Support\Facades\Log;
  * Lecteur mutualisé des assignations parc → applications du legacy SE4
  * (table MySQL `applications_profile`, `type_entite = 'parc'`).
  *
- * Story 38.7 — extrait de {@see AppProfileLegacyApplicationLinker} pour être
+ * Extrait de {@see AppProfileLegacyApplicationLinker} pour être
  * partagé par les trois consommateurs de l'import de migration qui ont besoin
  * de savoir « ce parc legacy porte-t-il des applications ? » :
  *   - {@see AppProfileLegacyApplicationLinker} (étape 7, liaison appli ↔ profil) ;
  *   - {@see AppProfileAdImporter} (étape 7, ne réifier un AppProfile QUE si le
- *     parc porte au moins une application — AC9.1 — et promotion des apps de
- *     `_TousLesPostes` en défaut d'établissement — AC10) ;
- *   - {@see \App\Services\Parc\WorkstationGroupService::importLogicalGroupsFromAd()}
+ *     parc porte au moins une application, et promotion des apps de
+ *     `_TousLesPostes` en défaut d'établissement) ;
+ *  - {@see \App\Services\Parc\WorkstationGroupService::importLogicalGroupsFromAd()}
  *     (étape 5, ne créer un groupe logique QUE si le parc porte au moins une
- *     application — AC9.3).
+ * application —).
  *
  * Un seul point de lecture ⇒ les trois apparient sur exactement la même clé
  * (`mb_strtolower(nom_parc)`), sans risque de désalignement de casse.

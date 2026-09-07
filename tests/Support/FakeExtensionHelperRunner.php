@@ -7,7 +7,7 @@ namespace Tests\Support;
 use App\Services\Extensions\Contracts\ExtensionHelperRunner;
 
 /**
- * Story 56.2 — Doublure du SEUL seam privilégié du moteur d'installation.
+ * Doublure du SEUL seam privilégié du moteur d'installation.
  *
  * Elle n'exécute rien : elle ENREGISTRE chaque appel `(args, stdin)`. C'est ce
  * qui rend l'intégralité du moteur — ordre des étapes, fail-closed avant toute
@@ -24,7 +24,7 @@ use App\Services\Extensions\Contracts\ExtensionHelperRunner;
  *
  * ⚠️ Le `stdin` est conservé tel quel : c'est ce qui permet d'affirmer que le
  * secret OIDC est bien arrivé par ce canal — et {@see self::allArguments()} de
- * prouver qu'il n'est apparu dans AUCUN argument (NFR3).
+ * prouver qu'il n'est apparu dans AUCUN argument.
  */
 class FakeExtensionHelperRunner implements ExtensionHelperRunner
 {
@@ -102,12 +102,12 @@ class FakeExtensionHelperRunner implements ExtensionHelperRunner
     }
 
     /**
-     * Story 56.3 — Oublie l'historique **et remet le compteur d'appels à
+     * Oublie l'historique **et remet le compteur d'appels à
      * zéro**, pour que {@see self::failAtCall()} porte sur la séquence qui
      * commence maintenant.
      *
      * {@see self::forget()} ne touche volontairement pas au compteur (les tests
-     * 56.2 s'appuient sur cette sémantique) ; il fallait donc une seconde
+     * s'appuient sur cette sémantique) ; il fallait donc une seconde
      * méthode plutôt qu'un changement de comportement. Utile quand une fixture
      * a DÉJÀ fait tourner le moteur (installer avant de mettre à jour) et qu'on
      * veut faire échouer « le premier appel de l'opération étudiée ».
@@ -122,7 +122,7 @@ class FakeExtensionHelperRunner implements ExtensionHelperRunner
 
     /**
      * Séquence des sous-commandes appelées, dans l'ordre — l'assertion
-     * centrale de cette story.
+     * centrale.
      *
      * @return list<string>
      */

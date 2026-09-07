@@ -6,13 +6,13 @@ import (
 	"regexp"
 )
 
-// Manifest tool/skin servi à l'agent (Story 25.6, D6/D8b). Endpoint DÉDIÉ
+// Manifest tool/skin servi à l'agent. Endpoint DÉDIÉ
 // (GET /api/v1/agent/tools-manifest, token'd) — délibérément HORS du contrat
 // desired-state versionné : un outil de rendu n'est pas un StateItem, le golden
 // overlay/state reste donc INTOUCHÉ. L'agent y lit l'autorité serveur du hash
 // du portable (plus la constante Go figée) et le hash de la skin.
 //
-// NFR7 : parsing pur, aucune dépendance AD/réseau ici.
+// Parsing pur, aucune dépendance AD/réseau ici.
 
 // rainmeterToolFilenamePattern : forme STRICTE attendue du filename du portable
 // (iso la regex du ToolController serveur `sambaedu-rainmeter-…\.zip`). Le

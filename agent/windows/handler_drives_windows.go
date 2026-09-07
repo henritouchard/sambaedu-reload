@@ -11,21 +11,21 @@ import (
 	"sambaedu/agent/shared"
 )
 
-// Câblage Windows du handler `drives` (Story 27.2) — montage de lecteur réseau
+// Câblage Windows du handler `drives` — montage de lecteur réseau
 // via l'API Win32 mpr (WNetAddConnection2W / WNetCancelConnection2W /
-// WNetGetConnectionW) EN GO NATIF (PAS de shell-out `net use`, iso décision
-// 27.1 n° 7). Zéro dépendance ajoutée (mpr.dll via golang.org/x/sys/windows
+// WNetGetConnectionW) EN GO NATIF (PAS de shell-out `net use`).
+// Zéro dépendance ajoutée (mpr.dll via golang.org/x/sys/windows
 // lazy DLL).
 //
 // Exécuté par le COMPAGNON (droits user) : les montages sont per-user (le `net
-// use` équivalent). Le MARQUEUR de périmètre (décision n° 8) est résolu par le
+// use` équivalent). Le MARQUEUR de périmètre est résolu par le
 // serveur cible : on ne gère QUE les lettres montées vers le serveur SambaEdu
 // (`<se4fs>`). Une lettre montée par l'utilisateur vers un autre serveur n'est
 // jamais listée, jamais démontée. Une lettre cible déjà occupée par un montage
 // user (vers un AUTRE UNC) est Blocked → on n'écrase pas.
 //
 // Tokens `<se4fs>`/`<user>` substitués LOCALEMENT ; l'UNC logique
-// (`\\<se4fs>\Classe_<name>\<user>\`) est resté CÔTÉ SERVEUR (provider MVP-A).
+// (`\\<se4fs>\Classe_<name>\<user>\`) est resté CÔTÉ SERVEUR.
 
 var (
 	modMpr = windows.NewLazySystemDLL("mpr.dll")
@@ -36,7 +36,7 @@ var (
 )
 
 const (
-	resourceTypeDisk    = 0x00000001
+	resourceTypeDisk     = 0x00000001
 	connectUpdateProfile = 0x00000001 // persiste le montage (équiv. `net use /persistent:yes`)
 	connectForce         = 0x00000001 // WNetCancelConnection2 fForce
 )

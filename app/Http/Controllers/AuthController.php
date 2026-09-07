@@ -114,7 +114,7 @@ class AuthController extends Controller
             );
 
             if ($result['success']) {
-                // Story 49.2 (D1) — auto-provisioning œuf/poule, DÉPLACÉ ICI
+                // Auto-provisioning œuf/poule, DÉPLACÉ ICI
                 // depuis `SambaEduAuthGuard`. Le guard est Postgres-only : il ne
                 // crée plus rien et ne touche plus l'annuaire. La création de la
                 // ligne `users` manquante appartient donc à la cérémonie de login,
@@ -176,7 +176,7 @@ class AuthController extends Controller
     }
 
     /**
-     * Story 49.2 (AC2 / D1) — filet « œuf/poule » du premier login.
+     * Filet « œuf/poule » du premier login.
      *
      * Sur une installation fraîche, `admin` (ou tout compte AD) se connecte AVANT
      * la première synchronisation : aucune ligne `users` n'existe, et le guard
@@ -191,21 +191,21 @@ class AuthController extends Controller
      *  2. **`is_active` vient du DTO AD, jamais `true` en dur.** L'ancien
      *     `ensureEloquentUser` du guard écrivait `'is_active' => true` : recopier
      *     ce littéral ressusciterait en base un compte désactivé dans l'annuaire,
-     *     exactement le piège que 49.3 vient de fermer (`is_active` est un MIROIR
+     *  exactement le piège que vient de fermer (`is_active` est un MIROIR
      *     de `useraccountcontrol`, jamais une valeur inventée).
      *  3. **Aucune exception ne remonte.** Un échec de provisioning ne doit pas
      *     transformer une authentification réussie en erreur 500 : on journalise
      *     et on laisse le guard trancher à la requête suivante.
      */
     /**
-     * Story 49.2 (correction de review) — provisionne la ligne `users` du login
+     * Provisionne la ligne `users` du login
      * que le GUARD utilisera, quel qu'il soit.
      *
      * À appeler APRÈS la création de session, par les cérémonies qui composent
      * le login de session à partir de plusieurs sources (CAS, ENT : le login du
      * fournisseur d'identité peut différer du login AD local, et
      * `createEntSession()` retient `cn` de préférence à `login`). Plutôt que de
-     * rejouer cette logique de composition — et de la voir diverger un jour —,
+     * rejouer cette logique de composition — et de la voir diverger un jour,
      * on interroge le MÊME oracle que le guard : `getCurrentUser()`, c'est-à-dire
      * `$_SESSION['login']`. Le provisionnement porte ainsi par construction sur
      * la clé qui sera cherchée.
@@ -345,8 +345,8 @@ class AuthController extends Controller
     /**
      * Traite le retour CAS après validation du ticket.
      *
-     * En CAS 3.0, récupère les attributs du serveur (dont cn) via getAttributes().
-     * En CAS 2.0, cn est défini sur le login local faute d'attributs disponibles.
+     * En CAS, récupère les attributs du serveur (dont cn) via getAttributes().
+     * En CAS, cn est défini sur le login local faute d'attributs disponibles.
      */
     private function handleCasAuthenticated(): \Illuminate\Http\RedirectResponse
     {
@@ -367,7 +367,7 @@ class AuthController extends Controller
             return redirect()->route('auth.login');
         }
 
-        // En CAS 3.0, les attributs sont disponibles via getAttributes()
+        // En CAS, les attributs sont disponibles via getAttributes()
         $casVersion = $this->sambaEduConfig->get('cas_version') ?: CAS_VERSION_2_0;
         $cn = $user->login;
         if ($casVersion === CAS_VERSION_3_0) {
@@ -381,11 +381,11 @@ class AuthController extends Controller
         );
         $_SESSION['cas_auth_method'] = 'cas';
 
-        // Story 49.2 (correction de review) — le filet œuf/poule vaut pour CAS
+        // Le filet œuf/poule vaut pour CAS
         // aussi. Avant la bascule, le guard provisionnait lui-même la ligne
         // `users` manquante, pour TOUTE session non fédérée — CAS et ENT
         // compris, puisqu'ils ne passent pas par `FederatedSession::mark()`. En
-        // déplaçant ce filet dans la cérémonie de login (D1), il n'avait été
+        // déplaçant ce filet dans la cérémonie de login, il n'avait été
         // recâblé que sur le login natif par formulaire : un compte AD légitime
         // pas encore synchronisé réussissait son login CAS puis se faisait
         // refuser par le guard à la requête suivante — en boucle.
@@ -406,7 +406,7 @@ class AuthController extends Controller
      *
      * Utilise une route de callback dédiée (auth.cas.callback) comme serviceUrl,
      * ce qui isole la validation du ticket du flow de login standard.
-     * La version CAS est configurable via la clé cas_version (défaut : CAS 2.0).
+     * La version CAS est configurable via la clé cas_version (défaut : CAS).
      */
     private function initCasClient(): void
     {
@@ -501,7 +501,7 @@ class AuthController extends Controller
                 $accessToken
             );
 
-            // Story 49.2 (correction de review) — cf. `handleCasAuthenticated()` :
+            // Cf. `handleCasAuthenticated` :
             // le filet œuf/poule doit couvrir les TROIS points d'entrée non
             // fédérés, pas seulement le login natif.
             $this->ensureEloquentUserForCurrentSession();

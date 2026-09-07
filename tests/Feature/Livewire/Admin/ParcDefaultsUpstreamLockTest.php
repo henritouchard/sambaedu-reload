@@ -17,12 +17,12 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 29.2 (AC #2, #5, #6) — verrou amont sur l'onglet « Registre / capacités »
+ * Verrou amont sur l'onglet « Registre / capacités »
  * de /admin/settings/parc-defaults (DÉFAUT DIFFUSÉ niveau instance).
  *
  * Capacité verrouillée amont → `saveDefault`/`toggleLock` refusés SERVEUR
  * (`capabilities.default_value`/`overrides_locked` inchangés) ; non verrouillée →
- * OK (non-régression 27.17).
+ * OK (non-régression).
  *
  * Le Gate `server.admin` est autorisé via un `Gate::before` CIBLÉ (renvoyant
  * `null` pour les autres abilities) afin que `modify-capability` soit ÉVALUÉ
@@ -76,7 +76,7 @@ class ParcDefaultsUpstreamLockTest extends TestCase
     }
 
     /**
-     * Story 29.8 AC#3 — acteur SANS `server.admin` mais porteur de `app.customize`
+     * Acteur SANS `server.admin` mais porteur de `app.customize`
      * (le persona « délégué par-parc » qui pourrait croire pouvoir toucher le défaut
      * diffusé global). Pas de `Gate::before` → `Gate::allows('server.admin')` = false.
      */
@@ -137,7 +137,7 @@ class ParcDefaultsUpstreamLockTest extends TestCase
             ->set('formValue', 'off')
             ->call('saveDefault');
 
-        // AC #2 : refus explicite via toast d'erreur (verrou amont), pas silencieux.
+        // Refus explicite via toast d'erreur (verrou amont), pas silencieux.
         $component->assertDispatched('toastMagic', fn ($event, $params): bool => ($params['status'] ?? null) === 'error');
 
         self::assertSame('on', Capability::query()->find($cap->id)->default_value, 'défaut inchangé (refus)');
@@ -153,7 +153,7 @@ class ParcDefaultsUpstreamLockTest extends TestCase
 
         $component = Livewire::test(self::REGISTRY_TAB)->call('toggleLock', $cap->id);
 
-        // AC #2 : refus explicite via toast d'erreur, pas silencieux.
+        // Refus explicite via toast d'erreur, pas silencieux.
         $component->assertDispatched('toastMagic', fn ($event, $params): bool => ($params['status'] ?? null) === 'error');
 
         self::assertFalse(
@@ -165,14 +165,13 @@ class ParcDefaultsUpstreamLockTest extends TestCase
     #[Test]
     public function non_admin_is_blocked_on_registry_tab(): void
     {
-        // Story 29.8 AC#3 — le retrait du plancher `app.customize` de
-        // `modify-capability` n'AFFAIBLIT PAS la garde GLOBALE `server.admin` du
-        // défaut diffusé : un acteur porteur de `app.customize` mais SANS
-        // `server.admin` est refusé (403) DÈS le mount par guardAdmin(), qui garde
-        // aussi openEdit/saveDefault/toggleLock. Le défaut reste inchangé.
+        // Le plancher `app.customize` de `modify-capability` n'AFFAIBLIT PAS la
+        // garde GLOBALE `server.admin` du défaut diffusé : un acteur porteur de
+        // `app.customize` mais SANS `server.admin` est refusé (403) DÈS le mount
+        // par guardAdmin(), qui garde aussi openEdit/saveDefault/toggleLock.
         // (La fermeture au mount est également couverte par
         // AdminSettingsParcDefaultsPageTest::registry_tab_gate_blocks_mount_without_server_admin ;
-        // ici on prouve en plus le point 29.8 : défaut intact après retrait du plancher.)
+        // ici on prouve en plus que le défaut reste intact.)
         $this->actAsNonAdmin();
         $cap = $this->capabilityWithKey('non_admin_blocked', 'HKCU', 'Software\\NAB', 'V', 'on');
 

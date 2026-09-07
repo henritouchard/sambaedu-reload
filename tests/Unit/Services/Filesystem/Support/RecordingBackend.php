@@ -17,10 +17,10 @@ use App\Services\Filesystem\Plan\PlanGrant;
 use App\Services\Filesystem\Plan\PlanNode;
 
 /**
- * Story 60.4 — DOUBLE de backend pour les tests AU-DESSUS de la ligne.
+ * DOUBLE de backend pour les tests AU-DESSUS de la ligne.
  *
  * **Pourquoi il existe, et pourquoi il n'y a pas de simulation de processus dans
- * les tests d'orchestration.** La règle de la story est nette : sous la ligne, la
+ * les tests d'orchestration.** La règle est nette : sous la ligne, la
  * simulation d'exécution est l'outil normal (le backend exécute) ; au-dessus, elle
  * est INTERDITE — un test d'orchestrateur qui en réclamerait une signalerait que
  * la coupe a fui, puisque cela voudrait dire que l'orchestrateur déclenche

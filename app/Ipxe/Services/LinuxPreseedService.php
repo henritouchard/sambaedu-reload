@@ -12,14 +12,12 @@ use App\Models\Workstation;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 3.4 — D5 / AC2.1 / AC2.2 / AC2.3.
- *
  * Service d'assemblage dynamique du fichier preseed Linux text/plain
  * consommé par debian-installer / ubuntu-installer en début d'install.
  *
  * **Port natif** de `sambaedu/ipxe/linux/preseed.php` (194 LOC) simplifié au
- * scope 3.4 (sans `se4ad`/`se4fs`/`deb_serv`/`deb_kiosk`/`deb_nextcloud`/
- * `deb_gnome_perso`/`primtux` — voir story 3.4 § HORS-SCOPE D14).
+ * scope (sans `se4ad`/`se4fs`/`deb_serv`/`deb_kiosk`/`deb_nextcloud`/
+ * `deb_gnome_perso`/`primtux` — § HORS-SCOPE D14).
  *
  * **Algorithme iso-legacy `preseed.php:86-159`** :
  *
@@ -31,24 +29,24 @@ use Illuminate\Support\Facades\Log;
  *      défini, sinon `nocache.cfg` (+ `proxy.cfg` si `server_proxy`).
  *   3. Ajout conditionnel `commande_fin.cfg` si
  *      `config('sambaedu.linux.commande_fin_preseed')` défini.
- *   4. Lecture de la config consolidée via {@see PreseedPlaceholders::catalog()}.
+ *  4. Lecture de la config consolidée via {@see PreseedPlaceholders::catalog()}.
  *   5. Construction des `$params` par-poste (hostname, uuid sanitizés).
  *   6. Interpolation des placeholders `###_<KEY>_###` via
- *      {@see PreseedPlaceholders::interpolate()}.
+ *  {@see PreseedPlaceholders::interpolate()}.
  *   7. Log audit channel `ipxe` (sha256 only, jamais le preseed en clair).
  *   8. Retour string concaténée.
  *
  * **Sécurité** :
  *  - Anti-injection : hostname/uuid sanitizés via
- *    {@see IpxeHostnameSanitizer::sanitizeForIpxeOutput()} + tous les
- *    placeholders passent par {@see PreseedPlaceholders::sanitize()}.
+ *  {@see IpxeHostnameSanitizer::sanitizeForIpxeOutput()} + tous les
+ *  placeholders passent par {@see PreseedPlaceholders::sanitize()}.
  *  - Aucune écriture disque (parité legacy `/tmp/{name}.preseed` retirée).
  *  - Aucun secret dans les logs (sha256 only).
  */
 final class LinuxPreseedService
 {
     /**
-     * Channel Monolog dédié (iso 3.1 D7).
+     * Channel Monolog dédié.
      */
     private function channel(): string
     {
@@ -252,7 +250,7 @@ final class LinuxPreseedService
      * une string vide (parité legacy).
      *
      * @return array<string, string>  Clés lowercase (compatibles avec
-     *                                {@see PreseedPlaceholders::interpolate()}).
+     *  {@see PreseedPlaceholders::interpolate()}).
      */
     private function buildConfig(): array
     {
@@ -273,7 +271,7 @@ final class LinuxPreseedService
     /**
      * Émet le log info `ipxe.linux.preseed.generated` avec context audit
      * (sha256 + size + distribution/variant). **NE LOG JAMAIS** le contenu
-     * du preseed (D8 — secrets en clair).
+     * du preseed : il porte des secrets en clair.
      */
     private function logGenerated(
         Workstation $workstation,

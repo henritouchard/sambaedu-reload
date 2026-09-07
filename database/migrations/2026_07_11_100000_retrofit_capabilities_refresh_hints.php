@@ -5,21 +5,21 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 43.2 (D4/AC4) — RETROFIT CONSERVATEUR : pose le hint `spec.refresh`
- * (Story 43.2, D1 — champ optionnel à la RACINE du `spec` JSON, vocabulaire
+ * RETROFIT CONSERVATEUR : pose le hint `spec.refresh`
+ * (champ optionnel à la RACINE du `spec` JSON, vocabulaire
  * fermé `shell_notify | policy_broadcast | explorer_restart`) sur les
  * capacités Explorer/`Policies\Explorer` déjà seedées, pour que l'agent 2.10.0
- * (43.1, mécanisme mergé) applique le bon geste de rafraîchissement en session
+ * (mécanisme mergé) applique le bon geste de rafraîchissement en session
  * courante au lieu de laisser l'admin croire « j'ai appliqué, rien ne se passe ».
  *
- * ── CHOIX CONSERVATEUR (D4) ──────────────────────────────────────────────────
+ * **CHOIX CONSERVATEUR**
  * La validation LAB de `policy_broadcast` N'EST PAS FAITE (le lab n'est pas
  * accessible) : le scénario QA 43.1.1 (`docs/qa/domains/agent.md`) tranchera.
  * En attendant :
  *   - `shell_notify` sur les 6 capacités de préférences de vues Explorer HKCU
  *     (`show_file_extensions`, `show_hidden_files`, `quick_access_history_hidden`,
  *     `onedrive_hidden`, `quick_access_hidden`, `explorer_gallery_hidden`) : le
- *     plancher `shell_notify` (43.1-D2, tout changed HKCU sans hint) s'applique
+ *  plancher `shell_notify` (tout changed HKCU sans hint) s'applique
  *     DÉJÀ à ces clés — ce retrofit ne change RIEN au comportement du poste,
  *     il rend la sémantique DÉCLARATIVE (le spec devient la source de vérité)
  *     et le badge UI honnête (« Immédiat » au lieu de « À la prochaine
@@ -39,18 +39,18 @@ use Illuminate\Support\Facades\Schema;
  *     `outlook_disable_o365_account_creation` (lu au lancement d'Outlook,
  *     aucun geste shell n'aide), et toutes les capacités machine/HKLM/HKU.
  *
- * ── ROLLOUT (NFR-A4, D9) ─────────────────────────────────────────────────────
+ * **ROLLOUT**
  * ⚠️ En PROD/VM, cette migration ne doit être JOUÉE qu'APRÈS la publication
- * MANUELLE de la release agent 2.10.0 (43.1, mécanisme mergé — `update.sh` ne
+ * MANUELLE de la release agent 2.10.0 (mécanisme mergé — `update.sh` ne
  * publie JAMAIS seul ; les états 2.6.0→2.9.0 ne sont toujours pas publiés,
- * cf. Dev Agent Record 43.1). Un binaire agent ≤ 2.9.0 IGNORE le hint EN
+ * cf. Dev Agent Record). Un binaire agent ≤ 2.9.0 IGNORE le hint EN
  * SILENCE (clés écrites, aucun geste de rafraîchissement) : l'« Immédiat »
  * affiché par l'UI serait un MENSONGE sur les postes non à jour. Les
  * migrations VM ne sont PAS auto-jouées (`project_vm_migrations_not_auto_applied`)
  * — cette contrainte est CONSIGNÉE ici, pas exécutable depuis le dev/tests
  * hôte (sqlite, RefreshDatabase, non concerné).
  *
- * ── DRIFT PONCTUEL (NFR-A4, piège n°3) ───────────────────────────────────────
+ * **DRIFT PONCTUEL**
  * Le hint `refresh` entre dans le `hash` de CHAQUE item du contrat
  * (`App\Services\Agent\StateHasher::hashItem()` — référence textuelle, une
  * migration n'importe jamais le code applicatif) : au premier state
@@ -59,11 +59,11 @@ use Illuminate\Support\Facades\Schema;
  * suivant — écriture idempotente de la MÊME valeur + un geste). Attendu et
  * BÉNIN — ne JAMAIS « corriger » (le hash est opaque côté agent).
  *
- * ── PATRON (piège n°7, iso 35.1/`2026_07_03_100000`) ─────────────────────────
+ * **PATRON (iso `2026_07_03_100000`)**
  * NOUVELLE migration (les seeds d'ORIGINE — 2026_06_18_100300, 2026_07_02_100000,
  * 2026_07_03_110000, 2026_07_04_100000 — ne sont PAS réécrits). Les valeurs du
  * vocabulaire sont des LITTÉRAUX dupliqués ici (les migrations ne référencent
- * jamais le code applicatif — iso `$ensure`/35.1). `up()`/`down()` DÉCODENT le
+ * jamais le code applicatif — iso `$ensure`). `up()`/`down()` DÉCODENT le
  * `spec` EXISTANT, posent/retirent SEULEMENT la clé `refresh` (les clés
  * `keys` d'origine sont préservées OCTET POUR OCTET), puis RÉ-ENCODENT
  * (`JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES`). IDEMPOTENTE (rejouable
@@ -73,14 +73,14 @@ return new class extends Migration
 {
     /**
      * Une entrée par PROJECTION à retrofitter : `blocked_executables` en porte
-     * DEUX (bi-projection D5 — le flag `registry` ET le conteneur `registry_list`,
-     * MÊME hint dans les deux specs, D4).
+     * DEUX (bi-projection : le flag `registry` ET le conteneur `registry_list`,
+     * MÊME hint dans les deux specs).
      *
      * @var list<array{key:string, mechanism:string, refresh:string}>
      */
     private const RETROFIT = [
         // shell_notify — préférences de vues Explorer HKCU (iso-comportement
-        // du plancher agent 43.1-D2 : DÉCLARATIF, pas un changement de geste).
+        // du plancher agent : DÉCLARATIF, pas un changement de geste).
         ['key' => 'show_file_extensions', 'mechanism' => 'registry', 'refresh' => 'shell_notify'],
         ['key' => 'show_hidden_files', 'mechanism' => 'registry', 'refresh' => 'shell_notify'],
         ['key' => 'quick_access_history_hidden', 'mechanism' => 'registry', 'refresh' => 'shell_notify'],
@@ -130,7 +130,7 @@ return new class extends Migration
 
     /**
      * Décode le `spec` de la projection windows `(capability.key, $mechanism)`,
-     * applique `$transform` à la `spec` ENTIÈRE (racine — pas juste `keys`, D1),
+     * applique `$transform` à la `spec` ENTIÈRE (racine — pas juste `keys`),
      * puis réécrit la colonne (encodage iso seeds). No-op défensif si la
      * capacité/projection est absente (instance partielle / seed non joué) ou
      * si la `spec` est d'une forme inattendue.

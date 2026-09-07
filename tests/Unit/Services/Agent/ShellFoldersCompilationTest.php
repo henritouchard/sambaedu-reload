@@ -28,7 +28,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 58.1 — compilation BOUT-EN-BOUT du type `folders` par le
+ * Compilation BOUT-EN-BOUT du type `folders` par le
  * `StateCompiler` INCHANGÉ.
  *
  * Le test unitaire du provider prouve QUOI est émis ; celui-ci prouve que
@@ -124,7 +124,7 @@ class ShellFoldersCompilationTest extends TestCase
     }
 
     /**
-     * **Story 63.2 — le test est RETOURNÉ, pas supprimé.**
+     * **le test est RETOURNÉ, pas supprimé.**
      *
      * Il épinglait que couper le home déplaçait la redirection sur le Bureau
      * local. C'était la conflation : le home SMB porte à la fois les fichiers de

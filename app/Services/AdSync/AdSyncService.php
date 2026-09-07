@@ -17,13 +17,13 @@ use LdapRecord\Models\ActiveDirectory\OrganizationalUnit;
 /**
  * Service de synchronisation SQL → AD des salles physiques et des machines.
  *
- * ── Asymétrie `OU=Parcs` / `OU=Computers` (Story 38.7) ───────────────────────
+ * **Asymétrie `OU=Parcs` / `OU=Computers`**
  * `OU=Parcs` est un vestige SE4 en LECTURE SEULE : LU à l'import de migration,
  * jamais ÉCRIT. Ce service n'écrit plus QUE dans `OU=Computers` — l'`OU` d'une
  * salle physique, où sont rangées les machines et où sont liées les GPO. C'est
  * l'unique invariant AD à préserver.
  *
- * Ce qui a disparu en 38.7 : la branche logique de {@see createWorkstationGroup()},
+ * Ce qui a disparu : la branche logique de {@see createWorkstationGroup()},
  * le miroir `CN` des salles dans `OU=Parcs`, et tout l'entretien de l'attribut
  * `member` (l'appartenance machine ↔ parc est SQL-only). Les groupes LOGIQUES
  * (`is_physical = false`) n'ont plus AUCUNE représentation écrite dans l'AD ;
@@ -38,14 +38,10 @@ class AdSyncService
     ) {
     }
 
-    // ========================================================================
-    // GESTION DES SALLES PHYSIQUES (OU dans OU=Computers)
-    // ========================================================================
-
     /**
      * Crée l'`OU` d'une salle physique dans `OU=Computers`.
      *
-     * Un groupe LOGIQUE est refusé : il n'a plus aucune écriture AD (38.7).
+     * Un groupe LOGIQUE est refusé : il n'a plus aucune écriture AD.
      */
     public function createWorkstationGroup(WorkstationGroup $group): array
     {
@@ -98,7 +94,7 @@ class AdSyncService
      * Supprime l'`OU` d'une salle physique de `OU=Computers`.
      *
      * `$isPhysical = false` est un refus explicite : un groupe logique n'a plus
-     * de représentation AD (38.7). Le paramètre est conservé pour la stabilité
+     * de représentation AD. Le paramètre est conservé pour la stabilité
      * de signature (job de suppression), mais toute valeur `false` est rejetée.
      */
     public function deleteWorkstationGroupByName(string $name, ?string $adGuid = null, bool $isPhysical = true): array
@@ -124,7 +120,7 @@ class AdSyncService
     /**
      * Renomme l'`OU` d'une salle physique dans `OU=Computers`.
      *
-     * Un groupe logique est refusé (plus d'écriture AD — 38.7).
+     * Un groupe logique est refusé (plus d'écriture AD).
      */
     public function renameWorkstationGroup(WorkstationGroup $group, string $oldName, string $newName): array
     {
@@ -153,10 +149,10 @@ class AdSyncService
     /**
      * Déplace l'`OU` d'une salle physique vers un nouveau parent dans `OU=Computers`.
      *
-     * Réduit en 38.7 au seul `move()` de l'`OU` : plus aucun entretien de membres
+     * Réduit au seul `move()` de l'`OU` : plus aucun entretien de membres
      * (l'appartenance machine ↔ parc est SQL-only). Un groupe logique est refusé
      * — il n'a d'ailleurs jamais eu d'`OU` à déplacer (`findSalleOu()` retournait
-     * null → « OU salle non trouvée » ; cf. défaut n°3 du contexte de la story).
+     * null → « OU salle non trouvée »).
      */
     public function moveWorkstationGroup(WorkstationGroup $group, ?WorkstationGroup $newParent): array
     {
@@ -204,10 +200,6 @@ class AdSyncService
         }
     }
 
-    // ========================================================================
-    // GESTION DES MACHINES DANS LES SALLES (OU)
-    // ========================================================================
-
     // NOTE: l'appartenance des machines aux groupes (parcs) est gérée uniquement
     // en SQL. Le calcul des applications WPKG se fait depuis la base, pas depuis
     // l'AD. Seul le déplacement physique d'une machine vers une salle (OU) reste
@@ -216,7 +208,7 @@ class AdSyncService
     /**
      * Déplace une machine vers l'`OU` d'une salle et remonte `workstations.ad_dn`.
      *
-     * Réduit en 38.7 au seul `move()` de l'objet ordinateur : plus aucun entretien
+     * Réduit au seul `move()` de l'objet ordinateur : plus aucun entretien
      * de l'attribut `member` des groupes `OU=Parcs`.
      */
     public function moveMachineToSalle(Workstation $machine, WorkstationGroup $targetSalle): array
@@ -261,10 +253,6 @@ class AdSyncService
         }
     }
 
-    // ========================================================================
-    // MÉTHODES PRIVÉES - OPÉRATIONS LDAP DE BAS NIVEAU (OU=Computers uniquement)
-    // ========================================================================
-
     /**
      * Refus uniforme d'un groupe logique sur une méthode d'écriture AD (défense
      * en profondeur : le chemin normal ne doit jamais l'atteindre, l'observer
@@ -272,7 +260,7 @@ class AdSyncService
      */
     private function refuseLogical(string $method, string $name, bool $withGuidDn = false): array
     {
-        $error = "Groupe logique '{$name}' refusé : OU=Parcs est en lecture seule (38.7), aucune écriture AD.";
+        $error = "Groupe logique '{$name}' refusé : OU=Parcs est en lecture seule, aucune écriture AD.";
 
         Log::warning('[AdSyncService] Écriture AD refusée pour groupe logique', [
             'method' => $method,

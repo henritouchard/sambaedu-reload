@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Services\ControlHub\Resolution;
 
 /**
- * Story 30.5 — DTO immuable d'une **collision verrou/verrou insoluble** prédite
+ * DTO immuable d'une **collision verrou/verrou insoluble** prédite
  * par {@see UpstreamLockCollisionDetector} à l'assignation d'un label / au
  * rattachement d'un poste à un parc labellisé.
  *
@@ -19,17 +19,17 @@ namespace App\Services\ControlHub\Resolution;
  *
  * Les deux valeurs sont **normalisées** par l'adaptateur amont
  * ({@see UpstreamPayloadAdapter::toPayload()} → `int`/`string`/`list<string>`,
- * jamais de float — §4.1) : c'est la forme comparée par le détecteur.
+ * jamais de float) : c'est la forme comparée par le détecteur.
  *
  * ⚠️ GARDE-FOU R3 : aucun « central ». Vocabulaire « amont » / `Upstream` /
- * `label`. [Source: prd-contrat-manage-se5.md#R3]
+ * `label`.
  */
 final readonly class UpstreamLockCollision
 {
     /**
      * @param  int|string|list<string>  $valueA
      * @param  int|string|list<string>  $valueB
-     * @param  list<int>  $workstationIds  postes touchés, triés (déterminisme NFR4)
+     * @param  list<int>  $workstationIds  postes touchés, triés (déterminisme)
      */
     public function __construct(
         public string $exclusiveKey,

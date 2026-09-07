@@ -54,7 +54,7 @@ class FilePolicyPageTest extends TestCase
     }
 
     /**
-     * Les deux onglets de connexion ONT DISPARU (story 63.3) : leurs clés
+     * Les deux onglets de connexion ONT DISPARU : leurs clés
      * retombent sur le défaut comme n'importe quelle clé inconnue, et AUCUN
      * onglet fantôme n'est rendu. Ce test empêche de les ré-ajouter par
      * inadvertance — les deux blocs qu'ils portaient sont désormais révélés par
@@ -107,10 +107,10 @@ class FilePolicyPageTest extends TestCase
     }
 
     /**
-     * L'onglet « Quotas & FS » a été retiré (décision Henri 2026-08-05) : sa clé
+     * L'onglet « Quotas & FS » a été retiré : sa clé
      * n'est plus dans `TABS`, donc elle retombe sur le défaut comme n'importe
      * quelle clé inconnue. Ce test empêche de la ré-ajouter par inadvertance —
-     * son retour doit passer par la story 5.1e, en carte, pas en onglet.
+     * son retour doit se faire en carte, pas en onglet.
      */
     #[Test]
     public function the_removed_quotas_tab_is_not_reachable(): void

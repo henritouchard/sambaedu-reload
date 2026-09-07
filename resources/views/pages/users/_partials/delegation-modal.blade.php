@@ -70,7 +70,7 @@ new class extends Component {
     }
 
     /**
-     * Ouvre la modale. Story 7.2 — accepte optionnellement un triplet
+     * Ouvre la modale. — accepte optionnellement un triplet
      * (workstationGroupId, permission, expiresAt) pour pré-remplir la modale
      * en mode "édition" d'une délégation existante (clic ligne dans le tableau
      * Délégations actives de /app/rights-management).
@@ -369,7 +369,7 @@ new class extends Component {
             $this->toastWarning("Action(s) appliquée(s) mais la traçabilité n'a pas été enregistrée pour une ou plusieurs opérations. Contactez l'administrateur.");
         }
 
-        // Story 7.2 — notifier les pages parentes (rights-management) pour
+        // Notifier les pages parentes (rights-management) pour
         // qu'elles puissent rafraîchir leur tableau de délégations actives.
         $this->dispatch('delegations-changed');
 
@@ -379,7 +379,7 @@ new class extends Component {
     /**
      * Résout l'EloquentUser d'un login sélectionné.
      *
-     * Story 49.2 — le fallback annuaire a été SUPPRIMÉ. Il vérifiait l'existence
+     * Le fallback annuaire a été SUPPRIMÉ. Il vérifiait l'existence
      * du login dans l'AD puis créait une ligne `users` minimale (`role='autre'`,
      * `is_active=true` en dur) : un aller-retour LDAP au clic, et une ligne
      * fabriquée dont les valeurs n'étaient le miroir de rien. Postgres est

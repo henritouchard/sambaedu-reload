@@ -15,7 +15,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Epic 34 — Tests de la commande d'import `shares:import-from-fs`.
+ * Tests de la commande d'import `shares:import-from-fs`.
  *
  * Vérifie le contrat de sûreté : dry-run par défaut (aucune écriture), et
  * matérialisation correcte des mappables + provisioning en `--apply`.

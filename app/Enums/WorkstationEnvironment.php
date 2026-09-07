@@ -5,22 +5,22 @@ declare(strict_types=1);
 namespace App\Enums;
 
 /**
- * Nature d'un poste de travail vue par un parc (Story 26.1, FR28).
+ * Nature d'un poste de travail vue par un parc.
  *
  * Déclarée **par parc** (groupe logique OU physique) sur `workstation_groups`,
- * cette donnée du domaine pilotera le comportement des handlers de l'Epic 27
- * (bureau, profils navigateur, `clean_profiles`, raccourcis 27.1, profils 27.4).
+ * cette donnée du domaine pilotera le comportement des handlers de l'agent
+ * (bureau, profils navigateur, `clean_profiles`, raccourcis, profils).
  *
  * - `SharedLocal` (`shared_local`) : poste **partagé**. Bureau réseau, profils
  *   redirigés — c'est le défaut implicite du parc historique (salle de classe).
  * - `PersonalLocal` (`personal_local`) : modèle **perdir / direction**. Bureau
  *   local à l'utilisateur, données sur le home réseau (poste nominatif mais pas
  *   déconnecté).
- * - `Nomade` (`nomade`) : **tout local avec synchronisation** (offline / resync,
- *   réalisé en Story 26.2). Le poste fonctionne déconnecté puis réconcilie.
+ * - `Nomade` (`nomade`) : **tout local avec synchronisation** (offline /
+ *   resync). Le poste fonctionne déconnecté puis réconcilie.
  *
- * Identifiants figés (NFR12) : une valeur publiée ne se renomme jamais — ils
- * peuvent être persistés en base et lus par les handlers de l'Epic 27.
+ * Identifiants figés : une valeur publiée ne se renomme jamais — ils
+ * peuvent être persistés en base et lus par les handlers de l'agent.
  *
  * ⚠️ AUCUNE méthode de rang / précédence ici (parallèle exact à `StateMaille` :
  * « AUCUNE méthode de rang »). Un poste appartient à N parcs ; résoudre UN

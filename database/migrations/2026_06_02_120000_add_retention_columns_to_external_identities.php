@@ -8,9 +8,9 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration {
     /**
-     * Story 20.2 — D-7 (migration additive uniquement).
+     * D-7 (migration additive uniquement).
      *
-     * Enrichit `external_identities` (livrée minimale par 20.1) avec les
+     * Enrichit `external_identities` (livrée minimale par) avec les
      * colonnes du cycle de vie & de la rétention RGPD :
      *
      *  - `anonymized_at` (timestamp nullable) : horodatage de l'anonymisation
@@ -22,7 +22,7 @@ return new class extends Migration {
      *  - `deleted_reason` (string nullable) : motif tracé d'un soft-delete.
      *
      * AUCUNE colonne supprimée / renommée / table créée : compatible avec le
-     * schéma 20.1 déjà déployé. `external_sub` n'est PAS modifié structurellement
+     * schéma déjà déployé. `external_sub` n'est PAS modifié structurellement
      * (la réécriture `anon:<sha256>` est une mise à jour de valeur, pas de schéma).
      */
     public function up(): void

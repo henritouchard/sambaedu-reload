@@ -10,7 +10,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 3.10 — AC6.2 — Tests de la commande `ipxe:winpe-drivers:ingest`
+ * Tests de la commande `ipxe:winpe-drivers:ingest`
  * (qui délègue au service partagé {@see \App\Ipxe\Iso\Services\WinpeDriverIngestor}).
  *
  * Couvre : dispatch `innoextract` vs `unzip` selon l'extension, échec sur
@@ -181,7 +181,7 @@ class IngestWinpeDriversCommandTest extends TestCase
     }
 
     /**
-     * M1 (review 3.10) — path traversal `.`/`..` : la regex anti-traversal
+     * M1 (review) — path traversal `.`/`..` : la regex anti-traversal
      * bloque le `/` mais accepte `..` (= parent du pack `storage/install`), que
      * `removeDirectory()` effacerait récursivement. Doit être rejeté AVANT toute
      * suppression. `..` n'a aucun caractère alphanumérique → invalide.

@@ -14,36 +14,36 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 /**
- * Story 24.1 — `POST /api/v1/agent/report` (route `agent.v1.report`).
+ * `POST /api/v1/agent/report` (route `agent.v1.report`).
  *
- * Chemin retour du canal agent desired-state (FR8) : l'agent rapporte la
- * conformité par item, le serveur stocke en volume borné (D3/FR9). La
+ * Chemin retour du canal agent desired-state : l'agent rapporte la
+ * conformité par item, le serveur stocke en volume borné. La
  * réponse est un ACK serveur→agent au format SE5 `{success, counts}` —
  * contrairement à `GET /state`, AUCUN hash n'est calculé sur ce corps :
  * le wrapper est licite ici (seul le state sert le contrat brut).
  *
  * Controller mince : la validation vit dans {@see ReportRequest} (422
- * AVANT toute écriture — defer review 23.1 résolu), l'ingestion dans
+ * AVANT toute écriture — defer review résolu), l'ingestion dans
  * {@see ReportIngestService}, l'auth et toutes les écritures `workstations`
  * (check-in, rotation, header X-Agent-New-Token) dans le middleware
  * `agent.token` — ici AUCUNE écriture hors délégation au service.
  *
- * Identité = le token (décision n° 1) : le bloc `workstation` du payload
+ * Identité = le token : le bloc `workstation` du payload
  * est déclaratif (debug agent) — une divergence avec le poste authentifié
  * est loggée en warning, l'ingestion POURSUIT (l'anti-clonage MAC est le
- * travail du middleware 23.2, pas du report).
+ * travail du middleware, pas du report).
  *
- * Story 24.7 — « forcer la synchro » (décision n° 1/2) : après ingestion,
+ * « forcer la synchro » : après ingestion,
  * une éventuelle demande pendante (`agent_sync_requested_at`, posée par l'UI
  * via {@see SyncRequestService::request()}) est SOLDÉE
  * ({@see SyncRequestService::fulfill()} — remise à null + log
  * `agent.sync.fulfilled`). Le cycle agent étant GET(s) → … → report, tous
  * les contextes du cycle ont déjà bénéficié du bypass 304 avant ce solde.
- * C'est le SECOND (et dernier) écrivain de la colonne — l'invariant « 2
- * écrivains » de la décision n° 2.
+ * C'est le SECOND (et dernier) écrivain de la colonne : elle n'a que deux
+ * écrivains.
  *
  * Middlewares (routes/api.php) : `auth.v1.secure-headers` + `throttle:60,1`
- * + `agent.token`. Erreurs 401/403 = formats du middleware 23.2, intouchés.
+ * + `agent.token`. Erreurs 401/403 = formats du middleware, intouchés.
  */
 class ReportController extends Controller
 {
@@ -61,19 +61,19 @@ class ReportController extends Controller
 
         $this->warnIfDeclaredIdentityDiverges($workstation, $report);
 
-        // History de debug = payload BRUT (champs inconnus §9 inclus, review
-        // 24.1 #2) — validated() les stripperait de l'historique.
+        // History de debug = payload BRUT (champs inconnus §9 inclus) :
+        // `validated()` les stripperait de l'historique.
         $counts = $this->ingest->ingest($workstation, $report, $request->json()->all());
 
-        // Story 24.7 — solde de la demande « forcer la synchro » (no-op si
+        // Solde de la demande « forcer la synchro » (no-op si
         // aucune demande n'était pendante : le cas nominal). Hors transaction
         // d'ingestion : l'écriture de la colonne agent_* est indépendante du
-        // stockage D3 et idempotente.
+        // stockage des rapports, et idempotente.
         $this->syncRequests->fulfill($workstation);
 
-        // Story 25.5 — greffe persistance de la version rapportée (AC4). La
+        // Greffe persistance de la version rapportée. La
         // version vient du payload VALIDÉ (`max:32`, jamais le brut), écrite
-        // hors transaction D3 (iso fulfill / check-in). `ReportIngestService`
+        // hors la transaction d'ingestion (iso fulfill / check-in). `ReportIngestService`
         // reste read-only sur `workstations` : la greffe est ICI, pas dans le
         // service. Colonnes hors $fillable → forceFill explicite. Le contrat de
         // report est inchangé (la version était déjà dans chaque payload).
@@ -86,7 +86,7 @@ class ReportController extends Controller
     }
 
     /**
-     * Story 25.5 — persiste la version rapportée par l'agent (AC4).
+     * Persiste la version rapportée par l'agent.
      *
      * `agent_version` est `required` dans `ReportRequest` : `$report` la
      * contient toujours quand on arrive ici (validation passée). Garde de
@@ -113,10 +113,10 @@ class ReportController extends Controller
     }
 
     /**
-     * Divergence identité déclarée vs poste authentifié (décision n° 1) :
+     * Divergence identité déclarée vs poste authentifié :
      * warning, jamais de refus — le payload n'est PAS une identité.
      * Comparaisons insensibles à la casse (sémantique hostname/uuid),
-     * contexte borné avant log (input user-controlled, conventions 23.2).
+     * contexte borné avant log (input user-controlled, conventions).
      *
      * @param  array<string, mixed>  $report
      */

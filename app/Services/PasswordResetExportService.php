@@ -47,7 +47,7 @@ class PasswordResetExportService
      * Génère l'export dans le format demandé.
      *
      * @param array<int, array<string, mixed>> $results    Listing tel que produit par
-     *     {@see UserService::bulkResetPasswords()} (clés : login, new_password, metadata, ...)
+     *  {@see UserService::bulkResetPasswords()} (clés : login, new_password, metadata, ...)
      * @param string $format 'pdf' ou 'csv'
      * @param array<string, mixed> $options Options : operator_login, date, force_change
      */

@@ -13,25 +13,25 @@ use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 
 /**
- * Story 20.2 — D-1 / D-2 / D-3 / D-4 / D-5.
+ * D-1 / D-2 / D-3 / D-4 / D-5.
  *
  * Service de CYCLE DE VIE de l'identité externe fédérée. Extraction (refactor
  * non-régressif — D-2) de la logique d'upsert/sync qui vivait inline dans
- * `FederatedLoginController::upsertIdentity`/`provisionUser` (Story 20.1).
+ * `FederatedLoginController::upsertIdentity`/`provisionUser`.
  *
  * Porte la sémantique des 4 états (cf. {@see ExternalIdentity}) et leurs
  * transitions :
- *  - `reconcileOnLogin()`  : 1er login (création) OU reconnexion (réutilisation
+ *  - `reconcileOnLogin()` : 1er login (création) OU reconnexion (réutilisation
  *                            + sync profil D-3) ; refus 403 si révoquée /
- *                            soft-deletée (règle 20.1) ou anonymisée (D-4).
- *  - `deactivate()`        : désactivation administrative (sans suppression).
+ *  soft-deletée (règle) ou anonymisée (D-4).
+ *  - `deactivate()` : désactivation administrative (sans suppression).
  *  - `softDeleteWithReason()` : soft-delete tracé.
- *  - `anonymize()`         : purge PII de fin de rétention (idempotent, jamais
+ *  - `anonymize()` : purge PII de fin de rétention (idempotent, jamais
  *                            hard-delete, `external_sub`→`anon:<hmac-sha256>` D-5,
  *                            désactive les `User` liés).
  *
  * RGPD / sécurité : AUCUNE PII (`name`/`email`/`login` clair) dans les logs —
- * on ne logge que l'`id` interne + un hash de `sub` (AC16).
+ * On ne logge que l'`id` interne + un hash de `sub`.
  */
 class ExternalIdentityLifecycleService
 {
@@ -50,11 +50,11 @@ class ExternalIdentityLifecycleService
      *
      * GARDES (aucune session ne doit s'ouvrir au-delà) :
      *  - identité révoquée (`is_active=false`) ou soft-deletée → 403
-     *    `federated.login.identity_revoked` (règle 20.1, portée telle quelle).
+     *  `federated.login.identity_revoked` (règle, portée telle quelle).
      *  - identité ANONYMISÉE (`anonymized_at != null`) → 403
      *    `federated.login.identity_anonymized` (D-4 : anti-résurrection ; une
      *    identité dont la PII a été purgée ne se ressuscite pas par reconnexion ;
-     *    la réactivation est une décision admin — Story 20.3).
+     * La réactivation est une décision admin —).
      *
      * @throws HttpException 403 si l'identité est révoquée / soft-deletée / anonymisée.
      */
@@ -90,7 +90,7 @@ class ExternalIdentityLifecycleService
             throw new HttpException(403, 'Federated identity anonymized on this instance');
         }
 
-        // Garde révocation (règle 20.1 — Q1/review #1) : une identité existante
+        // Garde de révocation : une identité existante
         // désactivée ou soft-deletée n'est JAMAIS réarmée par un fresh login.
         if ($identity !== null && ($identity->trashed() || ! $identity->is_active)) {
             Log::channel('federated-auth')->warning('[ExternalIdentityLifecycleService] federated.login.identity_revoked', [
@@ -163,7 +163,7 @@ class ExternalIdentityLifecycleService
 
     /**
      * Soft-delete tracé : l'identité reste résolvable via `withTrashed()` pour
-     * l'audit dénormalisé (Story 20.4). Idempotent (déjà trashée = no-op). Ne
+     * L'audit dénormalisé. Idempotent (déjà trashée = no-op). Ne
      * hard-delete JAMAIS.
      */
     public function softDeleteWithReason(ExternalIdentity $identity, string $reason): void
@@ -199,8 +199,8 @@ class ExternalIdentityLifecycleService
      *    corrélation IdP↔identité, préserve l'unicité, empêche la résurrection) ;
      *  - pose `anonymized_at` (garde d'idempotence + état terminal) ;
      *  - coupe l'accès (`is_active=false`) et SOFT-DELETE la ligne ;
-     *  - DÉSACTIVE chaque `User source='federated'` lié (AC12) sans toucher la
-     *    FK (la ligne survit → audit 20.4 + FK `users` cohérentes) ;
+     * - DÉSACTIVE chaque `User source='federated'` lié sans toucher la
+     *  FK (la ligne survit → audit + FK `users` cohérentes) ;
      *  - **idempotent** : rejouer sur une identité déjà anonymisée = no-op (le
      *    `sub` n'est pas re-hashé, `anonymized_at` préservé) ;
      *  - ne hard-delete JAMAIS.
@@ -219,7 +219,7 @@ class ExternalIdentityLifecycleService
         // la désactivation des Users laisse un état partiel IRRÉPARABLE par
         // rejeu (isAnonymized() court-circuite le 2e passage) → des `User`
         // resteraient `is_active=true` rattachés à une identité anonymisée
-        // (violation AC12 / accès résiduel post-purge PII).
+        // (violation / accès résiduel post-purge PII).
         DB::transaction(function () use ($identity, $originalSub): void {
             $identity->external_sub = self::ANON_PREFIX . $this->hashSub($originalSub);
             $identity->name = null;
@@ -232,7 +232,7 @@ class ExternalIdentityLifecycleService
             }
             $identity->save();
 
-            // Coupe l'accès des Users liés sans casser la FK (AC12). La ligne
+            // Coupe l'accès des Users liés sans casser la FK. La ligne
             // identité survit (jamais hard-delete) pour l'audit 20.4.
             foreach ($identity->users()->get() as $user) {
                 /** @var User $user */
@@ -258,13 +258,13 @@ class ExternalIdentityLifecycleService
 
     /**
      * Hash non réversible d'un `sub` (HMAC-SHA256 — P-4). Sert à tracer/corréler
-     * sans exposer le `sub` clair ni aucune PII (AC16) + à forger le
+     * sans exposer le `sub` clair ni aucune PII + à forger le
      * `external_sub` opaque de l'anonymisation (D-5).
      *
      * Le SEL (clé HMAC dédiée, cf. `federated_auth.retention.hash_key`) empêche
      * la ré-identification d'un `sub` à faible entropie par bruteforce/rainbow —
      * sans lui, `anon:<hash>` resterait pseudonyme (pas anonyme RGPD). La clé
-     * étant FIXE, le hash reste re-corrélable pour le forensique légal (20.4).
+     * étant FIXE, le hash reste re-corrélable pour le forensique légal.
      *
      * @throws \RuntimeException si aucun secret n'est résolu (mauvaise config —
      *         on refuse de hasher sans sel plutôt que d'affaiblir silencieusement).

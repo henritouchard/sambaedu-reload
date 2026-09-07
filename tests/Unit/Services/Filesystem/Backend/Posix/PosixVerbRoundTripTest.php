@@ -21,13 +21,12 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 62.4 — LA BOUCLE : compiler, puis relire, pour chaque ligne de la matrice.
+ * LA BOUCLE : compiler, puis relire, pour chaque ligne de la matrice.
  *
- * ---------------------------------------------------------------------------
  * **CE QUE LA BOUCLE PEUT PROUVER, ET CE QU'ELLE NE PEUT PAS.**
  *
- * La relecture porte sur le répertoire de TÊTE — limite assumée depuis l'Epic 34,
- * reconduite en 60.4. Le niveau d'un dossier dit ce qu'on peut y faire ; il ne dit
+ * La relecture porte sur le répertoire de TÊTE — limite assumée et reconduite.
+ * Le niveau d'un dossier dit ce qu'on peut y faire ; il ne dit
  * rien du CONTENU des fichiers qu'il abrite. Une combinaison dont les fichiers et
  * les dossiers reçoivent des niveaux différents ne peut donc PAS se relire
  * exactement — et ce test ne prétend pas le contraire :
@@ -121,7 +120,7 @@ class PosixVerbRoundTripTest extends TestCase
                     "{$label} : une combinaison différenciée ne doit JAMAIS se relire conforme",
                 );
 
-                // Review 62.4 #3 — l'assertion ci-dessus compare l'observé au
+                // L'assertion ci-dessus compare l'observé au
                 // RENDU. Or ce que le comparateur oppose à l'observé, c'est le
                 // DÉSIR du plan (`grant->verbs`). Les deux coïncidaient tant que
                 // rendu = désiré ; pour une combinaison différenciée mais EXACTE
@@ -129,7 +128,7 @@ class PosixVerbRoundTripTest extends TestCase
                 // plus rien de ce qui compte. On épingle donc aussi le désir : une
                 // combinaison différenciée ne doit pas davantage se relire égale à
                 // ce que l'administrateur a demandé — sans quoi l'écran de dérive
-                // de 62.6 afficherait « conforme » sur un état que le disque ne
+                // de afficherait « conforme » sur un état que le disque ne
                 // porte pas.
                 self::assertNotSame(
                     [$canonical],

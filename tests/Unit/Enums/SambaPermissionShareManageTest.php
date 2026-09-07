@@ -10,9 +10,9 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Story 5.2 — verrouille le mapping de la nouvelle permission `share.manage`
- * vers le bit legacy `SE_SHARE_REFRESH` (D2=A) + son label + son exclusion
- * du bitmask import (secondary bit, partagée avec `share.refresh`).
+ * Verrouille le mapping de la permission `share.manage` vers le bit legacy
+ * `SE_SHARE_REFRESH`, son label, et son exclusion du bitmask d'import : c'est un
+ * bit secondaire, partagé avec `share.refresh`.
  *
  * Garde aussi la non-régression sur `share.view` et `share.refresh`.
  */
@@ -21,7 +21,6 @@ class SambaPermissionShareManageTest extends TestCase
     #[Test]
     public function it_maps_share_manage_to_legacy_share_refresh(): void
     {
-        // D2=A : ShareManage partage le bit `SE_SHARE_REFRESH` avec ShareRefresh.
         $this->assertSame(
             LegacyRight::ShareRefresh,
             SambaPermission::ShareManage->legacyRight(),

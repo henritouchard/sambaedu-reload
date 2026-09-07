@@ -18,7 +18,7 @@ use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
- * Story 56.3 (AC2, AC4, AC5) — Le Job qui exécute UNE opération d'extension en
+ * Le Job qui exécute UNE opération d'extension en
  * tâche de fond et tient la ligne `extension_install_runs` à jour.
  *
  * Il n'installe RIEN lui-même : il appelle
@@ -27,17 +27,15 @@ use Throwable;
  * n'existe pas deux chemins d'installation (doctrine AR1) ; ce Job est un
  * rapporteur, pas un second moteur.
  *
- * ══════════════════════════════════════════════════════════════════════════
  *  LE MOTEUR JETTE **OU** RETOURNE — LES DEUX CHEMINS MÈNENT AU MÊME TERMINUS
  *
- *  Décision 56.2 #1 : `ExtensionInstallException` = refus de CONTRAT (avant que
+ *  `ExtensionInstallException` = refus de CONTRAT (avant que
  *  l'extension soit résolue : clé inconnue, ambiguë, type `link`, moteur
  *  occupé) ; un `error` non vide dans le tableau retourné = échec AUDITÉ d'une
  *  extension résolue. En oublier un laisserait un run éternellement `running`
  *  jusqu'à ce que la staleness le libère — c'est-à-dire un mensonge à l'écran
  *  pendant une demi-heure. Les deux sont traités, plus un `Throwable` de
  *  dernier recours.
- * ══════════════════════════════════════════════════════════════════════════
  *
  * ⚠️ **PAS de middleware `WithoutOverlapping`.** Il s'appuie sur le cache PAR
  * DÉFAUT (APCu dans ce projet), qui n'implémente pas `lock()` : il lève
@@ -193,8 +191,7 @@ class RunExtensionOperationJob implements ShouldQueue
         // `changed = false` (no-op propre : déjà installée, déjà à jour, déjà
         // retirée) est un SUCCÈS : l'état demandé est celui qui est en place.
         // Mais ce n'est PAS le même succès qu'un acte réel, et l'écran doit le
-        // dire (AC5 : toast info) — d'où la propagation de `changed` jusqu'au
-        // run (review 56.3 #3).
+        // dire (toast info) — d'où la propagation de `changed` jusqu'au run.
         $this->finish($run, ExtensionInstallRun::STATUS_SUCCESS, '', (bool) $result['changed']);
     }
 

@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * Override per-poste d'une option `.ini` WPKG (Story 15.2 / AC5.2).
+ * Override per-poste d'une option `.ini` WPKG.
  *
  * Si l'option n'a pas de ligne pour le poste, `WorkstationIniGenerator` applique
  * la valeur par défaut `false` (parité legacy `poste_maintenance_options.php`).

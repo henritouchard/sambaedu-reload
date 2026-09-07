@@ -21,8 +21,6 @@ use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 
 /**
- * Story 20.1 — D-3 / D-4 / T4 ; durci par Story 20.3 (pivot Henri 2026-06-03).
- *
  * Controller D'ENTRÉE du login fédéré (POST binding, façon SAML POST binding —
  * D-3 : le jeton arrive en POST, jamais en query string, pour ne pas fuiter
  * dans les logs d'accès / l'historique / le `Referer`).
@@ -34,7 +32,7 @@ use Symfony\Component\HttpKernel\Exception\HttpException;
  *
  * Flux :
  *  1. Vérifie le JWT (signature RS256, iss/aud/tier/exp/nbf, anti-rejeu jti).
- *  2. Résout `role` → rôle EXISTANT de l'instance (lookup direct, 20.3 D-1) ;
+ *  2. Résout `role` → rôle EXISTANT de l'instance (lookup direct, D-1) ;
  *     rôle absent/inconnu → 403, aucune session, AUCUNE création de rôle.
  *  3. Upsert `ExternalIdentity` + provisioning user dans une transaction.
  *  4. `Auth::login()` + marque la session « fédérée » + bridge `$_SESSION`.
@@ -54,7 +52,6 @@ class FederatedLoginController
     {
         $jwt = $this->extractToken($request);
 
-        // --- 1. Vérification du jeton ---
         try {
             $claims = $this->verifier->verify($jwt);
         } catch (InvalidFederatedJwtException $e) {
@@ -63,11 +60,10 @@ class FederatedLoginController
             throw new HttpException($e->httpStatus, $e->getMessage(), $e);
         }
 
-        // --- 2. Résolution du rôle AVANT toute persistance de session (fail fast) ---
-        // Story 20.3 — D-1 : lookup DIRECT du nom asséré (normalisé) dans les
+        // D-1 : lookup DIRECT du nom asséré (normalisé) dans les
         // rôles EXISTANTS de l'instance. Pas de table de correspondance, pas de
         // création à la volée. Rôle inconnu (absent en base) → 403, aucune
-        // session (D-2 / D-3, invariant 20.1 préservé).
+        // session (D-2 / D-3, invariant préservé).
         $roleName = $this->roleMapper->resolve($claims->role);
         if ($roleName === null) {
             Log::channel('federated-auth')->warning('[FederatedLoginController] federated.login.role_unknown', [
@@ -81,17 +77,16 @@ class FederatedLoginController
             throw new HttpException(403, 'Federated role not authorized on this instance');
         }
 
-        // --- 3. Upsert identité + provisioning user dans une transaction ---
         // L'anti-rejeu `jti` est consommé EN DERNIER, après le provisioning
         // réussi : un échec amont (identité révoquée, panne DB) rollback ET ne
         // brûle pas le `jti`, donc un retry légitime du même jeton (encore
         // valide) reste possible (review M1).
         $user = DB::transaction(function () use ($claims, $roleName): User {
-            // Story 20.2 — D-2 : la réconciliation de l'identité (upsert + sync
+            // D-2 : la réconciliation de l'identité (upsert + sync
             // profil + gardes révocation/anonymisation) est déléguée au service
-            // de cycle de vie. Comportement observable INCHANGÉ vs 20.1 (le
+            // de cycle de vie. Comportement observable INCHANGÉ (le
             // garde anti-résurrection D-4 est un AJOUT, jamais déclenché par
-            // une identité 20.1 non encore anonymisée).
+            // une identité non encore anonymisée).
             $identity = $this->lifecycle->reconcileOnLogin($claims);
             $user = $this->provisionUser($identity, $claims);
             $this->applyRole($user, $roleName);
@@ -111,7 +106,6 @@ class FederatedLoginController
             return $user;
         });
 
-        // --- 4. Ouverture de session SE5 standard ---
         Auth::login($user);
 
         // Marque la session « fédérée » (D-5 : le guard saute le LDAP pour elle).
@@ -135,9 +129,7 @@ class FederatedLoginController
     /**
      * Extrait le JWT du POST. Champ `token` UNIQUEMENT (form auto-soumis rendu
      * par l'IdP, D-3 « POST binding strict »). Pas de fallback `Authorization:
-     * Bearer` (path non tranché — review #4) ni de query string (fuite logs/
-     * historique/`Referer`). Si Henri veut tolérer Bearer pour des intégrations,
-     * cela doit passer par une décision explicite (D-10) documentée en 20.5.
+     * Bearer` ni de query string (fuite logs / historique / `Referer`).
      */
     private function extractToken(Request $request): string
     {
@@ -195,10 +187,10 @@ class FederatedLoginController
      * Applique le rôle EXISTANT résolu (sync : un externe porte exactement le
      * rôle asséré, ré-évalué à chaque login).
      *
-     * Story 20.3 — D-2 : on n'a RIEN à créer. `$roleName` est le nom canonique
+     * D-2 : on n'a RIEN à créer. `$roleName` est le nom canonique
      * d'un rôle dont l'EXISTENCE en base a déjà été établie par le mapper
      * (lookup direct). On applique simplement via `syncRoles`. Les Policies/
-     * Gates Spatie existants (Epic 7, type-hint `App\Models\User`) s'appliquent
+     * Gates Spatie existants (type-hint `App\Models\User`) s'appliquent
      * ensuite sans duplication. AUCUN `firstOrCreate` : jamais de rôle fantôme.
      */
     private function applyRole(User $user, string $roleName): void

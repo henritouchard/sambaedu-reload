@@ -11,12 +11,12 @@ import (
 	"sambaedu/agent/shared"
 )
 
-// Câblage Windows du handler `registry` (Story 27.3) — accès registre EN GO
+// Câblage Windows du handler `registry` — accès registre EN GO
 // NATIF via golang.org/x/sys/windows/registry (déjà dans go.mod, partagé avec
 // le handler wallpaper). Zéro dépendance ajoutée, zéro shell-out (`reg add`).
 //
-// UN SEUL handler générique (D-Q2) : le binaire l'instancie DEUX fois — une
-// pour le SERVICE SYSTEM (items HKLM + HKU, portée machine — Story 35.3) et une
+// UN SEUL handler générique : le binaire l'instancie DEUX fois — une
+// pour le SERVICE SYSTEM (items HKLM + HKU, portée machine) et une
 // pour le COMPAGNON (items HKCU, portée session, ruche de l'utilisateur
 // connecté). La logique de convergence (Test/Apply, idempotence, isolation par
 // clé, fan-out HKU vers .DEFAULT + ruches chargées) vit dans
@@ -28,7 +28,7 @@ import (
 // service SYSTEM ; HKCU\Software\... s'écrit dans la ruche de la session
 // (compagnon, droits user). Une clé protégée / ruche absente → erreur remontée
 // → le moteur rend {status: error, detail} pour le SEUL type `registry`
-// (isolation, AC5).
+// (isolation).
 
 // registryOps : impl shared.RegistryOps de production (Windows registry).
 type registryOps struct {
@@ -36,10 +36,10 @@ type registryOps struct {
 }
 
 // rootKey : mappe la ruche du payload vers la racine x/sys/windows/registry.
-// HKLM → LOCAL_MACHINE, HKCU → CURRENT_USER, HKU → USERS (Story 35.3 : la 3e
-// ruche est MACHINE-scope — le service SYSTEM fan-out les items HKU vers
-// `.DEFAULT` + les ruches chargées, paths préfixés par le handler shared ;
-// D-Q2 reste : un handler générique, la séparation des portées est serveur).
+// HKLM → LOCAL_MACHINE, HKCU → CURRENT_USER, HKU → USERS (la 3e ruche est
+// MACHINE-scope — le service SYSTEM fan-out les items HKU vers `.DEFAULT` +
+// les ruches chargées, paths préfixés par le handler shared ; le handler Go
+// reste générique, la séparation des portées est serveur).
 // Toute autre ruche est refusée.
 func rootKey(hive string) (registry.Key, error) {
 	switch strings.ToUpper(strings.TrimSpace(hive)) {
@@ -125,11 +125,11 @@ func (o *registryOps) Read(hive, path, name string) (shared.RegistryValue, bool,
 		return shared.RegistryValue{Kind: "REG_MULTI_SZ", Multi: v}, true, nil
 	default:
 		// Type réel non géré à la lecture (REG_BINARY, REG_NONE, …) : la valeur
-		// EXISTE → present=true avec un Kind sentinelle hors contrat (review
-		// 35.1 #1). Item d'écriture : Equal() échoue sur le Kind → apply réécrit
+		// EXISTE → present=true avec un Kind sentinelle hors contrat.
+		// Item d'écriture : Equal() échoue sur le Kind → apply réécrit
 		// au type cible (comportement historique conservé). Item `ensure:
 		// "absent"` : la valeur présente est une dérive → apply la SUPPRIME
-		// (AC3 : « peu importe son type/contenu » — pas de résidu silencieux).
+		// ( : « peu importe son type/contenu » — pas de résidu silencieux).
 		return shared.RegistryValue{Kind: "REG_UNSUPPORTED"}, true, nil
 	}
 }
@@ -142,7 +142,7 @@ func (o *registryOps) Write(spec shared.RegistrySpec) error {
 		return err
 	}
 
-	// Race logoff (Story 35.3, review #1) : une cible HKU dont la ruche a été
+	// Race logoff : une cible HKU dont la ruche a été
 	// DÉMONTÉE entre l'énumération (UserHives) et l'écriture ne doit PAS être
 	// matérialisée — CreateKey ne renverrait pas d'erreur, il créerait une clé
 	// ORPHELINE persistante directement sous HKEY_USERS (résidu + collision au
@@ -184,12 +184,12 @@ func (o *registryOps) Write(spec shared.RegistrySpec) error {
 	}
 }
 
-// Delete supprime la VALEUR NOMMÉE d'une clé (Story 35.1, item `ensure:"absent"`)
+// Delete supprime la VALEUR NOMMÉE d'une clé (item `ensure:"absent"`)
 // — JAMAIS la clé-conteneur (des valeurs voisines non gérées y vivent ; la
-// réconciliation de clé entière est le type `registry_list`, D3/35.2).
+// réconciliation de clé entière est le type `registry_list`).
 // registry.ErrNotExist sur la CLÉ ou la VALEUR ⇒ nil (succès idempotent : la
 // cible « valeur absente » est déjà atteinte). Autres erreurs (accès refusé /
-// ruche invalide) remontées → {status: error} pour le type (isolation AC5).
+// ruche invalide) remontées → {status: error} pour le type (isolation).
 func (o *registryOps) Delete(hive, path, name string) error {
 	root, err := rootKey(hive)
 	if err != nil {
@@ -217,7 +217,7 @@ func (o *registryOps) Delete(hive, path, name string) error {
 	return nil
 }
 
-// ValueNames énumère les NOMS des valeurs d'une clé (Story 35.2 — la
+// ValueNames énumère les NOMS des valeurs d'une clé (la
 // réconciliation de clé-conteneur `registry_list` doit voir les entrées
 // surnuméraires). Clé ABSENTE ⇒ (nil, nil) : pas une erreur (idempotence, iso
 // Delete — la cible « aucune entrée » est déjà atteinte). err = accès refusé /
@@ -248,7 +248,7 @@ func (o *registryOps) ValueNames(hive, path string) ([]string, error) {
 	return names, nil
 }
 
-// UserHives énumère les CIBLES du fan-out HKU (Story 35.3) : sous-clés de
+// UserHives énumère les CIBLES du fan-out HKU : sous-clés de
 // HKEY_USERS filtrées STRICTEMENT — ".DEFAULT" (profil de l'écran de logon) +
 // ruches utilisateur chargées `S-1-5-21-*` SANS le suffixe `_Classes`
 // (jumelles HKCR per-user : y écrire `Control Panel\…` créerait des débris).
@@ -281,8 +281,8 @@ func (o *registryOps) UserHives() ([]string, error) {
 	return targets, nil
 }
 
-// isHkuFanOutTarget : filtre STRICT des sous-clés de HKEY_USERS (piège n° 7,
-// insensible à la casse) — garder ".DEFAULT" + `S-1-5-21-*` hors `_Classes`.
+// isHkuFanOutTarget : filtre STRICT des sous-clés de HKEY_USERS (insensible
+// à la casse) — garder ".DEFAULT" + `S-1-5-21-*` hors `_Classes`.
 func isHkuFanOutTarget(name string) bool {
 	upper := strings.ToUpper(strings.TrimSpace(name))
 	if upper == ".DEFAULT" {
@@ -295,8 +295,8 @@ func isHkuFanOutTarget(name string) bool {
 	return !strings.HasSuffix(upper, "_CLASSES")
 }
 
-// NB (Story 43.1) : l'ancien hook `NotifyShellChanged` (SHChangeNotify inline,
+// NB : l'ancien hook `NotifyShellChanged` (SHChangeNotify inline,
 // ex-shared.registryNotifier) a MIGRÉ vers l'échelle de rafraîchissement —
 // refresh_windows.go (refreshOps.ShellNotify), pilotée par le compagnon en fin
-// de passe. UNE seule voie d'émission (piège n° 5) : registryOps ne porte plus
+// de passe. UNE seule voie d'émission : registryOps ne porte plus
 // aucun geste shell.

@@ -13,15 +13,15 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphToMany;
 
 /**
- * Story 34.1 — répertoire réseau nommé (« lecteur réseau géré »).
+ * Répertoire réseau nommé (« lecteur réseau géré »).
  *
  * Fondation backend du module : persistance d'un répertoire matérialisé sous
  * `/var/sambaedu/Partages/<directory_name>` ({@see App\Services\Filesystem\NetworkShareService})
  * et projeté en montage de lecteur via le canal `drives` natif de l'agent
  * ({@see App\Services\Agent\Providers\DrivesStateProvider}).
  *
- * **Modèle d'accès à DEUX axes orthogonaux** (décision Henri 2026-06-29) sur le
- * MÊME jeu d'assignations polymorphes (`network_share_assignables`) :
+ * **Modèle d'accès à DEUX axes orthogonaux** sur le MÊME jeu d'assignations
+ * polymorphes (`network_share_assignables`) :
  *  - **Visibilité (montage)** : N'IMPORTE QUELLE maille (`User` / `UserGroup` /
  *    `WorkstationGroup`) fait apparaître la lettre — l'union/dédup/précédence du
  *    `StateCompiler` gère tout (zéro modif compilateur).
@@ -29,14 +29,14 @@ use Illuminate\Database\Eloquent\Relations\MorphToMany;
  *    `UserGroup` (`user:<login>` / `group:<unix>`). Une assignation
  *    `WorkstationGroup` est MONTAGE-SEUL (aucune ACL — invariant).
  *
- * **Story 60.3 — `backend` : l'autorité d'écriture des droits.** Le partage porte
+ * **`backend` : l'autorité d'écriture des droits.** Le partage porte
  * le NOM du backend qui écrit ses droits (`posix` par défaut — c'est ce que sont
  * tous les partages en place). La colonne est VISIBLE (elle détermine le chemin
  * d'accès de l'utilisateur) mais n'est ni `$fillable`, ni éditable depuis l'UI :
  * tant qu'aucun flux de provisioning ne route par elle, un sélecteur serait une
  * propriété qui ment. Routage et éditabilité arrivent ensemble en 60.4.
  *
- * **Story 60.5 — l'ORIGINE : « ce partage EST l'arbre de ce groupe, d'après cette
+ * **l'ORIGINE : « ce partage EST l'arbre de ce groupe, d'après cette
  * recette ».** Trois colonnes additives nullables relient un partage à ce qui l'a
  * produit. Leur absence est l'état normal de tous les partages en place : ils n'ont
  * pas d'origine, et n'en auront jamais. Ce que l'origine change, c'est la façon
@@ -63,7 +63,7 @@ class NetworkShare extends Model
     use HasFactory;
 
     /**
-     * Identifiant FIGÉ du type de ressource desired-state (contrat §7, NFR12) —
+     * Identifiant FIGÉ du type de ressource desired-state (contrat §7) —
      * iso `Shortcut::TYPE_SHORTCUTS`, consommé par {@see DrivesStateProvider}.
      * Le répertoire réseau se projette dans le type `drives` DÉJÀ figé (l'agent
      * monte n'importe quelle lettre→UNC sans modification).
@@ -83,7 +83,7 @@ class NetworkShare extends Model
     protected $table = 'network_shares';
 
     /**
-     * `backend` en est VOLONTAIREMENT ABSENT (story 60.3) : aucun chemin
+     * `backend` en est VOLONTAIREMENT ABSENT : aucun chemin
      * d'écriture de masse latent tant que rien ne route par cette colonne. La
      * retirer d'ici est ce qui empêche un `create([...])` ou un `fill()` de faire
      * entrer, par inadvertance, une autorité d'écriture que personne n'honore.
@@ -98,7 +98,7 @@ class NetworkShare extends Model
     ];
 
     /**
-     * Story 60.3 — le nom de backend est du VOCABULAIRE, pas une chaîne libre.
+     * Le nom de backend est du VOCABULAIRE, pas une chaîne libre.
      *
      * Le cast sert la lecture ordinaire. Le chemin SANCTIONNÉ, celui qui échoue en
      * nommant ce qui était attendu, est {@see backendName()} : c'est lui qu'appelle
@@ -110,7 +110,7 @@ class NetworkShare extends Model
     ];
 
     /**
-     * Story 60.3 — le défaut du MODÈLE recopie le défaut du SCHÉMA.
+     * Le défaut du MODÈLE recopie le défaut du SCHÉMA.
      *
      * Sans lui, une instance fraîchement créée n'aurait pas d'autorité d'écriture
      * en mémoire tant qu'elle n'a pas été relue, et {@see backendName()} devrait
@@ -177,7 +177,7 @@ class NetworkShare extends Model
     }
 
     /**
-     * Story 60.3 — l'AUTORITÉ D'ÉCRITURE de ce partage, en vocabulaire fermé.
+     * L'AUTORITÉ D'ÉCRITURE de ce partage, en vocabulaire fermé.
      *
      * **Le chemin sanctionné de lecture de la colonne.** Il lit la valeur BRUTE
      * (avant cast) pour pouvoir échouer en nommant ce qui était attendu, plutôt
@@ -203,10 +203,6 @@ class NetworkShare extends Model
 
         return $name;
     }
-
-    // =========================================================================
-    // Story 60.5 — l'origine du partage
-    // =========================================================================
 
     /** La recette dont ce partage est la matérialisation, ou `null`. */
     public function directoryTemplate(): BelongsTo
@@ -239,8 +235,8 @@ class NetworkShare extends Model
      * État d'activation des nœuds ACTIVABLES : chemin de nœud TEL QU'ÉCRIT dans la
      * recette => actif.
      *
-     * **Une entrée ABSENTE vaut ACTIF.** C'est la décision D6=A, celle de l'espace
-     * d'échange historique, créé actif : un partage neuf n'a donc rien à écrire, et
+     * **Une entrée ABSENTE vaut ACTIF**, comme l'espace d'échange historique,
+     * créé actif : un partage neuf n'a donc rien à écrire, et
      * le JSON ne porte que les écarts au défaut. Une entrée dont le chemin ne
      * correspond à aucun nœud de la recette (recette modifiée après coup) est
      * simplement IGNORÉE par la résolution — jamais une erreur, jamais un nœud
@@ -267,7 +263,7 @@ class NetworkShare extends Model
 
     /**
      * Libellé EFFECTIF du lecteur dans l'explorateur : `label` si défini, sinon
-     * le `name` (AC1/AC2).
+     * le `name`.
      */
     public function effectiveLabel(): string
     {

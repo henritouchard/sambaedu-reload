@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace App\Ipxe\Enums;
 
 /**
- * Story 3.4 — D1 / AC1.2.
- *
  * Whitelist stricte des distributions Linux acceptées par
  * `/ipxe/linux/preseed`.
  *
@@ -17,7 +15,7 @@ namespace App\Ipxe\Enums;
  *  - `null` retourné  → 422 + log warning `ipxe.linux.preseed.invalid_distribution`.
  *  - case retourné    → dispatch vers le service `LinuxPreseedService`.
  *
- * **3 cases stricts en 3.4** :
+ * **3 cases stricts** :
  *
  *  - `Debian` — Debian standard (avec domain AD) — variantes Gnome/LXDE/KDE/etc.
  *  - `Ubuntu` — Ubuntu Focal 20.04+ (sans domaine, `perso=1`).
@@ -50,7 +48,7 @@ enum LinuxDistribution: string
         $normalized = strtolower(trim($raw));
 
         // Alias versions Debian (trixie/bookworm/bullseye) → Debian.
-        // Note post-review #7 : `buster` (Debian 10) retiré — EOL juin 2024.
+        // `buster` (Debian 10) n'est pas accepté : EOL depuis juin 2024.
         if (in_array($normalized, ['debian', 'trixie', 'bookworm', 'bullseye'], true)) {
             return self::Debian;
         }

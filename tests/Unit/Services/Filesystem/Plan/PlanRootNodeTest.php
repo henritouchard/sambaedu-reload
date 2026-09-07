@@ -13,9 +13,9 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 60.3 — LA RACINE EST UN NŒUD COMME LES AUTRES.
+ * LA RACINE EST UN NŒUD COMME LES AUTRES.
  *
- * Motif : le sondage d'ouverture d'epic a mesuré qu'une relecture d'état « avec
+ * Motif : le sondage d'ouverture a mesuré qu'une relecture d'état « avec
  * les sous-chemins » rend les enfants MAIS PAS la racine. Un backend qui traite la
  * racine à part finit par l'oublier — c'est un mode de rupture mesuré, pas une
  * hypothèse. La faire entrer dans le vocabulaire de nœud est la parade.

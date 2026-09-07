@@ -7,7 +7,7 @@ namespace App\Services\Filesystem\Plan;
 use App\Exceptions\Filesystem\PlanResolutionException;
 
 /**
- * Story 60.1 — SUJET d'un octroi de plan, désigné par son IDENTITÉ INTERNE.
+ * SUJET d'un octroi de plan, désigné par son IDENTITÉ INTERNE.
  *
  * **La règle qui tient tout le reste** : un sujet est `(type, id)` où `id` est la
  * clé primaire SE5 (`users.id` ou `user_groups.id`). Jamais un login, jamais un
@@ -19,7 +19,7 @@ use App\Exceptions\Filesystem\PlanResolutionException;
  * **Le rôle d'arête, et pourquoi il vit ICI.** Un sujet de type groupe peut porter
  * un rôle d'arête (`member|manager|owner`) : le sujet est alors « les membres de
  * ce groupe qui portent ce rôle ». C'est une ABSTRACTION que le backend compilera
- * comme il voudra — la mesure faite en ouverture d'epic a tranché qu'un tel
+ * comme il voudra — la mesure faite en ouverture a tranché qu'un tel
  * ensemble se compile en groupe dérivé, jamais en énumération nominative de ses
  * membres (une pose d'ACL récursive est quadratique : 7,2 s à 1 000 entrées
  * nominatives, 63 s à 3 000, contre 0,35 s pour un groupe dérivé, et une limite

@@ -13,7 +13,7 @@ use Tests\Support\IpxeSchemaBootstrapper;
 use Tests\TestCase;
 
 /**
- * Story 3.8 — T5.2 / AC13.1-13.12.
+ * T5.2 /.
  *
  * Tests feature de la route native `POST /ipxe/windows/action` étendue aux
  * 6 étapes post-OOBE (sysprep/nosysprep/join/renomme/post/wpkg).
@@ -32,7 +32,7 @@ class IpxeWindowsActionEndpointPostOobeTest extends TestCase
             'sambaedu.windows.adminse_passwd' => 'AdminPwd1234',
             'sambaedu.domain' => 'localdev.fr',
             'sambaedu.se4fs_name' => 'se4fs',
-            // Story 3.8 D13 — défaut activé.
+            // D13 — défaut activé.
             'ipxe.windows.post_install.enabled' => true,
             'ipxe.windows.post_install.sysprep_enabled' => true,
             'ipxe.windows.post_install.nosysprep_enabled' => true,
@@ -54,7 +54,7 @@ class IpxeWindowsActionEndpointPostOobeTest extends TestCase
     }
 
     /* ---------------------------------------------------------------
-     * AC13.2 — sysprep initial avec type=clonage → body cmd batch
+     * Sysprep initial avec type=clonage → body cmd batch
      * --------------------------------------------------------------- */
 
     #[Test]
@@ -89,7 +89,7 @@ class IpxeWindowsActionEndpointPostOobeTest extends TestCase
     }
 
     /* ---------------------------------------------------------------
-     * Review #7 — sysprep initial SANS clonage (type=default) → body vide
+     * Sysprep initial SANS clonage (type=default) → body vide
      * (cas le plus courant : poste qui démarre une install standard).
      * --------------------------------------------------------------- */
 
@@ -114,7 +114,7 @@ class IpxeWindowsActionEndpointPostOobeTest extends TestCase
     }
 
     /* ---------------------------------------------------------------
-     * Review #3 — l'OU cible (et le role) doivent être persistés à l'init
+     * L'OU cible (et le role) doivent être persistés à l'init
      * et ré-injectés au 2e curl (ret=0) que le poste envoie SANS role/ou.
      * Sans ça : Add-Computer -OUPath '' → mauvais container AD.
      * --------------------------------------------------------------- */
@@ -147,12 +147,12 @@ class IpxeWindowsActionEndpointPostOobeTest extends TestCase
         $response->assertStatus(200);
         $body = (string) $response->getContent();
         self::assertStringContainsString($targetOu, $body);
-        // Garde-fou anti-régression #3 : jamais de OUPath vide.
+        // Garde-fou anti-régression : jamais de OUPath vide.
         self::assertStringNotContainsString("-OUPath ''", $body);
     }
 
     /* ---------------------------------------------------------------
-     * AC13.3 — sysprep ret=0 → body vide + state machine avance
+     * Sysprep ret=0 → body vide + state machine avance
      * --------------------------------------------------------------- */
 
     #[Test]
@@ -215,7 +215,7 @@ class IpxeWindowsActionEndpointPostOobeTest extends TestCase
     }
 
     /* ---------------------------------------------------------------
-     * Q-2 refacto clarté — nosysprep distinct
+     * nosysprep distinct
      * --------------------------------------------------------------- */
 
     #[Test]
@@ -240,7 +240,7 @@ class IpxeWindowsActionEndpointPostOobeTest extends TestCase
     }
 
     /* ---------------------------------------------------------------
-     * AC13.4 — join initial
+     * Join initial
      * --------------------------------------------------------------- */
 
     #[Test]
@@ -268,9 +268,9 @@ class IpxeWindowsActionEndpointPostOobeTest extends TestCase
     }
 
     /* ---------------------------------------------------------------
-     * AC13.5 — renomme ret=0 → écriture PG `name = role` (observer-driven).
+     * Renomme ret=0 → écriture PG `name = role` (observer-driven).
      *
-     * Story 4.9 : refactor — plus d'appel direct à AdMachineManager,
+     * Refactor — plus d'appel direct à AdMachineManager,
      * le rename AD est déclenché par l'observer + WorkstationAdSyncJob.
      * --------------------------------------------------------------- */
 
@@ -280,7 +280,7 @@ class IpxeWindowsActionEndpointPostOobeTest extends TestCase
         $ws = $this->seedWorkstation();
 
         $adMock = Mockery::mock(AdMachineManager::class);
-        // Story 4.9 : adManager non utilisé par recordRenommeAdRenamed.
+        // AdManager non utilisé par recordRenommeAdRenamed.
         $adMock->shouldNotReceive('renameComputer');
         $this->app->instance(AdMachineManager::class, $adMock);
 
@@ -296,14 +296,14 @@ class IpxeWindowsActionEndpointPostOobeTest extends TestCase
         self::assertSame('', (string) $response->getContent());
 
         $ws->refresh();
-        // Story 4.9 fix root cause : le nom PG est écrit en transaction.
+        // Fix root cause : le nom PG est écrit en transaction.
         self::assertSame('pc-renamed-01', $ws->name);
         self::assertSame('active', $ws->status);
         self::assertSame('60%', $ws->progress);
     }
 
     /* ---------------------------------------------------------------
-     * AC13.7 — config toggle disabled → body vide
+     * Config toggle disabled → body vide
      * --------------------------------------------------------------- */
 
     #[Test]
@@ -344,7 +344,7 @@ class IpxeWindowsActionEndpointPostOobeTest extends TestCase
     }
 
     /* ---------------------------------------------------------------
-     * AC13.8 — Rule::in 422 sur etape=arbitrary
+     * Rule::in 422 sur etape=arbitrary
      * --------------------------------------------------------------- */
 
     #[Test]
@@ -363,7 +363,7 @@ class IpxeWindowsActionEndpointPostOobeTest extends TestCase
     }
 
     /* ---------------------------------------------------------------
-     * AC13.10 — non-régression 3.5 winpe
+     * Non-régression winpe
      * --------------------------------------------------------------- */
 
     #[Test]
@@ -383,7 +383,7 @@ class IpxeWindowsActionEndpointPostOobeTest extends TestCase
     }
 
     /* ---------------------------------------------------------------
-     * AC13.11 — non-régression 3.5 oobe
+     * Non-régression oobe
      * --------------------------------------------------------------- */
 
     #[Test]
@@ -403,7 +403,7 @@ class IpxeWindowsActionEndpointPostOobeTest extends TestCase
     }
 
     /* ---------------------------------------------------------------
-     * AC13.12 — sécurité : injection cmd dans `role` → 200 body vide + log
+     * Sécurité : injection cmd dans `role` → 200 body vide + log
      * --------------------------------------------------------------- */
 
     #[Test]
@@ -485,7 +485,7 @@ class IpxeWindowsActionEndpointPostOobeTest extends TestCase
     }
 
     /* ---------------------------------------------------------------
-     * MachineBootLog labels distincts (D11 / AC5.3)
+     * MachineBootLog labels distincts (D11 /)
      * --------------------------------------------------------------- */
 
     #[Test]

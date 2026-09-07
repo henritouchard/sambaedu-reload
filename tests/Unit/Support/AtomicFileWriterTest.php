@@ -10,7 +10,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Tests unitaires AtomicFileWriter (Story 15.1 / AC5.1).
+ * Tests unitaires AtomicFileWriter.
  *
  * Couvre :
  *   - écriture simple, contenu intact ;

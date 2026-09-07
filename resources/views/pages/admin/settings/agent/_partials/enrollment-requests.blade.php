@@ -11,7 +11,7 @@ use Livewire\Component;
 use Livewire\WithPagination;
 
 /**
- * Story 25.3 — Surface d'approbation des enrôlements porte 2 (AC5).
+ * Surface d'approbation des enrôlements porte 2.
  *
  * Liste paginée des demandes `pending` d'enrôlement des postes migrés (faisceau
  * de preuves affiché + rapprochement DB le cas échéant + badge auto/manuel/
@@ -39,7 +39,7 @@ return new class extends Component {
     public int $campaignDays = 7;
 
     /**
-     * Modale de sélection de cible (Story 25.5, AC5) — approbation d'une
+     * Modale de sélection de cible — approbation d'une
      * demande « inconnue » (sans rapprochement). L'admin choisit explicitement
      * un poste cible : anti-usurpation jamais débrayé, aucune auto-sélection.
      */
@@ -79,7 +79,7 @@ return new class extends Component {
      */
     public function approve(int $id): void
     {
-        // (review #4) Double protection iso-pattern projet : le middleware route
+        // Double protection iso-pattern projet : le middleware route
         // protège la page, le Gate protège l'action adressable via /livewire/update.
         Gate::authorize('server.admin');
 
@@ -90,10 +90,10 @@ return new class extends Component {
             return;
         }
 
-        // (review #3) Une demande sans rapprochement (« inconnu ») ne peut pas
+        // Une demande sans rapprochement (« inconnu ») ne peut pas
         // être armée : l'étape 2 du redeem exige un poste cible, sinon le poste
         // resterait 403 indéfiniment et la demande, sortie du scope pending,
-        // deviendrait invisible. Le choix d'un poste cible est l'extension 25.5.
+        // deviendrait invisible.
         if ($request->matched_workstation_id === null) {
             $this->toastError('Poste non rapproché : impossible d\'approuver sans cible (rapprochement requis).');
 
@@ -106,7 +106,7 @@ return new class extends Component {
     }
 
     /**
-     * Story 25.5 (AC5) — ouvre la modale de sélection de cible pour une demande
+     * Ouvre la modale de sélection de cible pour une demande
      * « inconnue » (sans rapprochement). Le choix du poste cible est l'extension
      * explicitement renvoyée ici par 25.3.
      */
@@ -121,7 +121,7 @@ return new class extends Component {
             return;
         }
 
-        // AC5 / piège 6 : la sélection de cible est RÉSERVÉE aux demandes
+        // La sélection de cible est RÉSERVÉE aux demandes
         // inconnues (sans rapprochement). Un poste déjà rapproché ne doit jamais
         // être ré-aiguillé silencieusement vers une autre cible via la modale
         // (adressabilité /livewire/update) — anti-usurpation, choix non débrayé.
@@ -147,8 +147,8 @@ return new class extends Component {
 
     /**
      * Candidats à la cible : postes NON enrôlés (pas de token agent), liste
-     * bornée filtrée par nom/hostname. AUCUNE auto-sélection (anti-usurpation
-     * 25.3) — la suggestion n'est qu'une aide, le choix reste humain.
+     * bornée filtrée par nom/hostname. AUCUNE auto-sélection (anti-usurpation) —
+     * la suggestion n'est qu'une aide, le choix reste humain.
      */
     #[Computed]
     public function targetCandidates()
@@ -170,7 +170,7 @@ return new class extends Component {
     }
 
     /**
-     * Approuve une demande inconnue sur la cible choisie (AC5) :
+     * Approuve une demande inconnue sur la cible choisie :
      * `approveManually($req, auth()->id(), $target)` — le 3ᵉ arg arme la demande
      * sur ce poste. Le token naît au prochain `redeem()` du poste, il ne transite
      * jamais par l'UI. Choix de cible HUMAIN explicite (anti-usurpation).
@@ -271,7 +271,7 @@ return new class extends Component {
     {
         Gate::authorize('server.admin');
 
-        // (review #7) Borne haute : une campagne plafonne à 365 jours (hygiène
+        // Borne haute : une campagne plafonne à 365 jours (hygiène
         // d'input — l'anti-usurpation ne dépend pas de la durée, mais une saisie
         // erronée ne doit pas laisser la campagne active « indéfiniment »).
         $days = min(max(1, $this->campaignDays), 365);
@@ -432,7 +432,7 @@ return new class extends Component {
         </x-slot:footer>
     </x-molecules.modal>
 
-    {{-- Modale de sélection de cible (Story 25.5, AC5) — demande inconnue --}}
+    {{-- Modale de sélection de cible — demande inconnue --}}
     <x-molecules.modal wire:model="isTargetOpen" title="Choisir le poste cible"
         icon="fa-crosshairs text-primary" size="max-w-2xl" height="h-auto" closeMethod="closeTarget">
         <x-molecules.modal.section title="Approuver une demande inconnue">

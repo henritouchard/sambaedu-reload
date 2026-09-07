@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace App\Services\Filesystem\Plan;
 
 /**
- * Story 60.1 — normalisation PURE des noms, dans le namespace du plan.
+ * Normalisation PURE des noms, dans le namespace du plan.
  *
  * **Pourquoi une ré-implémentation et non une réutilisation.** Le dé-préfixage
  * d'un nom de groupe existe déjà, une classe plus loin, dans le chemin figé du
- * partage classe (5.2). Mais cette classe-là tire tout le savoir POSIX derrière
+ * partage classe. Mais cette classe-là tire tout le savoir POSIX derrière
  * elle (dérivation des noms de groupes Unix, service d'ACL, exécution de
  * commandes). Le namespace du plan doit rester AU-DESSUS de la ligne de contrat :
  * il n'importe aucun service d'exécution — c'est verrouillé par un test
@@ -23,7 +23,7 @@ namespace App\Services\Filesystem\Plan;
  *
  * Tout est `static` : aucun accès disque, réseau, base ou shell.
  *
- * **Une seule exception, et elle est nommée** (story 62.1) : le vocabulaire de
+ * **Une seule exception, et elle est nommée** : le vocabulaire de
  * rôle d'arête n'est plus une constante recopiée, c'est un catalogue
  * administrable. Il ENTRE ici par injection ({@see self::useEdgeRoles()}), posée
  * au démarrage de l'application ; ce fichier ne va jamais le chercher. En
@@ -38,7 +38,7 @@ final class GroupNameNormalizer
      * Motif d'un segment de chemin SÛR : alphanum + `._-`, premier caractère ≠ `.`.
      *
      * COPIE LITTÉRALE de la constante `DIRECTORY_NAME_PATTERN` du provisioning
-     * générique 34.1 (épinglée par test d'équivalence). Refuse par construction :
+     * générique (épinglée par test d'équivalence). Refuse par construction :
      * `/`, l'espace, tout métacaractère de shell, `..` et `.` (le point seul ne
      * peut pas être premier caractère), et le segment vide.
      */
@@ -70,7 +70,7 @@ final class GroupNameNormalizer
     ];
 
     /**
-     * Story 60.2 — type de groupe dont le nom porte DEUX mailles, séparées par un
+     * Type de groupe dont le nom porte DEUX mailles, séparées par un
      * « @ ».
      *
      * `matiere_classe` est le type détecté à l'import pour un nom d'annuaire de la
@@ -81,7 +81,7 @@ final class GroupNameNormalizer
     public const TYPE_MATIERE_CLASSE = 'matiere_classe';
 
     /**
-     * Story 62.1 — REPLI du vocabulaire de rôle d'arête : les trois clés
+     * REPLI du vocabulaire de rôle d'arête : les trois clés
      * historiques, en littéraux locaux.
      *
      * Il sert exactement dans un cas : quand aucun résolveur n'a été installé,
@@ -117,7 +117,7 @@ final class GroupNameNormalizer
      * Appelée une fois au démarrage de l'application. Les tests qui veulent
      * exercer le repli la remettent à `null`.
      *
-     * @param  (callable(): list<string>)|null  $resolver
+     * @param (callable(): list<string>)|null $resolver
      */
     public static function useEdgeRoles(?callable $resolver): void
     {
@@ -165,7 +165,7 @@ final class GroupNameNormalizer
     }
 
     /**
-     * Story 60.2 — DÉCOMPOSITION du nom d'un groupe « matière × classe » en ses
+     * DÉCOMPOSITION du nom d'un groupe « matière × classe » en ses
      * deux segments : `Matiere_Math@3emeA` donne `['matiere' => 'Math',
      * 'classe' => '3emeA']`.
      *
@@ -265,7 +265,7 @@ final class GroupNameNormalizer
     }
 
     /**
-     * Story 60.3 — jeton du nœud RACINE d'un plan, et source unique de sa valeur
+     * Jeton du nœud RACINE d'un plan, et source unique de sa valeur
      * ({@see PlanNode::ROOT_PATH} en est l'alias).
      *
      * Il désigne « la racine du plan elle-même », relativement à cette racine. Ce
@@ -280,11 +280,11 @@ final class GroupNameNormalizer
      * ENTIER, ou un chemin relatif sûr.
      *
      * **Pourquoi un prédicat séparé plutôt qu'un élargissement de
-     * {@see isSafeRelativePath()}.** Le sondage d'ouverture d'epic a mesuré, sur
+     * {@see isSafeRelativePath()}.** Le sondage d'ouverture a mesuré, sur
      * une instance réelle, qu'une relecture d'état « avec les sous-chemins » rend
      * les enfants MAIS PAS la racine : un backend qui traite la racine à part
      * finit par l'omettre, et l'omission d'un nœud est précisément le silence que
-     * cette story rend impossible. La racine doit donc être un nœud comme les
+     * ce modèle rend impossible. La racine doit donc être un nœud comme les
      * autres. Mais la RACINE D'UN PLAN, elle, ne doit surtout pas pouvoir valoir
      * « . » : un plan enraciné sur « le dossier courant » n'a aucun sens et serait
      * un chemin non résolu déguisé. Deux besoins, deux prédicats — élargir

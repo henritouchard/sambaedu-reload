@@ -11,7 +11,7 @@ use Tests\Support\IpxeSchemaBootstrapper;
 use Tests\TestCase;
 
 /**
- * Story 3.4 — AC3.1 / T3.1.
+ * T3.1.
  *
  * Tests unitaires de {@see LinuxInstallMenuBuilder}.
  */

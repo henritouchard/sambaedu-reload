@@ -16,11 +16,11 @@ use Tests\TestCase;
 use Tests\Traits\MocksAdminUser;
 
 /**
- * Tests Feature de la page parc (onglet machines) — Story 24.7 (AC1, AC4).
+ * Tests Feature de la page parc (onglet machines).
  *
  * Compteurs de conformité (stats-cards), badge worst-status par poste (1
  * requête agrégée), filtre `conformityFilter` (#[Url], reset), retour auto à
- * compliant. Utilise `RefreshDatabase` (schéma réel + migration 24.7) car la
+ * compliant. Utilise `RefreshDatabase` (schéma réel + migration) car la
  * page parc s'appuie sur le repository complet (whereHas groups, etc.).
  */
 class ParcConformityTest extends TestCase
@@ -69,7 +69,7 @@ class ParcConformityTest extends TestCase
 
     public function test_conformity_counters_are_computed_on_enrolled_perimeter(): void
     {
-        // AC1 — compteurs : 1 en écart, 1 conforme. Story 27.8 : plus de
+        // Compteurs : 1 en écart, 1 conforme. : plus de
         // catégorie « dérive tolérée ».
         $exc = $this->enrolled('pc-exc');
         $this->seedState($exc, 'wallpaper', AgentResourceStatus::Drift);
@@ -87,7 +87,7 @@ class ParcConformityTest extends TestCase
 
     public function test_machine_conformity_badge_map_uses_worst_status(): void
     {
-        // AC1 — badge worst-status par poste (1 requête agrégée).
+        // Badge worst-status par poste (1 requête agrégée).
         $ws = $this->enrolled('pc-worst');
         $this->seedState($ws, 'wallpaper', AgentResourceStatus::Compliant);
         $this->seedState($ws, 'overlay', AgentResourceStatus::Error);
@@ -100,7 +100,7 @@ class ParcConformityTest extends TestCase
 
     public function test_conformity_filter_isolates_exceptions(): void
     {
-        // AC1 — le filtre conformityFilter='exceptions' ne montre que les
+        // Le filtre conformityFilter='exceptions' ne montre que les
         // postes en écart.
         $exc = $this->enrolled('pc-drift');
         $this->seedState($exc, 'wallpaper', AgentResourceStatus::Drift);
@@ -117,7 +117,7 @@ class ParcConformityTest extends TestCase
 
     public function test_silent_workstation_with_drift_stays_out_of_exceptions_filter(): void
     {
-        // Review 24.7 #2 — le « muet » prime (décision n° 7) : un poste muet
+        // Le « muet » prime : un poste muet
         // avec un drift rapporté sort dans le filtre `silent`, PAS dans
         // `exceptions` — même sémantique que badge et compteurs.
         $silent = $this->enrolled('pc-silent-drift');
@@ -157,7 +157,7 @@ class ParcConformityTest extends TestCase
 
     public function test_drift_returns_to_compliant_on_reingest(): void
     {
-        // AC4 — deux ingestions successives (drift puis compliant) via le
+        // Deux ingestions successives (drift puis compliant) via le
         // ReportIngestService réel → le filtre exceptions cesse de retourner
         // le poste.
         $ws = $this->enrolled('pc-converge');

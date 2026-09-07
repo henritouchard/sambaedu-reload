@@ -7,7 +7,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 51.1 — Marqueur du dépôt IMPOSÉ par le contrat amont (controlHub).
+ * Marqueur du dépôt IMPOSÉ par le contrat amont (controlHub).
  *
  * Migration ADDITIVE (patron
  * `2026_06_29_100000_add_source_to_controlhub_catalog_apps.php`, garde
@@ -20,8 +20,8 @@ use Illuminate\Support\Facades\Schema;
  * `controlhub://managed` n'est jamais joignable — et son ajout/sa suppression
  * sont verrouillés tant qu'un contrat amont est actif.
  *
- * ⚠️ GARDE-FOU R3 : aucun mot « central » ; vocabulaire « imposé » / « amont » /
- * `Imposed` / `Upstream`. [Source: prd-contrat-manage-se5.md#R3]
+ * ⚠️ GARDE-FOU : aucun mot « central » ; vocabulaire « imposé » / « amont » /
+ * `Imposed` / `Upstream`.
  */
 return new class extends Migration
 {

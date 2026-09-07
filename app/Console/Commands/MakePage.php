@@ -116,7 +116,6 @@ class MakePage extends Command
             }
         }
 
-        // Page SFC.
         if ($this->createSfcPage($dirPath, $title, $serviceName, $createService)) {
             $this->info("✅ Page SFC créée : resources/views/pages/{$dirPath}/index.blade.php");
         } else {

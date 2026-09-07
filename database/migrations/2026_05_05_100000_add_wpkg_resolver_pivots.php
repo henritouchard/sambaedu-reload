@@ -7,7 +7,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 15.2 — Pivots du resolver WPKG.
+ * Pivots du resolver WPKG.
  *
  * Crée les deux tables pivots manquantes côté schéma Reload, équivalents legacy
  * `applications_profile.type_entite IN ('poste','parc')` (cf. `sambaedu/includes/wpkg_libsql.php:212-291`

@@ -13,29 +13,27 @@ use Tests\Support\IpxeSchemaBootstrapper;
 use Tests\TestCase;
 
 /**
- * Story 3.8 — D-A11 / AC11.1-11.4 / T6.
- *
- * Tests parité legacy bit-équivalence : comparer le body SE5 généré par
- * {@see WindowsActionCmdBuilder::build<Step>()} avec les fixtures legacy
+ * Tests parité legacy bit-équivalence : comparer le body SE5 généré par les
+ * méthodes `build*()` de {@see WindowsActionCmdBuilder} avec les fixtures legacy
  * capturées via curl direct sur VM `192.168.122.50` (cf.
  * `tests/fixtures/ipxe/legacy-cmd-action/_README.md`).
  *
- * **4 fixtures actives** (Q-3 décision Henri 2026-05-25) :
+ * **4 fixtures actives** :
  *  - `join.txt`    — parité buildJoin.
  *  - `renomme.txt` — parité buildRenomme.
  *  - `post.txt`    — parité buildPost.
  *  - `wpkg.txt`    — parité buildWpkg.
  *
  * **1 fixture référence non-régression** :
- *  - `oobe.txt`    — déjà SE5 native 3.5 (`recordOobeComplete` body vide). Sert
+ *  - `oobe.txt` — déjà SE5 native (`recordOobeComplete` body vide). Sert
  *                    de référence visuelle (pas de test parité strict).
  *
  * **2 fixtures impossibles** :
  *  - `sysprep.txt`   — markTestSkipped : le legacy ne sert JAMAIS cmd_sysprep
  *                      tel quel (dispatcher legacy lignes 416-429 sert
  *                      cmd_nosysprep pour etape=sysprep+type=clonage).
- *  - `nosysprep.txt` — markTestSkipped : Q-2 refacto clarté SE5 (etape=nosysprep
- *                      distinct, divergence intentionnelle).
+ *  - `nosysprep.txt` — markTestSkipped : SE5 émet un `etape=nosysprep` distinct
+ *                      (divergence intentionnelle).
  *
  * **Helper assertCmdBodyEquivalent** :
  *  - Normalise CRLF/LF mixed → LF (les fixtures legacy ont du mixed line
@@ -222,7 +220,7 @@ class ParityLegacyWindowsActionTest extends TestCase
     }
 
     /* ==================================================================
-     * Tests skipped — fixtures non-capturables (Q-2 + sysprep dead code).
+     * Tests skipped — fixtures non-capturables (nosysprep + sysprep dead code).
      * ================================================================== */
 
     #[Test]
@@ -246,14 +244,14 @@ class ParityLegacyWindowsActionTest extends TestCase
     }
 
     /* ==================================================================
-     * Test non-régression — oobe (référence visuelle, déjà SE5 native 3.5).
+     * Test non-régression — oobe (référence visuelle, déjà SE5 native).
      * ================================================================== */
 
     #[Test]
     public function it_confirms_oobe_fixture_remains_3_5_responsibility(): void
     {
         // Fixture oobe.txt existe pour documentation/non-régression. Le SE5
-        // 3.5 (recordOobeComplete) répond body vide sur etape=oobe&ret=0 —
+        // `recordOobeComplete` répond body vide sur etape=oobe&ret=0 —
         // PAS le cmd_oobe legacy (qui était servi sur etape=oobe sans ret).
         // Le test ici valide juste que la fixture est lisible.
         $fixture = $this->loadFixture('oobe.txt');
@@ -281,7 +279,7 @@ class ParityLegacyWindowsActionTest extends TestCase
     }
 
     /* ==================================================================
-     * Test structurel nosysprep — Q-2 refacto clarté.
+     * Test structurel nosysprep.
      * ================================================================== */
 
     #[Test]
@@ -290,7 +288,7 @@ class ParityLegacyWindowsActionTest extends TestCase
         $ws = $this->makeWorkstationFromFixture();
         $body = $this->builder->buildNosysprep($ws);
 
-        // Q-2 refacto clarté — SE5 émet `etape=nosysprep` distinct.
+        // SE5 émet `etape=nosysprep` distinct.
         self::assertStringContainsString('-F "etape=nosysprep"', $body);
         // PAS d'émission `etape=sysprep&ret=2` (divergence intentionnelle).
         self::assertStringNotContainsString('-F "etape=sysprep" -F "ret=2"', $body);

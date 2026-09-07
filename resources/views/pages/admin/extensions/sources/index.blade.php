@@ -8,7 +8,7 @@ use Livewire\Attributes\Title;
 use Livewire\Component;
 
 /**
- * Story 56.1 (AC1/AC3/AC5) — /admin/extensions/sources : les SOURCES du
+ * Admin/extensions/sources : les SOURCES du
  * catalogue d'extensions.
  *
  * D'où SE5 tire ses extensions : la source embarquée du dépôt (toujours là,
@@ -17,7 +17,7 @@ use Livewire\Component;
  * publique ; SE5 **pinne** cette clé à l'ajout et vérifie la signature du
  * catalogue AVANT d'en décoder quoi que ce soit.
  *
- * NFR15 — 3 couches strictes : toute la donnée et tous les actes passent par
+ * 3 couches strictes : toute la donnée et tous les actes passent par
  * {@see ExtensionSourceService}. Aucun Eloquent, aucun `Http::` dans ce
  * composant : il ne sait ni ce qu'est une signature, ni comment on parle à un
  * dépôt.
@@ -40,7 +40,7 @@ new #[Title('Sources d\'extensions')] class extends Component {
      */
     public array $sources = [];
 
-    // ── Modale « Ajouter une source » ───────────────────────────────────
+    // Modale « Ajouter une source »
 
     public bool $isAddOpen = false;
 
@@ -50,7 +50,7 @@ new #[Title('Sources d\'extensions')] class extends Component {
 
     public string $newPublicKey = '';
 
-    // ── Modale « Retirer la source » ────────────────────────────────────
+    // Modale « Retirer la source »
 
     public bool $isRemoveOpen = false;
 
@@ -68,7 +68,7 @@ new #[Title('Sources d\'extensions')] class extends Component {
         $this->loadSources();
     }
 
-    // ── AC1 — Ajouter une source ────────────────────────────────────────
+    // — Ajouter une source
 
     public function openAdd(): void
     {
@@ -124,7 +124,7 @@ new #[Title('Sources d\'extensions')] class extends Component {
         };
     }
 
-    // ── AC5/AC7 — Actualiser ────────────────────────────────────────────
+    // — Actualiser
 
     public function refreshSource(int $sourceId): void
     {
@@ -148,7 +148,7 @@ new #[Title('Sources d\'extensions')] class extends Component {
         };
     }
 
-    // ── AC3 — Activer / Désactiver ──────────────────────────────────────
+    // — Activer / Désactiver
 
     public function toggleSource(int $sourceId, bool $enable): void
     {
@@ -182,7 +182,7 @@ new #[Title('Sources d\'extensions')] class extends Component {
             : 'Source désactivée — ses extensions non intégrées disparaissent de la bibliothèque.');
     }
 
-    // ── AC3 — Retirer (confirmation par modale) ─────────────────────────
+    // — Retirer (confirmation par modale)
 
     public function askRemove(int $sourceId): void
     {
@@ -212,7 +212,7 @@ new #[Title('Sources d\'extensions')] class extends Component {
 
         $sourceId = $this->removeTargetId;
 
-        // ⚠️ NE PAS appeler closeRemove() ici (piège review 54.2 #1) : il remet
+        // ⚠️ NE PAS appeler closeRemove() ici : il remet
         // la cible à 0, et le bouton reste cliquable tant que la première
         // réponse n'est pas revenue. Un double-clic rejouerait l'appel avec
         // `removeTargetId = 0` → « Source #0 introuvable » au lieu d'un no-op
@@ -245,7 +245,7 @@ new #[Title('Sources d\'extensions')] class extends Component {
         $this->removeTargetIntegrated = 0;
     }
 
-    // ── Helpers ─────────────────────────────────────────────────────────
+    // Helpers
 
     /** @return array<string, mixed>|null */
     private function findSourceRow(int $sourceId): ?array
@@ -272,7 +272,7 @@ new #[Title('Sources d\'extensions')] class extends Component {
             $this->sources = app(ExtensionSourceService::class)->list();
         } catch (\Throwable $e) {
             // Une liste illisible ne doit pas rendre une 500 : on affiche l'état
-            // vide et on le dit (patron 54.2 / correctif review 54.3).
+            // vide et on le dit (patron / correctif review).
             report($e);
             $this->sources = [];
             $this->toastError('Impossible de charger les sources. Consultez les journaux serveur.');
@@ -429,7 +429,7 @@ new #[Title('Sources d\'extensions')] class extends Component {
         </div>
     </div>
 
-    {{-- ===================== Modale : ajouter une source (AC1) ===================== --}}
+    {{-- ===================== Modale : ajouter une source ===================== --}}
     <x-molecules.modal wire:model="isAddOpen" size="max-w-2xl" height="h-auto" close-method="closeAdd"
         title="Ajouter une source d'extensions" icon="fa-box-archive text-primary">
 
@@ -483,7 +483,7 @@ new #[Title('Sources d\'extensions')] class extends Component {
         </x-slot:footer>
     </x-molecules.modal>
 
-    {{-- ===================== Modale : retirer une source (AC3) ===================== --}}
+    {{-- ===================== Modale : retirer une source ===================== --}}
     <x-molecules.modal wire:model="isRemoveOpen" size="max-w-lg" height="h-auto" close-method="closeRemove"
         title="Retirer la source" icon="fa-trash-can text-error">
 

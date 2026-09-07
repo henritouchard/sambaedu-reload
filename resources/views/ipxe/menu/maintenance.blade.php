@@ -1,5 +1,5 @@
 {!! $shebang !!}
-{{-- Story 4.10  propagation auth iPXE iso `admin.blade.php`. --}}
+{{-- Propagation auth iPXE iso `admin.blade.php`. --}}
 params
 {{-- Variables iPXE SMBIOS (cf. name.blade.php / installation-linux.blade.php). --}}
 param mac ${net0/mac}

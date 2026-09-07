@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace App\Services\Network\Data;
 
 /**
- * Story 8.1 — Rapport complet d'un import CSV de réservations DHCP (FR22).
+ * Rapport complet d'un import CSV de réservations DHCP.
  *
  * Persisté 24h dans le cache Redis sous `dhcp.import.report.<uuid>` puis
- * lu depuis `/app/network/dhcp/import/{uuid}` (pattern Story 2.6
+ * lu depuis `/app/network/dhcp/import/{uuid}` (pattern
  * `BulkResetListingService`).
  *
  * Compteurs :

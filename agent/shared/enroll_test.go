@@ -48,7 +48,7 @@ func TestRequestEnrollmentApprovedReturnsToken(t *testing.T) {
 	if token != enrollToken {
 		t.Errorf("token : got %q, want %q", token, enrollToken)
 	}
-	// Piège n° 3 : POST SANS bearer (pas d'en-tête Authorization).
+	// POST SANS bearer (pas d'en-tête Authorization).
 	if seen.Bearer != "" {
 		t.Errorf("PostNoAuth ne doit PAS poser Authorization, got %q", seen.Bearer)
 	}

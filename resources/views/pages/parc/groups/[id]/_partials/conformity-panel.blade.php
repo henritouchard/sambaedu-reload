@@ -1,4 +1,4 @@
-{{-- Story 24.7 / AC3, AC4, AC5 — Panneau conformité du groupe (onglet général).
+{{-- Panneau conformité du groupe (onglet général).
 
      « Penser en règles » (décision n° 4) : un bloc par TYPE de ressource
      rapporté sur le périmètre → « n/N conformes » + la liste des SEULES

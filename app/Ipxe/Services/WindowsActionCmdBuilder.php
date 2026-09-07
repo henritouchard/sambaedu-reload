@@ -10,29 +10,27 @@ use App\Models\Workstation;
 use Illuminate\Contracts\View\Factory as ViewFactory;
 
 /**
- * Story 3.8 — D8 / AC3.1-3.6.
- *
  * Orchestrateur des 6 builders cmd batch Windows post-OOBE (port natif de
  * `legacy/modules/ipxe/Win10/action.php` blocs `$cmd_{sysprep,nosysprep,join,
  * renomme,post,wpkg}`).
  *
  * **6 méthodes publiques** :
- *  - {@see buildSysprep()}   — port legacy LOC 73-144 (sysprep + nosysprep
+ *  - {@see buildSysprep()} — port legacy LOC 73-144 (sysprep + nosysprep
  *                              autologon fallback).
  *  - {@see buildNosysprep()} — port legacy LOC 151-192 (clonage rapide sans
  *                              sysprep).
- *  - {@see buildJoin()}      — port legacy LOC 358-406 (mise au domaine
+ *  - {@see buildJoin()} — port legacy LOC 358-406 (mise au domaine
  *                              post-clonage).
- *  - {@see buildRenomme()}   — port legacy LOC 317-351 (renommage au domaine).
- *  - {@see buildPost()}      — port legacy LOC 198-231 (post-install manuelle).
- *  - {@see buildWpkg()}      — port legacy LOC 268-311 (wpkg interactif).
+ *  - {@see buildRenomme()} — port legacy LOC 317-351 (renommage au domaine).
+ *  - {@see buildPost()} — port legacy LOC 198-231 (post-install manuelle).
+ *  - {@see buildWpkg()} — port legacy LOC 268-311 (wpkg interactif).
  *
  * **Chaque builder** :
  *  1. Sanitize TOUS les inputs dynamiques via
- *     {@see WindowsXmlPlaceholders::sanitizeBatPlaceholder()} (0-trust D9).
+ *     {@see WindowsXmlPlaceholders::sanitizeBatPlaceholder()} (0-trust).
  *  2. Render le template Blade `ipxe.windows.cmd.{step}`.
- *  3. Post-traitement CRLF strict via {@see normalizeCrlf()} (pattern 3.4
- *     `LinuxPreseedService` + 3.5 D7).
+ *  3. Post-traitement CRLF strict via {@see normalizeCrlf()} (pattern
+ *     `LinuxPreseedService`).
  *  4. Return string body cmd batch prêt à servir en `Content-Type: text/plain`.
  *
  * **Sécurité critique** : ce service produit des .cmd batch qui s'exécutent
@@ -59,7 +57,7 @@ final class WindowsActionCmdBuilder
     }
 
     /**
-     * Story 3.8 — AC3.1, AC4.1 — Build cmd_sysprep.
+     * Build cmd_sysprep.
      *
      * @param  Workstation  $workstation  Poste destinataire (lecture name,
      *                                    programmed_action pour state vars).
@@ -76,7 +74,7 @@ final class WindowsActionCmdBuilder
     }
 
     /**
-     * Story 3.8 — AC3.1, AC4.2 — Build cmd_nosysprep.
+     * Build cmd_nosysprep.
      */
     public function buildNosysprep(Workstation $workstation): string
     {
@@ -86,7 +84,7 @@ final class WindowsActionCmdBuilder
     }
 
     /**
-     * Story 3.8 — AC3.1, AC3.2, AC4.3 — Build cmd_join.
+     * Build cmd_join.
      *
      * **Spécifique join** : reçoit `$role` (nouveau nom du poste post-clonage)
      * et `$ou` (LDAP OU pour le `Add-Computer -OUPath`).
@@ -94,7 +92,7 @@ final class WindowsActionCmdBuilder
     public function buildJoin(Workstation $workstation, string $role = '', string $ou = ''): string
     {
         $vars = $this->commonVars($workstation);
-        // AC3.4 — sanitize via la même méthode 0-trust que les autres inputs.
+        // Sanitize via la même méthode 0-trust que les autres inputs.
         $vars['role'] = WindowsXmlPlaceholders::sanitizeBatPlaceholder($role);
         $vars['ou'] = $this->sanitizeOu($ou);
 
@@ -102,7 +100,7 @@ final class WindowsActionCmdBuilder
     }
 
     /**
-     * Story 3.8 — AC3.1, AC3.2, AC4.4 — Build cmd_renomme.
+     * Build cmd_renomme.
      *
      * **Spécifique renomme** : reçoit `$role` (nouveau nom AD du poste).
      */
@@ -115,7 +113,7 @@ final class WindowsActionCmdBuilder
     }
 
     /**
-     * Story 3.8 — AC3.1, AC4.5 — Build cmd_post.
+     * Build cmd_post.
      */
     public function buildPost(Workstation $workstation): string
     {
@@ -125,7 +123,7 @@ final class WindowsActionCmdBuilder
     }
 
     /**
-     * Story 3.8 — AC3.1, AC4.6 — Build cmd_wpkg.
+     * Build cmd_wpkg.
      */
     public function buildWpkg(Workstation $workstation): string
     {
@@ -136,7 +134,7 @@ final class WindowsActionCmdBuilder
 
     /**
      * Construit le dictionnaire de variables communes aux 6 templates,
-     * sanitisées via `sanitizeBatPlaceholder` (D9 / AC3.4 / AC10.4).
+     * sanitisées via `sanitizeBatPlaceholder`.
      *
      * **Variables émises** :
      *  - `name`         — nom du poste (Workstation->name).
@@ -232,11 +230,11 @@ final class WindowsActionCmdBuilder
     }
 
     /**
-     * Render le template Blade + post-traitement CRLF strict (D6 / AC3.3).
+     * Render le template Blade + post-traitement CRLF strict.
      *
      * **Post-traitement** : double `str_replace` qui normalize d'abord tous
-     * les CRLF en LF, puis re-convertit LF en CRLF (pattern 3.4
-     * LinuxPreseedService + 3.5 D7). Garantit un body homogène CRLF même si
+     * les CRLF en LF, puis re-convertit LF en CRLF (pattern
+     * LinuxPreseedService). Garantit un body homogène CRLF même si
      * le template Blade contient des LF mixed avec CRLF.
      *
      * @param  string  $view  Nom dotted du template Blade.
@@ -250,7 +248,7 @@ final class WindowsActionCmdBuilder
     }
 
     /**
-     * Normalize les line endings vers CRLF strict (D6 / AC3.3).
+     * Normalize les line endings vers CRLF strict.
      *
      * @internal Public uniquement pour tests Unit (assert que le passage par
      *           cette méthode produit du CRLF strict).

@@ -379,7 +379,7 @@ class WorkstationService
             $log('info', count($machinesAd) . ' machines trouvées dans l\'AD');
 
             // Désactiver la synchronisation AD pendant l'import pour éviter les boucles.
-            // Auto-fix #10 (review 4.9) : `disableSync()`/`enableSync()` sont
+            // `disableSync()`/`enableSync()` sont
             // désormais `private` — on lit/restaure manuellement le flag via
             // l'attribut public `$syncEnabled` (équivalent du try/finally
             // historique de cette section). `withoutSync()` n'est pas

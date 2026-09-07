@@ -7,58 +7,58 @@ import (
 	"unicode/utf16"
 )
 
-// Handler `legacy_cleanup` (exclusive / scope MACHINE uniquement) — Story 38.3,
+// Handler `legacy_cleanup` (exclusive / scope MACHINE uniquement),
 // contrat §7.10. Retire du poste les CROCHETS CLIENTS legacy SE4 (curl
 // applications, déclencheurs WPKG, helpers obsolètes, autologon résiduel,
 // paires Mozilla forcées) par le canal authentifié agent — JAMAIS par du code
-// servi en HTTP (D2/Q1 de l'epic 38). Logique PURE, OS-agnostique (les accès
+// servi en HTTP. Logique PURE, OS-agnostique (les accès
 // fichiers/tâches/registre réels sont injectés via LegacyCleanupOps) → testée
 // sur l'hôte ; agent/windows n'apporte que l'impl (os.*, powershell
 // Get/Unregister-ScheduledTask, golang.org/x/sys/windows/registry).
 //
-// CATALOGUE VERSIONNÉ DANS L'AGENT (D3) : les chemins/globs/noms de tâches sont
+// CATALOGUE VERSIONNÉ DANS L'AGENT : les chemins/globs/noms de tâches sont
 // de la connaissance legacy FIGÉE (chemins Windows du canal SE4), pas du
 // paramétrage métier — le serveur GATE (capacité `legacy_hooks_cleanup`),
 // l'agent sait QUOI nettoyer. Payload minimal `{mozilla: "vanilla"}` (enum
-// fermé 1 valeur — trace contractuelle de Q5-a, extensible).
+// fermé 1 valeur, extensible).
 //
-// SANS STORE (piège #8, iso `firewall`/`privilege` — PAS `fs_acl`) : les
+// SANS STORE (iso `firewall`/`privilege` — PAS `fs_acl`) : les
 // artefacts sont ÉNUMÉRABLES PAR SCAN à chaque passe. Un store serait une
 // seconde source de vérité inutile.
 //
-// CONVERGENCE level-triggered (§5, STRICT inconditionnel 27.8) :
+// CONVERGENCE level-triggered (§5, STRICT inconditionnel) :
 //   - Test  : SCAN du catalogue — conforme ssi ZÉRO artefact supprimable
-//     trouvé (poste sain = aucune écriture, item compliant sans Detail —
-//     piège #6 : le type présent au state émet TOUJOURS son statut, la
+//  trouvé (poste sain = aucune écriture, item compliant sans Detail
+//     — le type présent au state émet TOUJOURS son statut, la
 //     « silence » est la dédup serveur par hash sur rapport identique) ;
 //   - Apply : RE-SCAN puis suppression de chaque artefact trouvé, chaque
-//     catégorie portant SA garde (piège #4 : liste blanche, jamais de récursif
+//     catégorie portant SA garde (liste blanche, jamais de récursif
 //     large). Effort MAXIMAL par artefact : un échec (fichier verrouillé,
 //     accès refusé) est collecté, les AUTRES suppressions restent acquises,
-//     l'erreur agrégée remonte à la fin (verdict `error` du type, D4) — la
+//     l'erreur agrégée remonte à la fin (verdict `error` du type) — la
 //     passe suivante retente (level-triggered). Idempotent : une 2e passe sur
 //     poste nettoyé ne trouve plus rien et n'écrit rien.
 //
-// GARDES DE SÛRETÉ PAR CATÉGORIE (piège #4 — chaque suppression est
+// GARDES DE SÛRETÉ PAR CATÉGORIE (chaque suppression est
 // individuellement gardée) :
 //   - A `.md5` : contenu EXACTEMENT 32 hexadécimaux (± fin de ligne) ;
-//   - B tâches : nom exact ET action référençant gpo/applications.php|wpkg —
+//  - B tâches : nom exact ET action référençant gpo/applications.php|wpkg
 //     nom connu mais action inconnue = CONSERVÉE + rapportée en détail ;
 //   - C scripts GPO locale : contenu curl + gpo/applications.php|
 //     gpo/shortcuts_out.php ; INTERDIT STRUCTUREL : GroupPolicy\DataStore
 //     (cache des GPO de DOMAINE — contient SE_agent_bootstrap) n'est JAMAIS
 //     visité (aucun chemin du catalogue n'y pointe) ;
 //   - D jonctions install/rapports : reparse point SEULEMENT (un vrai dossier
-//     = provisionné par le module natif 27.20, INTOUCHABLE — piège #3) ;
+//  = provisionné par le module natif, INTOUCHABLE) ;
 //     `%SystemRoot%\wpkg.xml` (base WPKG du canal natif) HORS catalogue ;
 //     RemoveAll UNIQUEMENT sur C:\Netinst (exclusivement legacy) ;
 //     %WINDIR%\Web\SE4 en forme conservatrice (fichier nommé + rmdir si
-//     vide — review 38.3 #2) ; autologon Winlogon purgé SSI
+//  vide) ; autologon Winlogon purgé SSI
 //     DefaultUserName == se4install (jamais casser un autologon légitime) ;
-//   - E helpers %ProgramFiles%\SambaEdu : LISTE BLANCHE NOMMÉE de fichiers —
+//  - E helpers %ProgramFiles%\SambaEdu : LISTE BLANCHE NOMMÉE de fichiers
 //     jamais le dossier, jamais Agent\** (l'agent lui-même est INEXPRIMABLE :
 //     aucun glob, que des noms de fichiers à la racine du dossier) ;
-//   - F Mozilla (Q5-a VANILLA) : la PAIRE profiles.ini+installs.ini SSI
+//   - F Mozilla (mode VANILLA) : la PAIRE profiles.ini+installs.ini SSI
 //     profiles.ini référence `sambaedu.default` — JAMAIS le dossier de profil
 //     (données utilisateur), JAMAIS un profiles.ini sain (poste perso), AUCUN
 //     profil forcé posé (Firefox/Thunderbird se recréent au prochain
@@ -116,7 +116,7 @@ type LegacyCleanupOps interface {
 	// (idempotent).
 	Remove(path string) error
 	// RemoveAll supprime récursivement — le handler ne l'appelle QUE sur
-	// C:\Netinst (piège #4). Déjà absent ⇒ nil.
+	// C:\Netinst. Déjà absent ⇒ nil.
 	RemoveAll(path string) error
 	// Stat inspecte un chemin SANS suivre les liens (Lstat + détection reparse
 	// point). Absent ⇒ ({Exists: false}, nil) — pas une erreur.
@@ -146,8 +146,8 @@ type legacyFinding struct {
 }
 
 // LegacyCleanupHandler : handler exclusive branché dans le moteur. SERVICE
-// SYSTEM seul (HKLM, schtasks, C:\Users\* — D2 : aucun volet compagnon).
-// AUCUN champ de store (piège #8) — les racines sont injectables (tests hôte),
+// SYSTEM seul (HKLM, schtasks, C:\Users\* — aucun volet compagnon).
+// AUCUN champ de store — les racines sont injectables (tests hôte),
 // vides = défauts Windows.
 type LegacyCleanupHandler struct {
 	Ops LegacyCleanupOps
@@ -160,7 +160,7 @@ type LegacyCleanupHandler struct {
 	NetinstDir   string   // défaut C:\Netinst
 
 	// lastDetail : détail du DERNIER Test/Apply (DetailReporter — artefacts
-	// supprimés + tâches suspectes conservées). Poste sain ⇒ "" (AC5).
+	// supprimés + tâches suspectes conservées). Poste sain ⇒ "".
 	lastDetail string
 }
 
@@ -197,7 +197,7 @@ func (h *LegacyCleanupHandler) netinstDir() string {
 }
 
 // ReportDetail : détail du dernier Test/Apply (interface DetailReporter du
-// moteur). Vide sur poste sain — l'item compliant reste SANS detail (AC5).
+// moteur). Vide sur poste sain — l'item compliant reste SANS detail.
 func (h *LegacyCleanupHandler) ReportDetail() string {
 	return h.lastDetail
 }
@@ -205,7 +205,7 @@ func (h *LegacyCleanupHandler) ReportDetail() string {
 // parseLegacyCleanupSpec : extrait le payload §7.10. Enveloppe invalide
 // (false → {status: error} pour le type) si le payload n'est pas un objet, si
 // `mozilla` est absent/non-string ou hors de l'enum fermé (`vanilla` seule
-// valeur v1 — Q5-a).
+// valeur v1).
 func parseLegacyCleanupSpec(raw any) (mozilla string, ok bool) {
 	payload, isMap := raw.(map[string]any)
 	if !isMap || payload == nil {
@@ -242,7 +242,7 @@ func (h *LegacyCleanupHandler) desiredSpec(items []StateItem) (string, error) {
 // (nom connu, action inconnue — jamais supprimées) ne rendent PAS non conforme
 // (sinon drift perpétuel sans op) mais sont rapportées en détail. Erreur de
 // scan = franche (le moteur rend error pour le type ; design assumé iso
-// registry 35.3 : un Test menteur masquerait des pannes réelles).
+// registry : un Test menteur masquerait des pannes réelles).
 func (h *LegacyCleanupHandler) Test(items []StateItem) (bool, error) {
 	h.lastDetail = ""
 	mozilla, err := h.desiredSpec(items)
@@ -261,7 +261,7 @@ func (h *LegacyCleanupHandler) Test(items []StateItem) (bool, error) {
 
 // Apply : RE-SCAN puis suppression gardée de chaque artefact, en effort
 // MAXIMAL (un échec n'empêche pas les autres suppressions — acquises ; erreur
-// agrégée remontée à la fin, D4). Idempotent : poste nettoyé ⇒ zéro op.
+// agrégée remontée à la fin). Idempotent : poste nettoyé ⇒ zéro op.
 func (h *LegacyCleanupHandler) Apply(items []StateItem) error {
 	h.lastDetail = ""
 	mozilla, err := h.desiredSpec(items)
@@ -353,8 +353,6 @@ func (h *LegacyCleanupHandler) fileFinding(path string) legacyFinding {
 	return legacyFinding{id: "file:" + path, remove: func() error { return h.Ops.Remove(path) }}
 }
 
-// --- A : blobs et marqueurs du canal applications -----------------------------
-
 func (h *LegacyCleanupHandler) scanBlobs(add func(legacyFinding)) error {
 	win := h.winDir()
 
@@ -432,8 +430,6 @@ func is32Hex(content string) bool {
 	return true
 }
 
-// --- B : tâches planifiées legacy ---------------------------------------------
-
 // scanTasks : GARDE nom exact ET action référençant le legacy
 // (gpo/applications.php ou wpkg). Nom connu mais action inconnue → CONSERVÉE +
 // note suspecte (rapportée en détail, jamais un drift perpétuel).
@@ -459,8 +455,6 @@ func (h *LegacyCleanupHandler) scanTasks(add func(legacyFinding)) ([]string, err
 
 	return suspects, nil
 }
-
-// --- C : scripts GPO LOCALE curl-ant le legacy ----------------------------------
 
 // scanLocalGpoScripts : fichiers sous GroupPolicy\{User,Machine}\Scripts\ dont
 // le CONTENU matche curl + gpo/applications.php|gpo/shortcuts_out.php →
@@ -652,13 +646,11 @@ func splitIniKey(key string) (int, string) {
 	}
 }
 
-// --- D : déclencheurs et résidus WPKG legacy + canal install --------------------
-
 func (h *LegacyCleanupHandler) scanWpkgAndInstall(add func(legacyFinding)) error {
 	win := h.winDir()
 
 	// Fichiers plats exclusivement legacy. `%SystemRoot%\wpkg.xml` (base WPKG
-	// locale, canal natif) est HORS catalogue — INTERDIT (piège #4).
+	// locale, canal natif) est HORS catalogue — INTERDIT.
 	for _, name := range []string{"wpkg-client.vbs", "wpkg-gpo.txt", "action.cmd", "autorun.cmd", "gpo.txt"} {
 		path := win + `\` + name
 		info, err := h.Ops.Stat(path)
@@ -672,7 +664,7 @@ func (h *LegacyCleanupHandler) scanWpkgAndInstall(add func(legacyFinding)) error
 
 	// Jonctions %WinDir%\install / %WinDir%\rapports — UNIQUEMENT si reparse
 	// point (lien SMB legacy pendouillant). Un VRAI dossier `install` =
-	// provisionné par le module natif 27.20 : INTOUCHABLE (piège #3, détection
+	// provisionné par le module natif : INTOUCHABLE (détection
 	// iso provision_windows.go). Remove ne supprime que le lien.
 	for _, name := range []string{"install", "rapports"} {
 		path := win + `\` + name
@@ -686,7 +678,7 @@ func (h *LegacyCleanupHandler) scanWpkgAndInstall(add func(legacyFinding)) error
 	}
 
 	// Staging install legacy : RemoveAll AUTORISÉ sur C:\Netinst SEULEMENT
-	// (exclusivement legacy — piège #4).
+	// (exclusivement legacy).
 	netinst := h.netinstDir()
 	info, err := h.Ops.Stat(netinst)
 	if err != nil {
@@ -696,7 +688,7 @@ func (h *LegacyCleanupHandler) scanWpkgAndInstall(add func(legacyFinding)) error
 		add(legacyFinding{id: "dir:" + netinst, remove: func() error { return h.Ops.RemoveAll(netinst) }})
 	}
 
-	// %WINDIR%\Web\SE4 — forme CONSERVATRICE (inventaire E, review 38.3 #2) :
+	// %WINDIR%\Web\SE4 — forme CONSERVATRICE :
 	// on supprime le fichier NOMMÉ SetWallpaper.ps1, puis le dossier SEULEMENT
 	// s'il est vide. JAMAIS de RemoveAll sous %WINDIR%\Web : un contenu
 	// inattendu y est laissé intact (et visible au drift suivant du .ps1 s'il
@@ -738,8 +730,6 @@ func (h *LegacyCleanupHandler) scanWpkgAndInstall(add func(legacyFinding)) error
 
 	return nil
 }
-
-// --- D (registre) : clé Run `action` + autologon résiduel se4install -----------
 
 const (
 	legacyRunPath      = `SOFTWARE\Microsoft\Windows\CurrentVersion\Run`
@@ -793,8 +783,6 @@ func (h *LegacyCleanupHandler) scanRegistryHooks(add func(legacyFinding)) error 
 	return nil
 }
 
-// --- E : helpers %ProgramFiles%\SambaEdu obsolètes ------------------------------
-
 // scanHelpers : LISTE BLANCHE NOMMÉE de fichiers à la racine du dossier
 // SambaEdu (variantes de casse SambaEdu/Sambaedu — dédupliquées par id
 // minuscule côté scan, le FS Windows étant insensible à la casse). INTERDIT
@@ -819,8 +807,6 @@ func (h *LegacyCleanupHandler) scanHelpers(add func(legacyFinding)) error {
 	return nil
 }
 
-// --- F : paires Mozilla forcées (Q5-a VANILLA) ----------------------------------
-
 // mozillaAppDirs : chemins relatifs (depuis le profil Windows) des dossiers
 // Mozilla porteurs de la paire profiles.ini/installs.ini forcée.
 var mozillaAppDirs = []string{
@@ -832,7 +818,7 @@ var mozillaAppDirs = []string{
 // `sambaedu.default` → la PAIRE profiles.ini + installs.ini est supprimée.
 // JAMAIS le dossier `sambaedu.default` (données utilisateur), JAMAIS un
 // profiles.ini sain (profil géré par l'utilisateur), AUCUN profil forcé posé
-// (piège #5 / Q5-a).
+// (mode vanilla).
 func (h *LegacyCleanupHandler) scanMozilla(add func(legacyFinding)) error {
 	profiles, err := h.realProfiles()
 	if err != nil {
@@ -881,7 +867,7 @@ func (h *LegacyCleanupHandler) scanMozilla(add func(legacyFinding)) error {
 // forcé legacy ? Clés `Default`/`Path` dont la VALEUR est `sambaedu.default`
 // (nue ou en fin de chemin), insensible à la casse et aux espaces.
 //
-// Format réel VÉRIFIÉ à la source (review 38.3 #1) : les fragments paquet
+// Format réel VÉRIFIÉ à la source : les fragments paquet
 // `/usr/share/sambaedu/applications/{firefox,thunderbird}/logon.windows`
 // écrivent la forme NUE (`Default=sambaedu.default` / `Path=sambaedu.default`,
 // hash install constaté 308046B0AF4A39CB). Le match par suffixe couvre en
@@ -929,8 +915,6 @@ func (h *LegacyCleanupHandler) realProfiles() ([]string, error) {
 
 	return profiles, nil
 }
-
-// --- Encodage texte (scripts.ini GPO = UTF-16LE possible) -----------------------
 
 // decodeTextAuto : décode un contenu texte — UTF-16LE si BOM FF FE (format
 // usuel des scripts.ini GPO), UTF-8/ANSI sinon.

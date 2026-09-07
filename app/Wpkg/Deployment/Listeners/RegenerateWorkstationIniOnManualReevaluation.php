@@ -10,10 +10,10 @@ use App\Wpkg\Deployment\Generators\WorkstationIniGenerator;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 15.5 / AC4.4 — Régénère le `.ini` d'un poste suite à une demande
+ * Régénère le `.ini` d'un poste suite à une demande
  * manuelle de re-évaluation depuis le dashboard.
  *
- * Listener distinct de `RegenerateWorkstationIniOnOptionsChanged` (15.2)
+ * Listener distinct de `RegenerateWorkstationIniOnOptionsChanged`
  * pour préserver la sémantique : le manuel trace `triggered_by_user_id`
  * dans les logs et n'est pas déclenché par un changement d'options.
  *

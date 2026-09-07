@@ -17,7 +17,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 63.1 — AC2/AC3 : le service qui lit et écrit UNE ligne de réglage.
+ * Le service qui lit et écrit UNE ligne de réglage.
  *
  * Régime applicatif (`Tests\TestCase` + `RefreshDatabase`, sqlite
  * `:memory:`) : `SystemSetting` a besoin d'une base.
@@ -25,10 +25,6 @@ use Tests\TestCase;
 class FileLocationServiceTest extends TestCase
 {
     use RefreshDatabase;
-
-    // =========================================================================
-    // AC2 — les défauts, exactement l'état historique home✓ shares✓ nextcloud✗ opencloud✗
-    // =========================================================================
 
     #[Test]
     public function defaults_egale_posix_posix_aucun(): void
@@ -53,10 +49,6 @@ class FileLocationServiceTest extends TestCase
         self::assertSame('files.locations', FileLocationService::SETTING_KEY);
         self::assertNotSame(FilePolicyService::SETTING_KEY, FileLocationService::SETTING_KEY);
     }
-
-    // =========================================================================
-    // AC2 — aller-retour, une seule écriture
-    // =========================================================================
 
     #[Test]
     public function set_puis_current_rend_exactement_ce_qui_a_ete_ecrit(): void
@@ -91,10 +83,6 @@ class FileLocationServiceTest extends TestCase
         self::assertSame(FileLocationService::defaults()->toArray(), FileLocationService::current()->toArray());
         self::assertFalse(FileLocationService::isDecided());
     }
-
-    // =========================================================================
-    // AC3 — aucune valeur nulle, aucun repli silencieux
-    // =========================================================================
 
     #[Test]
     public function une_cle_amputee_refuse_en_nommant_l_objet_manquant(): void
@@ -138,10 +126,10 @@ class FileLocationServiceTest extends TestCase
     }
 
     /**
-     * AC3 — l'ABSENCE de ligne rend les défauts ; une ligne PRÉSENTE mais
+     * L'ABSENCE de ligne rend les défauts ; une ligne PRÉSENTE mais
      * illisible REFUSE en nommant le type lu. Retomber ici sur les défauts
      * inventerait une décision que personne n'a prise : c'est le repli
-     * silencieux que l'AC3 interdit explicitement.
+     * silencieux que l' interdit explicitement.
      */
     #[Test]
     public function un_payload_non_tableau_refuse_en_nommant_le_type_lu(): void
@@ -246,7 +234,7 @@ class FileLocationServiceTest extends TestCase
     /**
      * `preview` APPARTIENT au vocabulaire {@see FileBackendName} : la lecture
      * du VOCABULAIRE réussit, mais {@see FileLocations::make()} le refuse
-     * ensuite comme emplacement — c'est la garde n°1 de l'AC4, rejouée à la
+     * ensuite comme emplacement — c'est la première garde, rejouée à la
      * lecture.
      */
     #[Test]
@@ -267,7 +255,7 @@ class FileLocationServiceTest extends TestCase
     }
 
     /**
-     * Piège n°7 du cadrage : le trim et la casse. `'POSIX '` n'est pas
+     * Le trim et la casse. `'POSIX '` n'est pas
      * `posix` — trim() seulement, comparaison stricte sensible à la casse.
      */
     #[Test]
@@ -304,7 +292,7 @@ class FileLocationServiceTest extends TestCase
     }
 
     /**
-     * AC4 — un payload forgé DIRECTEMENT en base (contournant `set()`) est
+     * Un payload forgé DIRECTEMENT en base (contournant `set`) est
      * refusé à la LECTURE aussi : une garde qui ne vit que dans l'écriture
      * protège l'étourderie, pas la requête forgée.
      */

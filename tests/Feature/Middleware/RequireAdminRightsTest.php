@@ -22,13 +22,13 @@ use Symfony\Component\HttpFoundation\Response;
 use Tests\TestCase;
 
 /**
- * Story 49.2 (AC6) — `sambaedu.admin` décide sur des données Postgres.
+ * `sambaedu.admin` décide sur des données Postgres.
  *
  * Le middleware lisait le DTO LDAP posé par le guard (`memberOf`, groupes de la
  * branche `OU=rights`). Il lit désormais le User Eloquent et ses colonnes
  * miroir. **Les motifs sont identiques** : bascule de transport, pas de
  * sémantique. Ce test fige les quatre entrées (super-admin, `ad_right_profiles`,
- * nom de groupe, refus) et documente l'écart assumé de D4.
+ * nom de groupe, refus) et documente l'écart assumé sur les délégations Spatie.
  *
  * Enjeu concret : sur les routes quota (`web.php`), ce middleware est la SEULE
  * garde. Une erreur d'appréciation y est directement exploitable.
@@ -98,10 +98,6 @@ class RequireAdminRightsTest extends TestCase
         return [$passed, $response];
     }
 
-    // ========================================================================
-    // Voie 1 — super-admin (clause VITALE, testée en premier)
-    // ========================================================================
-
     #[Test]
     public function the_protected_admin_passes_with_no_group_and_no_right_profile(): void
     {
@@ -135,10 +131,6 @@ class RequireAdminRightsTest extends TestCase
 
         $this->assertTrue($passed);
     }
-
-    // ========================================================================
-    // Voie 2 — profils de droits AD (`ad_right_profiles`)
-    // ========================================================================
 
     /**
      * @return array<string, array{0: string}>
@@ -190,10 +182,6 @@ class RequireAdminRightsTest extends TestCase
         $this->assertSame(403, $response->getStatusCode());
     }
 
-    // ========================================================================
-    // Voie 3 — noms de groupes SQL
-    // ========================================================================
-
     /**
      * @return array<string, array{0: string, 1: bool}>
      */
@@ -230,10 +218,6 @@ class RequireAdminRightsTest extends TestCase
         $this->assertSame($expected, $passed);
     }
 
-    // ========================================================================
-    // Refus
-    // ========================================================================
-
     #[Test]
     public function a_user_without_anything_is_refused(): void
     {
@@ -258,7 +242,7 @@ class RequireAdminRightsTest extends TestCase
     }
 
     /**
-     * Écart ASSUMÉ et documenté (D4) : une délégation Spatie autre que
+     * Écart ASSUMÉ et documenté : une délégation Spatie autre que
      * `super-admin` n'ouvre PAS ce middleware. Elle ne l'ouvrait pas davantage
      * avant la bascule (le DTO LDAP ne connaissait pas les rôles Spatie) — c'est
      * donc bien une parité, et non un durcissement introduit ici. La
@@ -275,10 +259,6 @@ class RequireAdminRightsTest extends TestCase
         $this->assertFalse($passed);
         $this->assertSame(403, $response->getStatusCode());
     }
-
-    // ========================================================================
-    // Résolution de l'utilisateur
-    // ========================================================================
 
     #[Test]
     public function the_user_is_resolved_from_the_login_attribute_when_absent(): void
@@ -328,15 +308,10 @@ class RequireAdminRightsTest extends TestCase
         $this->assertTrue($passed);
     }
 
-    // ========================================================================
-    // Correction de review — symétrie D2 : les voies de secours excluent aussi
-    // les comptes fédérés
-    // ========================================================================
-
     /**
      * L'exclusion des fédérés tenait « par construction » tant que la
      * résolution passait par le LDAP (un externe n'y existe pas). En basculant
-     * sur SQL, elle devait être recodée — le guard l'a fait (D2), les deux
+     * sur SQL, elle devait être recodée — le guard l'a fait, les deux
      * voies de secours de ce middleware l'avaient perdue.
      */
     #[Test]

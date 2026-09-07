@@ -7,13 +7,13 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 60.2 — « la recette s'accroche à un TYPE de groupe ».
+ * « la recette s'accroche à un TYPE de groupe ».
  *
  * Une colonne, nullable, unique. Ce qu'elle dit : « quand un groupe de ce type
  * doit matérialiser son arbre, c'est CETTE recette qui décrit l'arbre ».
  *
  * **Pourquoi NULLABLE.** L'accrochage est l'exception, pas la règle : les quatre
- * recettes seedées en 34.3 restent non accrochées et se matérialisent exactement
+ * recettes seedées restent non accrochées et se matérialisent exactement
  * comme avant (matérialisation manuelle, cibles désignées à la main). Aucune
  * reprise de données n'est nécessaire, et le seeder n'est pas modifié.
  *
@@ -34,8 +34,8 @@ use Illuminate\Support\Facades\Schema;
  * désigne les enseignants d'une discipline tous niveaux confondus et qui a sa
  * propre recette, s'il lui en faut une.
  *
- * **Aucune donnée d'accrochage n'est écrite par cette story** : la recette classe
- * est seedée et accrochée en 60.5, quand un backend saura exécuter un arbre. La
+ * **Aucune donnée d'accrochage n'est écrite ici** : la recette classe sera seedée
+ * et accrochée quand un backend saura exécuter un arbre. La
  * colonne arrive avant, parce que le modèle doit savoir l'accueillir.
  *
  * Le type est stocké tel qu'il l'est dans `user_groups.type` (chaîne libre bornée

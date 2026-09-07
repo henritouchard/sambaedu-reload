@@ -11,7 +11,7 @@ use App\Services\Filesystem\NetworkShareService;
 use Throwable;
 
 /**
- * Epic 34 → story 60.4 — détecte l'ÉCART des lecteurs réseau gérés : pour chaque
+ * → — détecte l'ÉCART des lecteurs réseau gérés : pour chaque
  * {@see NetworkShare}, compare l'état DÉSIRÉ (la base, autoritaire) à l'état RELU
  * ({@see NetworkShareService::computeDrift()}).
  *

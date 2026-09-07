@@ -32,7 +32,7 @@ class HealthCheckService
      *   'version' => ['status' => true, 'version' => '1.0.0'],
      *   'environment' => 'production',
      *   'php_version' => '8.2.0',
-     *   'response_time' => 45.23,
+     *  'response_time' =>,
      *   'status' => true
      * ]
      */

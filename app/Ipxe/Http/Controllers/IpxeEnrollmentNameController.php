@@ -10,7 +10,6 @@ use App\Ipxe\Services\IpxeEnrollmentOrchestrator;
 use Illuminate\Http\Response;
 
 /**
- * Story 3.3 — AC7.1.
  *
  * Controller fin — délègue 100% à {@see IpxeEnrollmentOrchestrator::handleName()}.
  *

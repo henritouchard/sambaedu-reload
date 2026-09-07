@@ -11,7 +11,7 @@ import (
 	"sambaedu/agent/shared"
 )
 
-// Câblage Windows du handler `app_profile` (Story 36.5, contrat §7.11) —
+// Câblage Windows du handler `app_profile` (contrat §7.11)
 // redirection du profil applicatif vers le home réseau. Exécuté par le
 // COMPAGNON (droits user) : les ini, le marqueur et le user.js vivent dans le
 // profil de l'utilisateur connecté / son home réseau. Toute la logique de
@@ -19,16 +19,16 @@ import (
 // (shared.AppProfileHandler) ; ce fichier n'apporte que les ops Win32
 // (substitution de tokens, I/O fichier, CONSTAT du lien).
 //
-// SPLIT SYSTEM-lien / COMPAGNON-reste (amendement final 36.5, Henri 2026-07-21).
+// SPLIT SYSTEM-lien / COMPAGNON-reste.
 // La pose du lien de dossier vers UNC exige `SeCreateSymbolicLinkPrivilege`,
-// qu'AUCUN canal SE5 ne peut accorder au compagnon (le mécanisme `privilege` 35.6
+// qu'AUCUN canal SE5 ne peut accorder au compagnon (le mécanisme `privilege`
 // est SeDeny*-only par conception) — mais que le service LocalSystem possède
 // nativement. Le service SYSTEM pose donc / répare le LIEN au logon
 // (app_profile_logon_windows.go, sur le modèle EXACT de l'overlay). LE COMPAGNON
 // NE POSE PLUS LE LIEN : il le CONSTATE (LinkState) et n'écrit la paire d'ini que
 // s'il est déjà en place — sinon Firefox lancé entre-temps créerait un vrai
-// dossier à l'emplacement du lien (scénario C1). Il n'y a donc plus de méthode
-// CreateLink ici (déplacée côté SYSTEM avec la mise-de-côté C1 : moveDirAside).
+// dossier à l'emplacement du lien. Il n'y a donc plus de méthode CreateLink
+// ici (déplacée côté SYSTEM avec la mise-de-côté du dossier : moveDirAside).
 
 // appProfileOps : impl shared.AppProfileOps de production (Windows).
 type appProfileOps struct {
@@ -57,7 +57,7 @@ func (o *appProfileOps) ResolveLink(link string) (string, error) {
 	return filepath.Join(profile, link), nil
 }
 
-// ResolveLocalCache résout %LOCALAPPDATA%\<cacheLocal> (AC5).
+// ResolveLocalCache résout %LOCALAPPDATA%\<cacheLocal>.
 func (o *appProfileOps) ResolveLocalCache(cacheLocal string) (string, error) {
 	local := os.Getenv("LOCALAPPDATA")
 	if local == "" {

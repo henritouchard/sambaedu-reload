@@ -6,13 +6,13 @@ import (
 	"time"
 )
 
-// Fetch de session côté SYSTEM (Story 24.6 — portage d'Invoke-SessionStateFetch
-// 24.3/24.4). Le compagnon de session (droits user) ne peut NI lire le token
-// NI appeler le serveur (ACL 23.3 figée, NFR5) : le canal réseau reste 100 %
+// Fetch de session côté SYSTEM (portage d'Invoke-SessionStateFetch).
+// Le compagnon de session (droits user) ne peut NI lire le token
+// NI appeler le serveur (ACL figée) : le canal réseau reste 100 %
 // SYSTEM. Ce code tire `GET /state?user=` pour chaque session interactive et
 // écrit un cache PER-USER que le processus user lit en LECTURE SEULE.
 //
-// Un seul code pour les deux déclencheurs (décision 24.3 n° 4, conservée) :
+// Un seul code pour les deux déclencheurs :
 // la tâche planifiée at-logon (`agent.exe session-fetch`) ET le cycle du
 // service (rafraîchissement mid-session, IN-PROCESS — jamais de
 // sous-processus).
@@ -34,7 +34,7 @@ type Session struct {
 //     GET /state machine du service) ;
 //   - erreur réseau : log + skip de la session, PAS de backoff propre — le
 //     rattrapage est le cycle du service ;
-//   - rotation D5 / grâce / deux-acteurs : gérées par le Client 24.5 (le
+//   - rotation de token / grâce / deux-acteurs : gérées par le Client (le
 //     MÊME client que la portée machine — jamais un second client HTTP) ;
 //   - login inconnu / compte local : le serveur répond 200 machine-only
 //     (`agent.state.unknown_user` côté serveur) — traité comme tout 200,
@@ -91,7 +91,7 @@ func (a *Agent) fetchSessionStates(cfg Config) {
 	a.Client.SetToken(token)
 
 	for _, session := range sessions {
-		// Garde structurelle (review 24.3 #1, conservée en défense même si
+		// Garde structurelle (conservée en défense même si
 		// l'énumérateur filtre déjà) : `?user=` vide ne part JAMAIS.
 		if session.Login == "" || session.SID == "" {
 			continue
@@ -172,8 +172,7 @@ func (a *Agent) fetchSessionStates(cfg Config) {
 // RunSessionFetch : point d'entrée de la tâche planifiée at-logon
 // (`agent.exe session-fetch`, contexte SYSTEM) — fetch des sessions puis
 // sync des assets wallpaper (le compagnon n'a ni réseau ni token). Toute
-// panique est rattrapée : rien ne doit jamais être visible/bloquant au logon
-// (NFR1).
+// panique est rattrapée : rien ne doit jamais être visible ou bloquant au logon.
 func (a *Agent) RunSessionFetch(cfg Config) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -182,8 +181,8 @@ func (a *Agent) RunSessionFetch(cfg Config) {
 	}()
 
 	a.fetchSessionStates(cfg)
-	// Story 35.7 : passe SYSTEM par-session au logon aussi — « un seul code
-	// pour les deux déclencheurs » (décision 24.3 n°4). Le processus at-logon
+	// Passe SYSTEM par-session au logon aussi — « un seul code
+	// pour les deux déclencheurs ». Le processus at-logon
 	// CONVERGE mais ne rapporte pas (aucun canal POST — les verdicts accumulés
 	// meurent avec lui ; le cycle du service re-testera, level-triggered).
 	// Fetch en échec/offline : la passe applique sur le DERNIER cache existant.

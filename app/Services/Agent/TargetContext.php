@@ -10,19 +10,19 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * Cible d'une compilation d'état : le couple (poste, user) et ses
- * appartenances **résolues une fois** (Story 23.4).
+ * appartenances **résolues une fois**.
  *
- * Hydratation **exclusivement Postgres** (relations Eloquent du pivot 4.11 et
+ * Hydratation **exclusivement Postgres** (relations Eloquent du pivot et
  * du pivot SQL `user_group_user`) — jamais d'APCu ni de LdapRecord (critère
- * Keycloak, NFR7). Ne pas confondre avec `App\Dto\Wallpaper\WallpaperContext`
+ * Keycloak). Ne pas confondre avec `App\Dto\Wallpaper\WallpaperContext`
  * qui vient du cache legacy (`get_apps()`, groupes AD) : c'est le contexte du
  * canal legacy, celui-ci est le contexte du canal agent.
  *
  * Les providers consomment les listes d'ids mémorisées ici et ne re-requêtent
  * **jamais** les appartenances eux-mêmes.
  *
- * `$user` nullable : compilation machine-only (check-in boot, story 23.5) —
- * les mailles user sont alors simplement vides.
+ * `$user` nullable : en compilation machine-only (check-in boot), les mailles
+ * user sont simplement vides.
  *
  * **Hérédité physique (capacités).** `physicalGroupDepths` étend la chaîne
  * physique du poste à TOUS ses ancêtres (`parent_id`), chaque id étiqueté de sa

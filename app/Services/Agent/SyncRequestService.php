@@ -10,11 +10,10 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 24.7 — Mécanique PULL du bouton « forcer la synchro » (FR11, AC5,
- * décision n° 1). Le SEUL écrivain UI de la colonne
- * `workstations.agent_sync_requested_at` (l'autre écrivain est
+ * Mécanique PULL du bouton « forcer la synchro ». Le SEUL écrivain UI de la
+ * colonne `workstations.agent_sync_requested_at` (l'autre écrivain est
  * {@see \App\Http\Controllers\Api\V1\Agent\ReportController} via {@see fulfill()},
- * canal agent — invariant « 2 écrivains », décision n° 2).
+ * côté canal agent — cette colonne n'a JAMAIS que ces deux écrivains).
  *
  * Modèle : l'admin POSE une demande (timestamp) ; tant qu'elle est pendante,
  * `GET /api/v1/agent/state` (tous contextes) bypasse le 304 et re-sert
@@ -25,7 +24,7 @@ use Illuminate\Support\Facades\Log;
  *
  * Périmètre groupe : on ne pose la demande que sur les postes ENRÔLÉS et
  * NON en quarantaine (un poste en quarantaine ne POST jamais de report —
- * la demande ne serait jamais soldée, piège 6). Le compte retourné permet
+ * la demande ne serait jamais soldée). Le compte retourné permet
  * un toast récapitulatif (demandés / ignorés).
  *
  * Logs channel `agent`, actions namespacées `agent.sync.*`, contexte
@@ -109,7 +108,7 @@ class SyncRequestService
     }
 
     /**
-     * Éligibilité d'un poste à une demande (piège 6) : enrôlé ET non en
+     * Éligibilité d'un poste à une demande : enrôlé ET non en
      * quarantaine. Un poste non enrôlé ne porte pas d'agent ; un poste en
      * quarantaine ne POST jamais de report → la demande ne serait jamais
      * soldée.

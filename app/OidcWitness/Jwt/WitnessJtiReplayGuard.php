@@ -10,33 +10,30 @@ use Illuminate\Support\Facades\Cache;
 use Throwable;
 
 /**
- * Story 55.3 — **L'ANTI-REJEU `jti` CÔTÉ CLIENT** (l'AC « jti rejoué » de
- * l'Epic 55).
+ * **L'ANTI-REJEU `jti` CÔTÉ CLIENT** (l'AC « jti rejoué » de
+ * L').
  *
- * ══════════════════════════════════════════════════════════════════════════
  *  POURQUOI IL EST ICI ET PAS CHEZ LE FOURNISSEUR
  *
  *  SE5 ÉMET un `jti` (UUID v4) dans chaque id_token, mais il ne REVOIT jamais
  *  un id_token : les seuls jetons qu'il reçoit sont des codes d'autorisation
- *  (usage unique sous verrou, déjà testé en 55.1) et des access tokens
+ *  (usage unique sous verrou, déjà testé) et des access tokens
  *  OPAQUES. Un anti-rejeu serveur d'id_token n'aurait donc aucun point
- *  d'application. L'usage unique se joue chez le CONSOMMATEUR — exactement
- *  comme l'Epic 20 l'a construit quand SE5 était, lui, le consommateur.
- * ══════════════════════════════════════════════════════════════════════════
+ *  d'application. L'usage unique se joue chez le CONSOMMATEUR.
  *
  * Calque de `FederatedJwtReplayChecker::consumeOnce()` **sans sa couche base
- * de données** : le témoin n'a pas le droit d'y toucher (FR24). Reste la
+ * de données** : le témoin n'a pas le droit d'y toucher. Reste la
  * réservation atomique `add()` (set-if-absent), bornée par `exp + leeway`.
  *
  * **Fail-CLOSED.** Store indisponible, TTL nul, exception : on REFUSE. Un
- * jeton d'entrée humain ne s'accepte pas dans le doute (doctrine D-6 de
- * l'Epic 20). C'est la différence assumée avec le checker de révocation des
- * postes, qui fail-open pour ne pas bloquer l'API du parc.
+ * jeton d'entrée humain ne s'accepte pas dans le doute. C'est la différence
+ * assumée avec le checker de révocation des postes, qui fail-open pour ne pas
+ * bloquer l'API du parc.
  *
  * **Limite ASSUMÉE et documentée** : le store `file` est local au serveur. Il
  * suffit à une sonde de contrat mono-instance, et il ne suffirait pas à une
- * vraie extension répartie — laquelle aura SON stockage (le SDK de l'Epic 58,
- * extrait de BBB). Écrire ici un filet partagé (base, Redis) reviendrait à
+ * vraie extension répartie — laquelle aura SON stockage (le SDK extrait de BBB).
+ * Écrire ici un filet partagé (base, Redis) reviendrait à
  * donner au témoin une capacité qu'une extension n'a pas : la sonde mentirait.
  */
 class WitnessJtiReplayGuard

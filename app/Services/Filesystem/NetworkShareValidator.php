@@ -13,33 +13,33 @@ use App\Services\Agent\Providers\DrivesStateProvider;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Story 34.2 — Validation PRÉDICTIVE des lecteurs réseau gérés (T5, AC4).
+ * Validation PRÉDICTIVE des lecteurs réseau gérés (T5).
  *
  * Service de **PURE LECTURE** calqué sur {@see \App\Services\ControlHub\Resolution\UpstreamLockCollisionDetector}
- * (story 30.5) : il PRÉDIT, AVANT écriture/provision, les deux pièges connus
- * (34.1) — il n'écrit RIEN, n'émet AUCUN candidat, n'introduit AUCUNE précédence
- * (D2 reste confiné au `StateCompiler`). Il LIT `network_shares` + le pivot
- * `network_share_assignables` (Postgres) et la liste figée des lettres réservées
- * {@see DrivesStateProvider::RESERVED_LETTERS} (foyer canonique unique, Q4).
+ * Il PRÉDIT, AVANT écriture/provision, les deux pièges connus
+ *  — il n'écrit RIEN, n'émet AUCUN candidat, n'introduit AUCUNE précédence
+ * (la précédence reste confinée au `StateCompiler`). Il LIT `network_shares` + le
+ * pivot `network_share_assignables` (Postgres) et la liste figée des lettres
+ * réservées {@see DrivesStateProvider::RESERVED_LETTERS} (foyer canonique unique).
  *
  * Trois règles :
  *  - **(a) WG-montage-seul** ({@see warnings()}) : un répertoire assigné UNIQUEMENT
  *    à des parcs (`WorkstationGroup`), sans aucun grant `User`/`UserGroup`, rend la
- *    lettre VISIBLE mais ne contribue AUCUNE ACL POSIX (invariant 34.1 :
+ *  lettre VISIBLE mais ne contribue AUCUNE ACL POSIX (invariant :
  *    `buildAcls` ignore les WG). Warning NON bloquant (le montage-seul reste un
- *    usage légitime). Finding M5 / piège #1.
+ *    usage légitime).
  *  - **(b) collision de lettre** ({@see letterCollisions()} / {@see assertNoLetterCollision()}) :
  *    deux répertoires DISTINCTS à lettre EXPLICITE identique pour une audience qui
- *    se recouvre. Erreur BLOQUANTE. Finding M1 / piège #3.
+ *    se recouvre. Erreur BLOQUANTE.
  *  - **(c) lettre réservée** ({@see isReservedLetter()}) : une lettre explicite ∈
  *    K/H/I/L/A-D écraserait un lecteur fixe (home K:, classes H:) ou un disque
- *    local. Erreur (attrapée à la saisie, AC2 ; re-confirmée ici defense-in-depth).
+ * local. Erreur (attrapée à la saisie ; re-confirmée ici defense-in-depth).
  */
 class NetworkShareValidator
 {
     /**
      * Lettres réservées, lues depuis le foyer canonique du provider (source unique
-     * — non-régression testée : AC6). Caractères nus majuscules (`K`, `H`, …).
+     * non-régression testée :). Caractères nus majuscules (`K`, `H`, …).
      *
      * @return list<string>
      */
@@ -140,10 +140,6 @@ class NetworkShareValidator
         }
     }
 
-    // =========================================================================
-    // Helpers de lecture (Postgres, zéro écriture)
-    // =========================================================================
-
     /**
      * `true` si le répertoire a ≥ 1 assignation `WorkstationGroup` ET 0 grant
      * `User`/`UserGroup`.
@@ -166,7 +162,7 @@ class NetworkShareValidator
      * Clés d'audience (`type#id`) du pivot d'un répertoire — toutes mailles
      * confondues (visibilité). Sert au calcul de recouvrement d'audience.
      *
-     * **LIMITATION CONNUE (M-A, review 34.2) — détection best-effort.** Le
+     * **LIMITATION CONNUE — détection best-effort.** Le
      * recouvrement est calculé sur les clés LITTÉRALES du pivot (`User#5`,
      * `UserGroup#12`, `WorkstationGroup#3`), PAS sur l'appartenance effective. Une
      * collision cross-maille n'est donc PAS détectée : si `dave` est assigné en
@@ -176,8 +172,7 @@ class NetworkShareValidator
      * signalé. Idem User/UserGroup vs WorkstationGroup (qui se connectera sur les
      * postes du parc est imprédictible). Détecter ces cas exigerait d'expandre
      * l'appartenance (`UserGroup`→users), à rebours du principe « pure lecture,
-     * zéro re-requête d'appartenance » du provider. Décision Henri 2026-06-30 :
-     * limitation assumée, fermeture renvoyée à 34.x (avec la lettre stable). Le
+     * zéro re-requête d'appartenance » du provider. La limitation est assumée ; le
      * filet reste utile sur le cas le plus fréquent (même maille).
      *
      * @return list<string>
@@ -214,7 +209,7 @@ class NetworkShareValidator
 
     /**
      * Suggère la prochaine lettre sûre libre (`M:`..`Z:`) pour pré-remplir le
-     * formulaire (Q2 — encourager l'explicite). Exclut les lettres réservées et
+     * formulaire, pour encourager la saisie explicite. Exclut les lettres réservées et
      * toutes les lettres EXPLICITES déjà attribuées à un autre répertoire.
      * `null` si le pool est saturé (l'admin pourra laisser le champ vide → auto).
      */
@@ -232,7 +227,7 @@ class NetworkShareValidator
         }
 
         // Pool lu depuis le foyer canonique du provider (même principe que
-        // RESERVED_LETTERS, Q4) — pas de `range('M','Z')` codé en dur qui
+        // RESERVED_LETTERS) — pas de `range('M','Z')` codé en dur qui
         // divergerait si le pool changeait côté provider.
         foreach (DrivesStateProvider::LETTER_POOL as $candidate) {
             if (! isset($used[$candidate])) {

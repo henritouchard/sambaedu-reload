@@ -7,12 +7,10 @@ namespace App\Auth\Federated;
 use Spatie\Permission\Models\Role;
 
 /**
- * Story 20.1 — D-7 / T6 ; RECONÇU par Story 20.3 (pivot Henri 2026-06-03).
- *
  * Résout le nom de rôle ASSÉRÉ par l'IdP externe (claim `role` du JWT,
  * l'intention) vers un rôle EXISTANT de l'instance.
  *
- * ⚠️ PIVOT 20.3 — D-1 : il n'y a PLUS de table de correspondance
+ * ⚠️ PIVOT — D-1 : il n'y a PLUS de table de correspondance
  * (`config/federated_auth.role_map` supprimée). Le nom de rôle asséré EST déjà
  * le contrat : SE5 le cherche DIRECTEMENT parmi les rôles Spatie EXISTANTS de
  * l'instance (table `roles`, guard `web`), après normalisation casse/espaces
@@ -24,7 +22,7 @@ use Spatie\Permission\Models\Role;
  * externe de confiance, cible à terme). Borner au seul enum exclurait ces
  * rôles custom — interdit par D-5. La table `roles` est la source de vérité.
  *
- * GARDE-FOUS conservés (invariant 20.1) :
+ * GARDE-FOUS conservés (invariant) :
  *   - Rôle asséré vide/blanc → `null`.
  *   - Rôle asséré sans correspondance en base → `null`.
  *   - AUCUN wildcard / fallback `default` : seule une existence en base résout.

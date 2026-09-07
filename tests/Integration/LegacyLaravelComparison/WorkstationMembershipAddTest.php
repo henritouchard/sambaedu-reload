@@ -41,7 +41,7 @@ class WorkstationMembershipAddTest extends TestCase
     {
         parent::setUp();
 
-        // Story 38.7 : ces tests d integration portaient sur l ecriture d un CN
+        // Ces tests d integration portaient sur l ecriture d un CN
         // dans OU=Parcs (via AppProfileAdSyncService), supprimee. OU=Parcs est en
         // lecture seule ; le contrat est couvert par les tests HOTE 38.7. AD-only.
         $this->markTestSkipped("Superseded by 38.7 (OU=Parcs read-only) - AD-only test.");

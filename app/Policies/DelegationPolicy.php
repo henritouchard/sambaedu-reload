@@ -8,7 +8,7 @@ use App\Policies\Traits\RegistersGates;
 use Illuminate\Contracts\Auth\Authenticatable;
 
 /**
- * Story 7.2 (AC5) — Policy pour la gestion des Delegations.
+ * Policy pour la gestion des Delegations.
  *
  * Règles :
  *  - `viewAny` : admin avec `user.assign.right` (voir toutes les délégations).

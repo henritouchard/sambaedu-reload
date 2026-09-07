@@ -12,7 +12,7 @@ use Tests\TestCase;
 use Tests\Support\IpxeAuthTestHelper;
 
 /**
- * Story 3.3 — AC9.2 / T6.5.
+ * T6.5.
  *
  * Tests Feature de la route native `GET|POST /ipxe/enrollment/room`.
  */
@@ -25,7 +25,7 @@ class IpxeEnrollmentRoomEndpointTest extends TestCase
         parent::setUp();
         $this->bypassIpxeAuth();
         IpxeSchemaBootstrapper::bootstrap();
-        // Story 4.11 — l'affectation salle dispatche le job AD move ; pas de
+        // L'affectation salle dispatche le job AD move ; pas de
         // LDAP en test, et observer groupe neutralisé.
         \Illuminate\Support\Facades\Queue::fake();
         \App\Observers\WorkstationGroupObserver::disableSync();
@@ -108,13 +108,13 @@ class IpxeEnrollmentRoomEndpointTest extends TestCase
         $body = (string) $response->getContent();
         self::assertStringContainsString('La machine a ete ajoutee a la salle salle-cible', $body);
 
-        // Story 4.11 — appartenance salle dans le pivot global.
+        // Appartenance salle dans le pivot global.
         self::assertDatabaseHas('workstation_group_workstation', [
             'workstation_id' => $ws->id,
             'workstation_group_id' => $room->id,
         ]);
 
-        // F13 (review 3.3) : MachineBootLog peuplé pour le flow room (success).
+        // F13 (review) : MachineBootLog peuplé pour le flow room (success).
         self::assertDatabaseHas('machine_boot_logs', [
             'workstation_id' => $ws->id,
             'action' => 'ipxe_enroll_room',
@@ -157,7 +157,7 @@ class IpxeEnrollmentRoomEndpointTest extends TestCase
         $body = (string) $response->getContent();
         self::assertStringContainsString("ERREUR la machine n'a pas ete affectee a la salle", $body);
 
-        // F13 (review 3.3) : aucun MachineBootLog créé sur invalid_room_id.
+        // F13 (review) : aucun MachineBootLog créé sur invalid_room_id.
         self::assertDatabaseMissing('machine_boot_logs', [
             'workstation_id' => $ws->id,
             'action' => 'ipxe_enroll_room',

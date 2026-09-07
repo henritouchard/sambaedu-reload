@@ -12,7 +12,7 @@ use Tests\Support\IpxeSchemaBootstrapper;
 use Tests\TestCase;
 
 /**
- * Story 3.4 — AC5.3 / T6.3.
+ * T6.3.
  *
  * Tests feature de la route native `GET|POST /ipxe/linux/action` (hook fin
  * d'install Linux émis par debian-installer).
@@ -119,7 +119,7 @@ class IpxeLinuxActionEndpointTest extends TestCase
     }
 
     /* ------------------------------------------------------------------
-     * Post-review #M5 — Contrat UUID-only de `WorkstationLocator::locate()`.
+     * Contrat UUID-only de `WorkstationLocator::locate()`.
      *
      * Le hook `late_command` posté par debian-installer ne contient pas la
      * MAC (parité legacy `preseed.cfg:83`). Le controller appelle donc

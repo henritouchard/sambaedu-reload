@@ -8,7 +8,7 @@ use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 38.2 — Tombstones natifs du canal client legacy.
+ * Tombstones natifs du canal client legacy.
  *
  * Chaque route encore appelée par un poste SE4 (crochet logon cmd/bash, démon
  * iPXE, machine à états d'install) reçoit une réponse **terminale, typée et
@@ -18,13 +18,13 @@ use Illuminate\Support\Facades\Log;
  * non authentifié serait structurellement un C2 : les corps sont donc des
  * MESSAGES FIXES (jamais d'écho d'un paramètre de requête — la réflexion dans un
  * corps CALLé/eval'é est un vecteur d'injection). Le nettoyage des crochets côté
- * poste est la story 38.3 (agent), pas celle-ci.
+ * poste est la (agent), pas celle-ci.
  *
- * Observabilité (D3) : chaque hit est journalisé en DB (`source='tombstone'`) +
- * channel `legacylog` (`legacy.tombstone.hit`) — c'est le critère GO de la 38.6.
+ * Observabilité : chaque hit est journalisé en DB (`source='tombstone'`) +
+ * channel `legacylog` (`legacy.tombstone.hit`).
  *
  * Voisin de {@see LegacyCatchallController} (même famille) ; le catchall n'est
- * PAS modifié par cette story (38.1 l'a déjà traité).
+ * PAS concerné : il a déjà son propre traitement.
  */
 class LegacyTombstoneController extends Controller
 {
@@ -64,9 +64,8 @@ class LegacyTombstoneController extends Controller
     /**
      * `gpo/applications.php` — inerte à TOUTE combinaison de paramètres
      * (action logon/logoff/startup/shutdown, user, machine, ret=0, context, os
-     * absent…) SAUF l'exception bornée Q4 : `os=linux` (paramètre explicite) →
-     * PASSTHROUGH vers le catchall (le canal Linux reste vivant, cf. mesure
-     * lab1). Le catchall logge lui-même le hit — PAS de log tombstone ici.
+     * absent…) SAUF une exception bornée : `os=linux` (paramètre explicite) →
+     * PASSTHROUGH vers le catchall, le canal Linux restant vivant. Le catchall logge lui-même le hit — PAS de log tombstone ici.
      */
     public function applications(Request $request): mixed
     {

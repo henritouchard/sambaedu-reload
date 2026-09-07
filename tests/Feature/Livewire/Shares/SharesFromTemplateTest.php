@@ -23,8 +23,8 @@ use Tests\TestCase;
 use Tests\Traits\InstallsCollegeRoleProfile;
 
 /**
- * Story 34.3 — Tests Feature Livewire de la modale « Créer depuis un template »
- * (T3/T4, AC3) : formulaire dynamique, aperçu, matérialisation, gating policy.
+ * Tests Feature Livewire de la modale « Créer depuis un template »
+ * (T3/T4) : formulaire dynamique, aperçu, matérialisation, gating policy.
  */
 class SharesFromTemplateTest extends TestCase
 {
@@ -106,13 +106,13 @@ class SharesFromTemplateTest extends TestCase
     }
 
     /**
-     * Story 60.5 — « profs → élèves » ne demande plus qu'UN groupe : ses deux rôles
+     * « profs → élèves » ne demande plus qu'UN groupe : ses deux rôles
      * s'en déduisent. L'aperçu dit les AUDIENCES résolues, pas la saisie.
      */
     #[Test]
     public function an_auto_resolvable_recipe_asks_for_a_single_group_and_previews_resolved_audiences(): void
     {
-        // Story 62.3 — l'aperçu lit le vocabulaire DÉCLARÉ du type. « Enseignant »
+        // L'aperçu lit le vocabulaire DÉCLARÉ du type. « Enseignant »
         // n'est plus posé par la migration : c'est un profil qu'on installe. Ce
         // test l'installe donc, faute de quoi il mesurerait le régime de repli
         // (« Gestionnaire ») au lieu de ce qu'il prétend vérifier.
@@ -131,7 +131,7 @@ class SharesFromTemplateTest extends TestCase
 
         $this->assertCount(2, $preview);
         $labels = array_column($preview, 'label');
-        // Story 62.3 — DIVERGENCE NOMMÉE ET ASSUMÉE (AC6). L'aperçu disait
+        // DIVERGENCE NOMMÉE ET ASSUMÉE. L'aperçu disait
         // « encadrants » : un `match` local, écrit dans cette vue seule, qui
         // ignorait le type du groupe et fondait tout rôle inconnu dans
         // « membres ». Il lit désormais le vocabulaire DÉCLARÉ du type — sur une
@@ -181,7 +181,7 @@ class SharesFromTemplateTest extends TestCase
         $share = NetworkShare::where('directory_name', 'devoirs_6eb')->first();
         $this->assertNotNull($share);
         $this->assertSame($admin->id, $share->created_by_user_id);
-        // Story 60.5 — le partage porte son ORIGINE : ses octrois viendront de la
+        // Le partage porte son ORIGINE : ses octrois viendront de la
         // recette, l'assignation ne porte que la visibilité du lecteur.
         $this->assertTrue($share->hasRecipeOrigin());
         $this->assertSame($classe->id, $share->user_group_id);
@@ -191,7 +191,7 @@ class SharesFromTemplateTest extends TestCase
             'assignable_id' => $classe->id,
             'access' => 'ro',
         ]);
-        // Story 60.4 — la matérialisation depuis un écran ENFILE la pose des
+        // La matérialisation depuis un écran ENFILE la pose des
         // droits : rien n'est écrit dans le cycle de la requête.
         Process::assertNothingRan();
         Queue::assertPushed(
@@ -304,7 +304,7 @@ class SharesFromTemplateTest extends TestCase
     #[Test]
     public function missing_required_target_surfaces_toast_error_and_creates_nothing(): void
     {
-        // Finding #2 (review) — la cardinalité des rôles est validée côté service
+        // La cardinalité des rôles est validée côté service
         // (pas de règle Livewire field-level) : un rôle requis non renseigné
         // remonte en toast erreur (InvalidArgumentException → toastMagic), AUCUN
         // share/pivot n'est créé (refus AVANT transaction).
@@ -340,10 +340,6 @@ class SharesFromTemplateTest extends TestCase
 
         $this->assertDatabaseCount('network_shares', 0);
     }
-
-    // =========================================================================
-    // Story 60.5 — UN SÉLECTEUR VIDE DOIT LE DIRE
-    // =========================================================================
 
     /**
      * **Le cas régressif, celui qui a coûté cinq semaines.** Une recette dont un
@@ -449,10 +445,6 @@ class SharesFromTemplateTest extends TestCase
         $this->assertStringContainsString('classe', $notices['@groupe']);
         $this->assertTrue($component->instance()->materializationBlocked());
     }
-
-    // =========================================================================
-    // L'écran manuel ne propose QUE ce qu'il sait faire naître
-    // =========================================================================
 
     /**
      * Une recette d'arbre tient son nom et son emplacement de son groupe ; cet

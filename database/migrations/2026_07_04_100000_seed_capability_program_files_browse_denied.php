@@ -5,22 +5,22 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 36.1 (AC5) — capacité de PREUVE du mécanisme HORS-REGISTRE `fs_acl` :
+ * Capacité de PREUVE du mécanisme HORS-REGISTRE `fs_acl` :
  * `program_files_browse_denied`. La demande fondatrice « masquer Program Files
  * aux élèves sans casser le lancement des applications » se projette sur UNE ACE
  * NTFS `deny list_folder folder_only` : l'Explorateur ne peut plus ÉNUMÉRER le
  * dossier, mais le traverse/execute reste intact → les raccourcis vers des exe
  * sous Program Files se lancent toujours (la variante SÛRE ; la variante
  * dangereuse — deny à héritage descendant sur une racine système — est
- * INEXPRIMABLE par le guard d'authoring, Q2).
+ * INEXPRIMABLE par le guard d'authoring).
  *
- * Pattern iso lot CD95/35.2 (`2026_07_03_110000`) : `updateOrInsert` par `key`
+ * Pattern iso lot CD95 (`2026_07_03_110000`) : `updateOrInsert` par `key`
  * puis par `(capability_id, os, mechanism)`, idempotent, garde `hasTable`,
  * `down()` par suppression de la `key` (FK cascade → projection + assignments).
  *
- * ── ENUM OPT-IN À QUATRE VALEURS (écart assumé vs enum à 3 de l'epic) ────────
- * Motivé par le piège #3 (fenêtres d'orphelin) + l'invariant projet « un off
- * proposé fait une VRAIE action » :
+ * **Enum opt-in à quatre valeurs** (une de plus que les trois habituelles),
+ * pour fermer les fenêtres d'orphelin et tenir l'invariant « un off proposé
+ * fait une VRAIE action » :
  *   - `unmanaged` (défaut, sentinelle) : hors de toutes les maps ⇒ RIEN n'est
  *     émis (aucun item fs_acl → le handler n'est même pas invoqué, engine.go
  *     itère les types présents) ;
@@ -34,12 +34,12 @@ use Illuminate\Support\Facades\Schema;
  *   - `tous` « Masqué à tous (utilisateurs du domaine) » : deny pour le littéral
  *     `Domain Users`.
  *
- * ── DEUX CHEMINS × DEUX TRUSTEES = 4 ENTRÉES DE SPEC ─────────────────────────
+ * **DEUX CHEMINS × DEUX TRUSTEES = 4 ENTRÉES DE SPEC**
  * `C:\Program Files` ET `C:\Program Files (x86)` (les deux arborescences
  * d'install natives). Par chemin : une entrée trustee `@eleves` (valeurs
  * eleves/off) + une entrée trustee `Domain Users` (valeurs tous/off).
  *
- * ── « Domain Users » À VÉRIFIER SUR LE DC LAB (piège #15) ────────────────────
+ * **« Domain Users » À VÉRIFIER SUR LE DC LAB**
  * `Domain Users` est le nom Samba AD par défaut (provisioning anglophone) — le
  * trustee littéral part VERBATIM au payload, c'est l'AGENT qui le résout via LSA
  * sur le poste joint (échec ⇒ erreur d'item, visible). ⚠️ À VÉRIFIER sur le DC
@@ -47,7 +47,7 @@ use Illuminate\Support\Facades\Schema;
  * mémoire »). Le jeton `@eleves` est résolu conventionnellement par le serveur
  * (AudienceTokens → groupe `Eleves` de `user_groups`).
  *
- * ── PAS DE CIBLAGE PAR UTILISATEUR (piège #10) ──────────────────────────────
+ * **PAS DE CIBLAGE PAR UTILISATEUR**
  * Mécanisme portée MACHINE : « quel utilisateur est bridé » = le `trustee` DANS
  * le payload (`@eleves` / `Domain Users`), « quels postes » = les assignations
  * parc/salle/poste/broadcast. Un override UserGroup/User serait SANS EFFET.
@@ -68,7 +68,7 @@ return new class extends Migration
             ['key' => 'program_files_browse_denied'],
             [
                 'label' => 'Navigation dans Program Files (Explorateur)',
-                // Description ≤ 255 (contrainte varchar PG, test structurel 35.5 —
+                // Description ≤ 255 (contrainte varchar PG, test structurel
                 // sinon migrate /vm casse en 22001, invisible en SQLite).
                 'description' => 'Masque l\'énumération de C:\\Program Files et Program Files (x86) '
                     .'dans l\'Explorateur (ACE NTFS deny list_folder, dossier seul). Les applications '

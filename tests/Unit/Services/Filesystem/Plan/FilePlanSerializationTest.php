@@ -15,10 +15,10 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 60.1 — le plan est SÉRIALISABLE et COMPARABLE.
+ * Le plan est SÉRIALISABLE et COMPARABLE.
  *
  * Sans sérialisation identique octet pour octet à état identique, la détection
- * d'écart par comparaison (story 60.4) serait mort-née : un plan qui change de
+ * D'écart par comparaison serait mort-née : un plan qui change de
  * forme sans changer de sens produirait un écart fantôme à chaque passage.
  */
 class FilePlanSerializationTest extends TestCase
@@ -106,7 +106,6 @@ class FilePlanSerializationTest extends TestCase
         $this->assertFalse($revived->node('_travail/devoirs')->governsChildren());
         $this->assertTrue($revived->node('_travail')->governsChildren());
 
-        // Plafond.
         $this->assertSame(2147483648, $revived->node('bmartin')->plafond);
 
         // État actif / suspendu — et le suspendu n'est PAS devenu une absence.

@@ -19,7 +19,7 @@ use App\Services\Agent\TargetContext;
 use Illuminate\Support\Collection;
 
 /**
- * Story 27.3bis — provider `associations` (associations de fichiers/protocoles
+ * Provider `associations` (associations de fichiers/protocoles
  * par défaut).
  *
  * UN type `associations` (contrat §7, identifiant figé
@@ -28,29 +28,29 @@ use Illuminate\Support\Collection;
  * (UserChoice de l'utilisateur connecté), appliquée par le COMPAGNON au logon —
  * pas de pendant machine (contrairement à `registry` qui a deux ruches).
  *
- * **Lecture Postgres PURE** (NFR7, critère Keycloak) : le provider lit le
+ * **Lecture Postgres PURE** (critère Keycloak) : le provider lit le
  * catalogue `file_associations` × le pivot polymorphe `file_association_assignables`
  * (WorkstationGroup + Workstation + UserGroup + User), restreint aux ids déjà
  * résolus du {@see TargetContext}. JAMAIS l'AD / LdapRecord / APCu / `samba-tool`.
- * ⚠️ NE réutilise PAS la dépendance APCu/WPKG de `AssociationsResolver` (16.3c) :
+ * ⚠️ NE réutilise PAS la dépendance APCu/WPKG de `AssociationsResolver` :
  * le canal desired-state lit Postgres et lui seul.
  *
  * **Catalogue → items CONCRETS (invariant central).** Chaque association du
  * catalogue SE COMPILE en un payload `{identifier, progid, type}` concret. Le
  * `key`/`id` du catalogue ne fuite JAMAIS au payload — c'est CE qui garde l'option
  * « clés brutes » (v2) gratuite. **Aucun hash ni SID au payload** : le hash
- * UserChoice est calculé 100 % côté agent (piège n° 2).
+ * UserChoice est calculé 100 % côté agent.
  *
- * **Sémantique `exclusive` PAR IDENTIFIANT** (décision n° 4,
- * {@see KeyedExclusiveProvider}) : une extension/un protocole = UN programme par
+ * **Sémantique `exclusive` PAR IDENTIFIANT**
+ * ({@see KeyedExclusiveProvider}) : une extension/un protocole = UN programme par
  * défaut ; la maille la plus spécifique gagne POUR CET identifiant, les
  * identifiants distincts s'accumulent. Le provider rend des candidats BRUTS par
- * maille (discipline D2) : aucune précédence/tri/dédup ici — la sélection vit
+ * maille : aucune précédence/tri/dédup ici — la sélection vit
  * dans le `StateCompiler` SEUL (qui consulte `exclusiveKey()`).
  *
  * Une association non assignée à aucune maille du poste **n'émet aucun item**
  * (contrat §8 : type/clé absent = non géré ; « désactiver » = cesser de gérer,
- * jamais un reset OFF — piège n° 5).
+ * jamais un reset OFF).
  */
 final class AssociationsStateProvider implements KeyedExclusiveProvider, StateProvider
 {
@@ -66,14 +66,14 @@ final class AssociationsStateProvider implements KeyedExclusiveProvider, StatePr
 
     public function scope(): StateScope
     {
-        // HKCU (UserChoice) appliqué par le compagnon au logon — D-Henri n°6.
+        // HKCU (UserChoice) appliqué par le compagnon au logon.
         return StateScope::Session;
     }
 
     /**
      * Identité d'une association exclusive : l'`identifier` (extension/protocole).
      * Insensible à la casse (Windows l'est sur extensions/protocoles) → normalisé
-     * en minuscules pour la STABILITÉ de la sélection. Déterministe (ETag 23.5).
+     * en minuscules pour la STABILITÉ de la sélection. Déterministe (ETag).
      *
      * @param  array<string,mixed>  $payload
      */
@@ -85,7 +85,7 @@ final class AssociationsStateProvider implements KeyedExclusiveProvider, StatePr
     /**
      * Un candidat PAR (association active × assignation applicable au contexte).
      * Lecture pivot par maille ; chaque association COMPILÉE en item concret.
-     * Candidats BRUTS (D2) — la précédence par identifiant est au compilateur.
+     * Candidats BRUTS — la précédence par identifiant est au compilateur.
      *
      * @return Collection<int, StateCandidate>
      */
@@ -140,7 +140,7 @@ final class AssociationsStateProvider implements KeyedExclusiveProvider, StatePr
     /**
      * Compile une association de catalogue en item CONCRET `{identifier, progid,
      * type}` — JAMAIS d'`id`/`key` de catalogue, JAMAIS de hash/SID (invariant
-     * central + piège n° 2). `type` ∈ `file`|`protocol` (cf. `assoc_type`).
+     * central). `type` ∈ `file`|`protocol` (cf. `assoc_type`).
      *
      * @return array<string,mixed>
      */
@@ -154,7 +154,7 @@ final class AssociationsStateProvider implements KeyedExclusiveProvider, StatePr
     }
 
     /**
-     * Étiquetage assignable → maille (D2 = compilateur applique la précédence).
+     * Étiquetage assignable → maille ; la précédence reste au compilateur.
      * La distinction physique/logique d'un WorkstationGroup se fait via les
      * listes du contexte (la requête a déjà restreint aux groupes du poste) —
      * étiquetage, pas précédence.

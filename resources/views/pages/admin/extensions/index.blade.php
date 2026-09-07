@@ -12,22 +12,22 @@ use Livewire\Attributes\Title;
 use Livewire\Component;
 
 /**
- * Story 54.1 (AC1) / 54.2 (AC1-AC3) — /admin/extensions : BIBLIOTHÈQUE des
+ * Admin/extensions : BIBLIOTHÈQUE des
  * extensions.
  *
  * Le registre est MULTI-SOURCES dès le socle (AR7) : chaque carte porte la
- * source d'origine. En 54.1 une seule source existe (« Embarquée (SambaEdu) »,
- * manifests du dépôt) ; les sources distantes relèvent de l'Epic 56.
+ * source d'origine. En une seule source existe (« Embarquée (SambaEdu) »,
+ * manifests du dépôt) ; les sources distantes viendront plus tard.
  *
- * Story 54.2 ajoute le geste : « Intégrer » (direct, en un clic) et
+ * Ajoute le geste : « Intégrer » (direct, en un clic) et
  * « Désinstaller » (confirmé par la modale réutilisable) pour le type `link`
  * uniquement — aucun bouton pour un type `app` (rien à proposer avant
- * l'Epic 56). Les deux transitions et leur journal d'audit sont délégués à
+ * L'). Les deux transitions et leur journal d'audit sont délégués à
  * {@see ExtensionLifecycleService} ; l'id d'action transite par le client
  * (`wire:click`) — le service REVALIDE tout côté serveur (existence, type,
  * état), jamais de confiance aveugle dans un paramètre client.
  *
- * **Story 56.1 — la provenance est impossible à ignorer (FR4, UX-DR4)** :
+ * **La provenance est impossible à ignorer** :
  * chaque carte porte un badge « Officielle » ou « Tierce » (icône + libellé,
  * jamais une couleur seule), et intégrer une extension d'une source TIERCE
  * passe par une modale d'avertissement nommant l'hôte réel du dépôt. Le
@@ -35,11 +35,11 @@ use Livewire\Component;
  * garde d'ATTENTION, pas une garde de sécurité : le service d'intégration est
  * inchangé et ne connaît pas la notion de source tierce.
  *
- * NFR15 — 3 couches strictes : toute la donnée vient des services
+ * 3 couches strictes : toute la donnée vient des services
  * ({@see ExtensionCatalogService} lecture, {@see ExtensionLifecycleService}
  * écriture), aucun Eloquent dans le composant.
  *
- * **Story 56.3 — le cycle `app` s'ouvre, EN TÂCHE DE FOND (FR6/FR11, AR1)** :
+ * **Le cycle `app` s'ouvre, EN TÂCHE DE FOND** :
  * « Intégrer », « Mettre à jour » et « Désinstaller » apparaissent aussi pour
  * le type `app`, derrière une modale de confirmation unique qui récapitule la
  * PROVENANCE et les SCOPES DEMANDÉS. Ces boutons ne lancent rien eux-mêmes :
@@ -91,7 +91,7 @@ new #[Title('Extensions')] class extends Component {
     /** Hôte du dépôt d'origine, résolu CÔTÉ SERVEUR (jamais depuis le snapshot client). */
     public string $integrateTargetHost = '';
 
-    // ── Story 56.3 — cycle `app` en tâche de fond ───────────────────────
+    // — cycle `app` en tâche de fond
 
     /**
      * Dernier run PAR extension, déjà mis en forme par l'orchestrateur.
@@ -151,7 +151,7 @@ new #[Title('Extensions')] class extends Component {
         ));
     }
 
-    // ── AC1 — Intégrer (direct, un clic) ────────────────────────────────
+    // — Intégrer (direct, un clic)
 
     public function integrate(int $extensionId): void
     {
@@ -160,7 +160,7 @@ new #[Title('Extensions')] class extends Component {
         try {
             $result = app(ExtensionLifecycleService::class)->integrate($extensionId, auth()->user());
         } catch (ExtensionLifecycleException $e) {
-            // ⚠️ Recharger AUSSI sur le chemin d'erreur (review #2) : le refus le
+            // ⚠️ Recharger AUSSI sur le chemin d'erreur : le refus le
             // plus probable est « introuvable », c'est-à-dire un écran périmé.
             $this->loadExtensions();
             $this->toastError($e->getMessage());
@@ -182,13 +182,13 @@ new #[Title('Extensions')] class extends Component {
         $this->toastSuccess('Extension intégrée.');
     }
 
-    // ── Story 56.1 AC2 — Intégrer une extension TIERCE (avertissement) ──
+    // — Intégrer une extension TIERCE (avertissement)
 
     /**
      * Ouvre l'avertissement « source non officielle » avant l'intégration.
      *
-     * La cible et l'hôte sont résolus CÔTÉ SERVEUR (même raison qu'en 54.2,
-     * review #6) : `$this->extensions` est réhydraté depuis le snapshot client
+     * La cible et l'hôte sont résolus CÔTÉ SERVEUR : `$this->extensions` est
+     * réhydraté depuis le snapshot client
      * à chaque requête, et faire confirmer un avertissement sous un hôte que le
      * client a fourni viderait l'avertissement de son sens.
      */
@@ -225,7 +225,7 @@ new #[Title('Extensions')] class extends Component {
 
         $extensionId = $this->integrateTargetId;
 
-        // ⚠️ Même piège qu'en 54.2 (review #1) : on ferme VISUELLEMENT sans
+        // ⚠️ Même piège que pour la désinstallation : on ferme VISUELLEMENT sans
         // remettre la cible à zéro, sinon un double-clic rejoue l'appel avec
         // `integrateTargetId = 0`.
         $this->isThirdPartyWarningOpen = false;
@@ -245,13 +245,13 @@ new #[Title('Extensions')] class extends Component {
         $this->integrateTargetHost = '';
     }
 
-    // ── AC2 — Désinstaller (confirmation par modale) ────────────────────
+    // — Désinstaller (confirmation par modale)
 
     public function askUninstall(int $extensionId): void
     {
         abort_unless(Gate::allows('server.admin'), 403);
 
-        // ⚠️ Cible résolue CÔTÉ SERVEUR (review #6). `$this->extensions` est
+        // ⚠️ Cible résolue CÔTÉ SERVEUR. `$this->extensions` est
         // réhydraté depuis le snapshot client à chaque requête : y puiser le nom
         // ferait confirmer une désinstallation sous un libellé non vérifié — et
         // afficherait un nom périmé si une synchro a renommé l'extension depuis
@@ -276,11 +276,11 @@ new #[Title('Extensions')] class extends Component {
 
         $extensionId = $this->uninstallTargetId;
 
-        // ⚠️ NE PAS appeler closeUninstall() ici (review #1) : il remet la cible
+        // ⚠️ NE PAS appeler closeUninstall() ici : il remet la cible
         // à 0, et le bouton de confirmation reste cliquable tant que la première
         // réponse n'est pas revenue. Un double-clic rejouait donc la seconde
         // invocation avec `uninstallTargetId = 0` → « Extension #0 introuvable »
-        // au lieu du no-op propre exigé par l'AC3. On ferme visuellement, on
+        // au lieu du no-op attendu. On ferme visuellement, on
         // garde la cible ; la remise à zéro reste au chemin « Annuler ».
         $this->isUninstallOpen = false;
 
@@ -317,15 +317,13 @@ new #[Title('Extensions')] class extends Component {
         $this->uninstallTargetName = '';
     }
 
-    // ══════════════════════════════════════════════════════════════════════
-    // Story 56.3 — opérations `app` (installation, mise à jour, retrait)
-    // ══════════════════════════════════════════════════════════════════════
+    // Opérations `app` (installation, mise à jour, retrait)
 
     /**
      * Ouvre la modale de confirmation d'une opération `app`.
      *
-     * ⚠️ La cible est RÉSOLUE CÔTÉ SERVEUR (patron 54.2 review #6, reconduit
-     * en 56.1) : `$this->extensions` est réhydraté depuis le snapshot client à
+     * ⚠️ La cible est RÉSOLUE CÔTÉ SERVEUR :
+     * `$this->extensions` est réhydraté depuis le snapshot client à
      * chaque requête, et faire confirmer une installation sous une provenance
      * et des scopes fournis par le client viderait la confirmation de son sens.
      *
@@ -360,7 +358,7 @@ new #[Title('Extensions')] class extends Component {
     /**
      * Confirme l'opération : crée le run et met le Job en file.
      *
-     * ⚠️ Comme en 54.2 (review #1), la modale est fermée VISUELLEMENT sans
+     * ⚠️ Comme à la désinstallation, la modale est fermée VISUELLEMENT sans
      * remettre la cible à zéro : le bouton reste cliquable tant que la première
      * réponse n'est pas revenue, et un double-clic doit retomber sur le refus
      * propre de l'orchestrateur (« déjà en cours »), pas sur « extension #0 ».
@@ -448,10 +446,10 @@ new #[Title('Extensions')] class extends Component {
         if ($status === ExtensionInstallRun::STATUS_SUCCESS) {
             $this->trackedRunId = 0;
 
-            // Review 56.3 #3 — un no-op propre (l'état demandé était déjà en
-            // place) est un succès, mais pas un acte : dire « terminée »
-            // laisserait croire à cet admin que son clic a fait le travail que
-            // quelqu'un d'autre avait déjà fait. Patron du no-op de 54.2.
+            // Un no-op propre (l'état demandé était déjà en place) est un
+            // succès, mais pas un acte : dire « terminée » laisserait croire à
+            // cet admin que son clic a fait le travail que quelqu'un d'autre
+            // avait déjà fait.
             if (($tracked['changed'] ?? true) === false) {
                 $this->toastInfo('Rien à faire : l\'extension était déjà dans l\'état demandé.');
 
@@ -509,7 +507,7 @@ new #[Title('Extensions')] class extends Component {
     description="Bibliothèque des extensions disponibles pour cette instance : ce que vous pouvez intégrer, d'où ça vient et ce que ça demande.">
 
     <x-slot:actions>
-        {{-- Story 56.5 — le journal d'audit FR36, enfin consultable. --}}
+        {{-- Le journal d'audit. --}}
         <a href="{{ route('admin.extensions.journal') }}" class="btn btn-ghost" wire:navigate
             data-testid="open-journal">
             <i class="fa-solid fa-clipboard-list"></i> Journal
@@ -698,7 +696,7 @@ new #[Title('Extensions')] class extends Component {
                                     <span class="text-base-content/40 font-mono">v{{ $extension['version'] }}</span>
                                 @endif
 
-                                {{-- Story 56.3 — l'écart entre ce qui TOURNE et
+                                {{-- L'écart entre ce qui TOURNE et
                                      ce que la source PUBLIE, dit une seule fois. --}}
                                 @if ($extension['update_available'] ?? false)
                                     <span class="badge badge-sm badge-info gap-1"
@@ -715,7 +713,7 @@ new #[Title('Extensions')] class extends Component {
                             </div>
                         </a>
 
-                        {{-- ===== Story 56.3 — actions et progression du type `app` ===== --}}
+                        {{-- ===== — actions et progression du type `app` ===== --}}
                         @if ($extension['type'] === 'app' && $hasFooter)
                             <div class="card-actions justify-end px-6 pb-4 pt-2 flex-col items-stretch gap-2">
                                 @if ($isRunning)
@@ -774,7 +772,7 @@ new #[Title('Extensions')] class extends Component {
                         @if ($extension['type'] === 'link')
                             <div class="card-actions justify-end px-6 pb-4 pt-2">
                                 @if ($extension['status'] === 'available')
-                                    {{-- Officielle : un clic (comportement 54.2 inchangé).
+                                    {{-- Officielle : un clic (comportement inchangé).
                                          Tierce : avertissement de provenance d'abord. --}}
                                     <button type="button" class="btn btn-primary btn-sm"
                                         wire:click="{{ $extension['source_is_official'] ? 'integrate' : 'askIntegrate' }}({{ $extension['id'] }})"
@@ -795,7 +793,7 @@ new #[Title('Extensions')] class extends Component {
             </div>
         @endif
 
-        {{-- ===================== Modale : confirmer la désinstallation (AC2) ===================== --}}
+        {{-- ===================== Modale : confirmer la désinstallation ===================== --}}
         <x-molecules.modal wire:model="isUninstallOpen" size="max-w-lg" height="h-auto"
             close-method="closeUninstall" title="Désinstaller l'extension" icon="fa-trash-can text-error">
 
@@ -819,7 +817,7 @@ new #[Title('Extensions')] class extends Component {
             </x-slot:footer>
         </x-molecules.modal>
 
-        {{-- ============ Modale : avertissement de source tierce (56.1 AC2) ============ --}}
+        {{-- ============ Modale : avertissement de source tierce ============ --}}
         <x-molecules.modal wire:model="isThirdPartyWarningOpen" size="max-w-lg" height="h-auto"
             close-method="closeThirdPartyWarning" title="Source non officielle"
             icon="fa-triangle-exclamation text-warning">
@@ -845,7 +843,7 @@ new #[Title('Extensions')] class extends Component {
             </x-slot:footer>
         </x-molecules.modal>
 
-        {{-- ===== Story 56.3 — confirmation des opérations `app` (3 usages) ===== --}}
+        {{-- ===== — confirmation des opérations `app` (3 usages) ===== --}}
         @include('pages.admin.extensions._partials.app-operation-modal')
     </div>
 </x-organisms.page>

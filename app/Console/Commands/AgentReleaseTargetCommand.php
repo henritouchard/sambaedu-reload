@@ -10,14 +10,14 @@ use App\Services\Agent\Releases\ReleaseOperationException;
 use Illuminate\Console\Command;
 
 /**
- * Story 25.1 — Ciblage d'un ring sur une version (AC1, décision n° 6).
+ * Ciblage d'un ring sur une version.
  *
  * Un ring = UN WorkstationGroup existant (salle physique OU parc logique),
  * lookup par `name`. `updateOrCreate` + touch côté service : un re-ciblage
  * (même de la même version — cas rollback) rafraîchit `updated_at`, la
- * donnée de récence de la résolution multi-rings (décision n° 4).
+ * donnée de récence de la résolution multi-rings.
  *
- * Outillage lab provisoire — l'UI 25.5 écrira les mêmes lignes via le même
+ * Outillage lab provisoire — l'UI écrira les mêmes lignes via le même
  * service. Commande à la demande (pas d'entrée Kernel).
  */
 class AgentReleaseTargetCommand extends Command

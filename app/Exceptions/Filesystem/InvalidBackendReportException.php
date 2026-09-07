@@ -7,7 +7,7 @@ namespace App\Exceptions\Filesystem;
 use RuntimeException;
 
 /**
- * Story 60.3 — un rapport de backend viole l'un de ses invariants de CONSTRUCTION.
+ * Un rapport de backend viole l'un de ses invariants de CONSTRUCTION.
  *
  * **Pourquoi une exception distincte de celles du plan.** Un plan qui ne se résout
  * pas et un rapport qui ne couvre pas son plan sont deux fautes différentes, à

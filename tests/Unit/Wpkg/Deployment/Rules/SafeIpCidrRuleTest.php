@@ -11,17 +11,16 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Story 15.6 / AC3 / AC6.4 — Tests unit de SafeIpCidrRule.
+ * Tests unit de SafeIpCidrRule.
  *
  * Couvre tous les cas du Volet 3 :
- *   - AC3.1 : IP v4/v6 valides ou CIDR valides → acceptés
- *   - AC3.2 : 0.0.0.0/0 et ::/0 → rejetés
- *   - AC3.3 : préfixes trop larges (IPv4 < /16, IPv6 < /32) → rejetés
- *   - AC3.4 : entrées syntaxiquement invalides → rejetées
- *   - AC3.5 : entrées vides → traitées (rejetées car non-string/vide)
+ * - IP v4/v6 valides ou CIDR valides → acceptés
+ * - 0.0.0.0/0 et ::/0 → rejetés
+ * - préfixes trop larges (IPv4 < /16, IPv6 < /32) → rejetés
+ * - entrées syntaxiquement invalides → rejetées
+ * - entrées vides → traitées (rejetées car non-string/vide)
  */
 #[Group('wpkg-deploy')]
-#[Group('story-15-6')]
 class SafeIpCidrRuleTest extends TestCase
 {
     private SafeIpCidrRule $rule;
@@ -43,10 +42,6 @@ class SafeIpCidrRuleTest extends TestCase
         });
         return $error;
     }
-
-    // =========================================================================
-    // AC3.1 — Entrées valides (IP v4/v6 simples ou CIDR)
-    // =========================================================================
 
     /**
      * @return array<string, array{string}>
@@ -77,10 +72,6 @@ class SafeIpCidrRuleTest extends TestCase
         self::assertNull($this->validate($entry), "Expected '$entry' to be valid, got error.");
     }
 
-    // =========================================================================
-    // AC3.2 — Rejet dur des wildcards Internet
-    // =========================================================================
-
     #[Test]
     public function deny_all_ipv4_is_rejected(): void
     {
@@ -98,10 +89,6 @@ class SafeIpCidrRuleTest extends TestCase
         self::assertNotNull($error);
         self::assertStringContainsString('Internet', $error);
     }
-
-    // =========================================================================
-    // AC3.3 — Préfixes trop larges
-    // =========================================================================
 
     /**
      * @return array<string, array{string, string}>
@@ -128,10 +115,6 @@ class SafeIpCidrRuleTest extends TestCase
         self::assertStringContainsString($expectedFragment, $error);
     }
 
-    // =========================================================================
-    // AC3.4 — Syntaxe invalide
-    // =========================================================================
-
     /**
      * @return array<string, array{mixed}>
      */
@@ -157,10 +140,6 @@ class SafeIpCidrRuleTest extends TestCase
 
         self::assertNotNull($error, "Expected '$entry' to be rejected as invalid.");
     }
-
-    // =========================================================================
-    // Cas limites
-    // =========================================================================
 
     #[Test]
     public function non_string_value_is_rejected(): void

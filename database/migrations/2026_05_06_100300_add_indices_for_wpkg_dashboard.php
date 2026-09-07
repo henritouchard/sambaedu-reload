@@ -7,7 +7,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 15.5 / T1 — Indices DB pour atteindre NFR1 < 2s sur 500 postes
+ * Indices DB pour tenir un affichage sous 2 s sur 500 postes
  * (dashboard `/app/wpkg/deployments`).
  *
  * Indices ajoutés :
@@ -17,7 +17,7 @@ use Illuminate\Support\Facades\Schema;
  *   - composite `(workstation_id, client_reported_at DESC)` (pour le
  *     `DISTINCT ON (workstation_id) ... ORDER BY workstation_id, client_reported_at DESC`)
  *
- * Note : l'index `wdws_ws_reported_idx` créé en 15.1 couvre déjà
+ * Note : l'index `wdws_ws_reported_idx` créé couvre déjà
  * `(workstation_id, client_reported_at)` — on évite donc le doublon.
  * On ajoute uniquement les indices simples manquants.
  *

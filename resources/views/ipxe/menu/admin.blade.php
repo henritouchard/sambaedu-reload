@@ -1,5 +1,5 @@
 {!! $shebang !!}
-{{-- Story 4.10 propagation auth iPXE. Cf. PHPDoc IpxeAuthService. --}}
+{{-- Propagation auth iPXE. Cf. PHPDoc IpxeAuthService. --}}
 params
 param mac ${net0/mac}
 param uuid ${uuid}

@@ -43,10 +43,8 @@ return new class extends Component {
 
     public ?string $depotSyncMessage = null;
 
-    // Modal création dépôt
     public bool $showCreateDepotModal = false;
 
-    // Modal suppression dépôt
     public bool $showDeleteDepotModal = false;
 
     public ?int $deleteDepotId = null;
@@ -81,9 +79,9 @@ return new class extends Component {
     }
 
     /**
-     * Story 51.1 (AC8) — L'instance est-elle gérée par un contrat amont actif ?
+     * L'instance est-elle gérée par un contrat amont actif ?
      * Le verrou d'AJOUT de dépôt suit le LIEN (`active()`), PAS le catalogue : un
-     * contrat actif à catalogue vide verrouille quand même l'ajout (AC9).
+     * contrat actif à catalogue vide verrouille quand même l'ajout.
      */
     #[Computed]
     public function isManaged(): bool
@@ -188,7 +186,7 @@ return new class extends Component {
                 return;
             }
 
-            // Story 51.1 (AC8) — Le dépôt imposé est une projection du catalogue amont,
+            // Le dépôt imposé est une projection du catalogue amont,
             // jamais une source HTTP synchronisable.
             if ($depot->is_imposed) {
                 $this->toastWarning('Dépôt géré par l\'autorité amont — synchronisation non applicable.');
@@ -209,12 +207,12 @@ return new class extends Component {
     }
 
     /**
-     * Story 8.2.7 — Dispatch NON-BLOQUANT : pour chaque app sélectionnée on
+     * Dispatch NON-BLOQUANT : pour chaque app sélectionnée on
      * dispatche un {@see InstallApplicationJob} sur la file `default`. La
      * méthode rend la main immédiatement — aucun téléchargement synchrone ne
      * gèle la requête. Le worker exécute le flow `installApplication()`
-     * existant (option A « tout dans le Job ») ; le panneau de progression
-     * (AC6) rattrape la latence d'apparition du log via `wire:poll`.
+     * existant, entièrement dans le Job ; le panneau de progression
+     * rattrape la latence d'apparition du log via `wire:poll`.
      */
     public function installFromDepot(): void
     {
@@ -250,7 +248,7 @@ return new class extends Component {
     }
 
     /**
-     * Story 8.2.7 (AC6) — Installations actives de l'utilisateur courant.
+     * Installations actives de l'utilisateur courant.
      *
      * Lit les `InstallationLog` non-terminaux (scopeInProgress) initiés par
      * le login courant, avec la relation `application` chargée. Pilote le
@@ -324,8 +322,8 @@ return new class extends Component {
                 return;
             }
 
-            // Story 51.1 (AC8/AC10) — Le dépôt imposé ne doit être ni désactivé ni
-            // dépriorisé TANT QUE le lien amont est ACTIF. À la rupture du lien (AC10 :
+            // Le dépôt imposé ne doit être ni désactivé ni
+            // dépriorisé TANT QUE le lien amont est ACTIF. À la rupture du lien ( :
             // release passif), le dépôt imposé « redevient gérable » (désactivable par
             // l'admin) : la garde suit donc `isManaged()` (le LIEN), pas le seul flag
             // `is_imposed` (qui reste true à jamais, l'état étant figé). Garde SERVEUR.
@@ -353,7 +351,7 @@ return new class extends Component {
 
     public function createDepot(): void
     {
-        // Story 51.1 (AC8) — Sous contrat amont actif, l'ajout de dépôt est VERROUILLÉ
+        // Sous contrat amont actif, l'ajout de dépôt est VERROUILLÉ
         // (le canal dépôts est imposé par l'autorité amont). Garde SERVEUR = vraie
         // barrière (l'UI masque le bouton, mais la garde serveur est opposable).
         if ($this->isManaged()) {
@@ -397,7 +395,7 @@ return new class extends Component {
 ?>
 
 <div class="flex flex-col gap-3 flex-1 min-h-0">
-    {{-- Story 51.1 (AC8) — Bandeau : sous contrat amont actif, les dépôts sont gérés
+    {{-- Bandeau : sous contrat amont actif, les dépôts sont gérés
          par l'autorité amont (ajout/suppression verrouillés côté serveur, l'UI l'explique). --}}
     @if ($this->isManaged)
         <div class="flex-shrink-0 alert alert-info alert-sm">

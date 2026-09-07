@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Nextcloud;
 
 /**
- * Story 61.1 — CE QU'IL EST ADVENU D'UN MONTAGE, par élément.
+ * CE QU'IL EST ADVENU D'UN MONTAGE, par élément.
  *
  * Quatre issues, et surtout pas un booléen global : « le provisionnement a
  * réussi » ne dit pas si le second passage a recréé un doublon, et un rapport qui

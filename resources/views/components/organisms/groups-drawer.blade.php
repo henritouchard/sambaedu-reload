@@ -78,11 +78,10 @@ new class extends Component {
                     static fn($group): array => [
                         'cn' => (string) $group->name,
                         'name' => (string) ($group->display_name ?: $group->name),
-                        // Story 62.2 — la description rendait la VALEUR TECHNIQUE
+                        // La description rendait la VALEUR TECHNIQUE
                         // nue (`matiere_classe`, et « » pour un groupe sans type).
                         // Elle lit le catalogue, comme les deux fiches : plus
-                        // jamais une clé de base de données en texte d'écran (D1
-                        // de la story 42.3).
+                        // jamais une clé de base de données en texte d'écran.
                         'description' => GroupTypeCatalog::label($group->type),
                         'dn' => (string) ($group->ad_dn ?? ''),
                     ],
@@ -357,7 +356,7 @@ new class extends Component {
                             }
                         }
                         $allGroupIds = UserGroup::query()->whereIn('name', $adGroupCns)->pluck('id')->all();
-                        // Story 42.1 (review #1) — rôle dérivé sur les arêtes
+                        // Rôle dérivé sur les arêtes
                         // NOUVELLES uniquement (existantes non réécrites).
                         $sqlUser->userGroups()->sync(
                             $sqlUser->userGroupSyncPayloadWithDerivedRole($allGroupIds)
@@ -365,7 +364,7 @@ new class extends Component {
                     } elseif ($this->removeMode) {
                         $sqlUser->userGroups()->detach($selectedGroupIds);
                     } else {
-                        // Story 42.1 (review #1) — idem : rôle dérivé, nouvelles
+                        // Idem : rôle dérivé, nouvelles
                         // arêtes uniquement.
                         $sqlUser->userGroups()->syncWithoutDetaching(
                             $sqlUser->userGroupSyncPayloadWithDerivedRole($selectedGroupIds)

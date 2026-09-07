@@ -12,7 +12,7 @@ declare(strict_types=1);
  * l'espace personnel. Il n'y a ni erreur, ni trace : les droits pointent dans le vide.
  *
  * **Pourquoi pas `objectGUID` directement.** Mesuré le 2026-08-14 sur OpenCloud 7.2.3
- * (`_bmad-output/implementation-artifacts/opencloud-ad-ldap-mesures.md`) : le produit
+ * sur l'instance de test : le produit
  * rend l'octetstring en GROS-BOUTISTE BRUT à la lecture, puis le ré-encode en
  * BOUTISME MIXTE Microsoft pour la recherche inverse. Les deux conversions ne sont pas
  * réciproques ⇒ le mot de passe est validé puis le compte devient introuvable par son

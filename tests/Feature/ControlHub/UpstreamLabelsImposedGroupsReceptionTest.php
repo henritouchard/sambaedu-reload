@@ -15,24 +15,23 @@ use Illuminate\Support\Facades\Event;
 use Tests\TestCase;
 
 /**
- * Story 30.1 — Réception des labels et des groupes imposés (FR9).
+ * Réception des labels et des groupes imposés.
  *
- * Story à DEUX moitiés de nature opposée (patron 29.5) :
+ * DEUX moitiés de nature opposée :
  *
- * 1. PREUVE FR9 (non-régression du vocabulaire de ciblage amont) — AC #1, #2, #3 :
+ * 1. NON-RÉGRESSION du vocabulaire de ciblage amont :
  *    les labels (nom + `mode` libre/réservé casté `ControlHubLabelMode`) et les groupes imposés
- *    (nom + `label_name` associé/null) sont DÉJÀ reçus et persistés idempotemment par la chaîne
- *    28.1 (schéma/modèles/enum) + 28.2 (`ControlHubContractIngestionService`). Ce test VERROUILLE
+ *    (nom + `label_name` associé/null) sont reçus et persistés idempotemment par la chaîne
+ *    (schéma/modèles/enum) + (`ControlHubContractIngestionService`). Ce test VERROUILLE
  *    cette chaîne en relisant via le modèle (mode casté), pas seulement `assertDatabaseHas`.
- *    Aucune table/modèle/enum/migration n'est introduite par 30.1.
  *
- * 2. DURCISSEMENT réception (intégrité référentielle) — AC #4, #5, #6, #7 :
- *    la SEULE construction de 30.1. Un `imposed_groups[].label_name` non-nul orphelin (label non
+ * 2. DURCISSEMENT réception (intégrité référentielle) :
+ *    un `imposed_groups[].label_name` non-nul orphelin (label non
  *    déclaré dans le même contrat) est refusé par `InvalidUpstreamContractException` levée AVANT
  *    la transaction (rollback total). Un `label_name` cohérent ou nul reste légitime.
  *
  * ⚠️ Tests sur HÔTE (php8.4 + pdo_sqlite) — JAMAIS sur la VM (sans pdo_sqlite).
- * ⚠️ GARDE-FOU R3 : aucun mot « central » (vocabulaire « amont » / « label » / « groupe imposé »).
+ * ⚠️ RÈGLE DE NOMMAGE : aucun mot « central » (vocabulaire « amont » / « label » / « groupe imposé »).
  */
 class UpstreamLabelsImposedGroupsReceptionTest extends TestCase
 {
@@ -43,9 +42,7 @@ class UpstreamLabelsImposedGroupsReceptionTest extends TestCase
         return new ControlHubContractIngestionService();
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    // PREUVE FR9 — réception/persistance labels (mode casté) + groupes imposés (AC #1)
-    // ──────────────────────────────────────────────────────────────────────────
+    // Réception/persistance des labels (mode casté) + des groupes imposés
 
     public function test_labels_and_imposed_groups_are_received_with_casted_mode_and_label_name(): void
     {
@@ -81,9 +78,7 @@ class UpstreamLabelsImposedGroupsReceptionTest extends TestCase
         $this->assertNull($withoutLabel->label_name);
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    // PREUVE FR9 — idempotence : 2e réception identique = no-op (AC #2)
-    // ──────────────────────────────────────────────────────────────────────────
+    // Idempotence : 2e réception identique = no-op
 
     public function test_identical_labels_and_imposed_groups_reception_is_noop(): void
     {
@@ -115,9 +110,7 @@ class UpstreamLabelsImposedGroupsReceptionTest extends TestCase
         $this->assertSame(0, $result->imposedGroups['deleted']);
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    // PREUVE FR9 — upsert/prune réconcilie le vocabulaire avec compteurs exacts (AC #3)
-    // ──────────────────────────────────────────────────────────────────────────
+    // Upsert/prune réconcilie le vocabulaire avec des compteurs exacts
 
     public function test_labels_and_imposed_groups_are_reconciled_with_exact_counters(): void
     {
@@ -159,9 +152,7 @@ class UpstreamLabelsImposedGroupsReceptionTest extends TestCase
         $this->assertDatabaseMissing('controlhub_contract_labels', ['name' => 'nomade']);
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    // DURCISSEMENT — label_name cohérent → succès (AC #4)
-    // ──────────────────────────────────────────────────────────────────────────
+    // DURCISSEMENT — label_name cohérent → succès
 
     public function test_imposed_group_with_declared_label_is_accepted(): void
     {
@@ -200,9 +191,7 @@ class UpstreamLabelsImposedGroupsReceptionTest extends TestCase
         ]);
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    // DURCISSEMENT — label_name orphelin → rejet + rollback total (AC #5)
-    // ──────────────────────────────────────────────────────────────────────────
+    // DURCISSEMENT — label_name orphelin → rejet + rollback total
 
     public function test_imposed_group_with_orphan_label_is_rejected_without_partial_write(): void
     {
@@ -262,9 +251,7 @@ class UpstreamLabelsImposedGroupsReceptionTest extends TestCase
         ]);
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    // DURCISSEMENT — label_name nul/absent/'' → succès (AC #6)
-    // ──────────────────────────────────────────────────────────────────────────
+    // DURCISSEMENT — label_name nul/absent/'' → succès
 
     public function test_imposed_group_without_label_is_accepted(): void
     {
@@ -289,9 +276,7 @@ class UpstreamLabelsImposedGroupsReceptionTest extends TestCase
         }
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    // GARDE-FOU TRANSVERSE — standalone / sans groupes imposés → durcissement inerte (AC #7)
-    // ──────────────────────────────────────────────────────────────────────────
+    // GARDE-FOU TRANSVERSE — standalone / sans groupes imposés → durcissement inerte
 
     public function test_guard_is_inert_when_no_imposed_groups(): void
     {
@@ -317,9 +302,7 @@ class UpstreamLabelsImposedGroupsReceptionTest extends TestCase
         $this->assertDatabaseCount('controlhub_contract_imposed_groups', 0);
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
     // Nature du parc réclamée (`is_physical`)
-    // ──────────────────────────────────────────────────────────────────────────
 
     public function test_imposed_group_nature_is_received_in_its_three_states(): void
     {

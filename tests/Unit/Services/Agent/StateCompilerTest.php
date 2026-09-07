@@ -37,9 +37,9 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Tests Unit `StateCompiler` — Story 23.4 (AC1, AC2, AC3, AC5, AC6).
+ * Tests Unit `StateCompiler`.
  *
- * D2 pur via providers **factices** : le compilateur se teste sans les tables
+ * Compilateur éprouvé via des providers **factices** : il se teste sans les tables
  * wallpaper/overlay. Le test d'intégration final assemble les providers réels
  * sur un contexte réaliste (assertions structurelles iso `ContractV1Test`,
  * SANS comparer aux golden payloads illustratifs).
@@ -68,7 +68,7 @@ class StateCompilerTest extends TestCase
         parent::tearDown();
     }
 
-    // ── Enveloppe v1 (AC5) ───────────────────────────────────────────────
+    // Enveloppe v1
 
     #[Test]
     public function envelope_has_schema_ttl_default_and_three_scopes_even_without_any_provider(): void
@@ -89,7 +89,7 @@ class StateCompilerTest extends TestCase
     #[Test]
     public function ttl_seconds_delegates_to_the_injected_resolver(): void
     {
-        // Story 43.3 (AC1, AC4) — `compile()` remplace la constante par
+        // `compile` remplace la constante par
         // `ttlResolver->ttlSeconds($ctx)` : la valeur de l'enveloppe DOIT être
         // exactement celle renvoyée par le résolveur injecté, court ou non.
         $state = $this->compiler([], $this->stubTtlResolver(90))->compile($this->machineOnlyContext());
@@ -138,7 +138,7 @@ class StateCompilerTest extends TestCase
         $state = $this->compiler([$provider])->compile($this->machineOnlyContext());
 
         $item = $state[StateContract::SCOPE_MACHINE][0];
-        // Story 27.8 : item à 4 clés (clé `mode` retirée — STRICT inconditionnel).
+        // Item à 4 clés (clé `mode` retirée — STRICT inconditionnel).
         self::assertSame(['type', 'semantics', 'payload', 'hash'], array_keys($item));
         self::assertSame('demo', $item['type']);
         self::assertSame('exclusive', $item['semantics']);
@@ -146,7 +146,7 @@ class StateCompilerTest extends TestCase
         self::assertSame($this->hasher->hashItem($item), $item['hash']);
     }
 
-    // ── AC1 — registry : un type = zéro modification du compilateur ──────
+    // — registry : un type = zéro modification du compilateur
 
     #[Test]
     public function a_new_fake_provider_is_served_without_any_compiler_change(): void
@@ -194,7 +194,7 @@ class StateCompilerTest extends TestCase
         );
     }
 
-    // ── AC2 — union aggregate + spécificité exclusive ─────────────────────
+    // — union aggregate + spécificité exclusive
 
     #[Test]
     public function aggregate_unions_all_mailles_ordered_by_source_id(): void
@@ -217,7 +217,7 @@ class StateCompilerTest extends TestCase
     #[Test]
     public function exclusive_specificity_full_chain_each_maille_beats_the_less_specific(): void
     {
-        // Story 27.3 (D-Q3) — INVERSION GLOBALE `logique > physique` :
+        // INVERSION GLOBALE `logique > physique` :
         // user > groupes user > poste > WG LOGIQUE > WG PHYSIQUE > broadcast.
         // (Chaîne du moins spécifique au plus spécifique : chaque ajout doit
         // battre tous les précédents → physique avant logique ici.)
@@ -248,7 +248,7 @@ class StateCompilerTest extends TestCase
         }
     }
 
-    // ── AC3 — conflit intra-maille ────────────────────────────────────────
+    // — conflit intra-maille
 
     #[Test]
     public function exclusive_conflict_same_maille_most_recent_wins_and_warning_is_logged(): void
@@ -293,7 +293,7 @@ class StateCompilerTest extends TestCase
     {
         // Deux règles modifiées dans la MÊME seconde : la récence se compare
         // en microsecondes — le tiebreak id ne doit PAS faire gagner la plus
-        // ancienne sous prétexte que getTimestamp() tronque (review 23.4).
+        // ancienne sous prétexte que getTimestamp() tronque (review).
         $this->captureAgentWarnings();
         $provider = $this->fakeProvider('wp', ResourceSemantics::Exclusive, StateScope::Session, [
             new StateCandidate(StateMaille::Broadcast, ['v' => 'older-high-id'], Carbon::parse('2026-06-10 10:00:00.100000'), 9),
@@ -321,7 +321,7 @@ class StateCompilerTest extends TestCase
         self::assertCount(0, $warnings, 'un conflit dans une maille battue n\'arbitre rien');
     }
 
-    // ── Story 27.1 — dédup aggregate par contenu (décision n° 4) ──────────
+    // — dédup aggregate par contenu
 
     #[Test]
     public function aggregate_dedups_identical_payloads_from_different_mailles(): void
@@ -358,7 +358,7 @@ class StateCompilerTest extends TestCase
         self::assertCount(2, $items);
     }
 
-    // ── Story 27.2 — printers : dédup réutilisée + défaut exclusif ─────────
+    // — printers : dédup réutilisée + défaut exclusif
 
     #[Test]
     public function printers_same_printer_on_two_mailles_dedups_and_default_survives(): void
@@ -384,7 +384,7 @@ class StateCompilerTest extends TestCase
                 // LE défaut résolu (seule imprimante flaguée) → is_default=true
                 // sur les DEUX candidats imp-shared (le défaut est résolu une
                 // fois GLOBALEMENT par cups_name) → payloads identiques → dédup.
-                // (D-Q3 logique>physique ne change rien ici : un seul défaut.)
+                // (la précédence logique>physique ne change rien ici : un seul défaut.)
                 'is_default' => $g->id === $room->id,
             ]);
         }
@@ -419,14 +419,14 @@ class StateCompilerTest extends TestCase
         self::assertCount(1, $defaults);
     }
 
-    // ── Story 27.3 — exclusive PAR IDENTITÉ DE CLÉ (registry) ─────────────
+    // — exclusive PAR IDENTITÉ DE CLÉ (registry)
 
     #[Test]
     public function keyed_exclusive_same_key_most_specific_maille_wins_logical_beats_physical(): void
     {
         // Même clé {hive,path,name} sur DEUX mailles (WG physique + WG logique)
         // avec des valeurs différentes → la plus spécifique gagne POUR CETTE CLÉ.
-        // D-Q3 : WG LOGIQUE bat WG PHYSIQUE.
+        // WG LOGIQUE bat WG PHYSIQUE.
         $provider = $this->keyedExclusiveProvider('registry', StateScope::Session, [
             new StateCandidate(StateMaille::PhysicalGroup, $this->regPayload('HKCU', 'P', 'Foo', 0), now(), 1),
             new StateCandidate(StateMaille::LogicalGroup, $this->regPayload('HKCU', 'P', 'Foo', 1), now(), 2),
@@ -441,7 +441,7 @@ class StateCompilerTest extends TestCase
     #[Test]
     public function keyed_exclusive_override_beats_broadcast_default_same_key(): void
     {
-        // Story 27.3ter — même clé : défaut Broadcast (rang 5) + override de parc
+        // Même clé : défaut Broadcast (rang 5) + override de parc
         // (maille logique). L'override GAGNE via la précédence existante (zéro
         // modif compilateur).
         $provider = $this->keyedExclusiveProvider('registry', StateScope::Session, [
@@ -458,7 +458,7 @@ class StateCompilerTest extends TestCase
     #[Test]
     public function keyed_exclusive_broadcast_default_emitted_when_no_override(): void
     {
-        // Story 27.3ter — une clé SANS override pour aucune maille du poste : le
+        // Une clé SANS override pour aucune maille du poste : le
         // défaut Broadcast est émis (la clé est gérée à sa valeur par défaut).
         $provider = $this->keyedExclusiveProvider('registry', StateScope::Session, [
             new StateCandidate(StateMaille::Broadcast, $this->regPayload('HKCU', 'P', 'Foo', 0), now(), 1),
@@ -473,8 +473,8 @@ class StateCompilerTest extends TestCase
     #[Test]
     public function keyed_exclusive_override_logical_beats_override_physical_same_key(): void
     {
-        // Story 27.3ter — deux overrides (salle physique + parc logique) sur la
-        // MÊME clé + le défaut Broadcast : logique > physique > broadcast (D-Q3).
+        // Deux overrides (salle physique + parc logique) sur la
+        // MÊME clé + le défaut Broadcast : logique > physique > broadcast.
         $provider = $this->keyedExclusiveProvider('registry', StateScope::Session, [
             new StateCandidate(StateMaille::Broadcast, $this->regPayload('HKCU', 'P', 'Foo', 0), now(), 1),
             new StateCandidate(StateMaille::PhysicalGroup, $this->regPayload('HKCU', 'P', 'Foo', 2), now(), 1),
@@ -539,7 +539,7 @@ class StateCompilerTest extends TestCase
         self::assertSame('b', $items[0]['payload']['asset'], 'le WG logique gagne (D-Q3)');
     }
 
-    // ── AC5 — déterminisme (protège l'ETag de 23.5) ───────────────────────
+    // — déterminisme (protège l'ETag)
 
     #[Test]
     public function two_compilations_at_different_instants_yield_same_state_hash(): void
@@ -562,7 +562,7 @@ class StateCompilerTest extends TestCase
         );
     }
 
-    // ── AC2 — TargetContext : résolution des appartenances ────────────────
+    // — TargetContext : résolution des appartenances
 
     #[Test]
     public function target_context_resolves_memberships_from_postgres_relations(): void
@@ -594,7 +594,7 @@ class StateCompilerTest extends TestCase
         self::assertSame([], $ctx->userGroupIds);
     }
 
-    // ── Intégration — providers réels + factice sur contexte réaliste ─────
+    // Intégration — providers réels + factice sur contexte réaliste
 
     #[Test]
     public function full_compile_with_real_providers_and_a_fake_one_respects_contract_invariants(): void
@@ -655,10 +655,10 @@ class StateCompilerTest extends TestCase
             }
         }
 
-        // Le provider factice est servi (AC1) — en plus des deux réels.
+        // Le provider factice est servi — en plus des deux réels.
         self::assertSame('fake_type', $state[StateContract::SCOPE_MACHINE][0]['type']);
 
-        // Session : 4 overlays (identity 24.4 + union de 3 signaux, expiré
+        // Session : 4 overlays (identity + union de 3 signaux, expiré
         // exclu) + 1 wallpaper (user gagne).
         $types = array_count_values(array_column($state[StateContract::SCOPE_SESSION], 'type'));
         self::assertSame(4, $types['overlay']);
@@ -668,7 +668,7 @@ class StateCompilerTest extends TestCase
             ['asset' => $userAsset->filename, 'checksum' => $userAsset->checksum],
             $wallpaper['payload'],
         );
-        // L'identity (sourceId 0) sort en TÊTE de l'union overlay (24.4).
+        // L'identity (sourceId 0) sort en TÊTE de l'union overlay.
         self::assertSame(
             'identity',
             collect($state[StateContract::SCOPE_SESSION])->firstWhere('type', 'overlay')['payload']['kind'],
@@ -680,7 +680,7 @@ class StateCompilerTest extends TestCase
         );
     }
 
-    // ── Story 28.3 — tier amont : garde-fous compilateur/décorateur ───────
+    // — tier amont : garde-fous compilateur/décorateur
 
     #[Test]
     public function specificity_covers_all_mailles_and_upstream_is_the_minimum(): void
@@ -711,10 +711,10 @@ class StateCompilerTest extends TestCase
             'specificity(Upstream) < specificity(User) — l\'amont prime sur le local (FR2)',
         );
 
-        // Story 29.3 — la maille AMONT PERMISSIVE est la MOINS spécifique de toute
+        // La maille AMONT PERMISSIVE est la MOINS spécifique de toute
         // la chaîne (rang maximum, STRICTEMENT > Broadcast) : un item `permissive`
         // est un plancher que toute maille locale — défaut diffusé inclus —
-        // surcharge (FR4). Distincte de `Upstream` (locked) qui reste inbattable.
+        // surcharge. Distincte de `Upstream` (locked) qui reste inbattable.
         self::assertSame(
             max($ranks),
             $ranks[StateMaille::UpstreamPermissive->value],
@@ -752,10 +752,10 @@ class StateCompilerTest extends TestCase
         self::assertCount(2, $items, 'clés distinctes accumulées au travers du décorateur (marqueur préservé)');
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────
+    // Helpers
 
     /**
-     * Story 43.3 (piège n°7) : le résolveur TTL est un STUB par défaut (aucune
+     * Le résolveur TTL est un STUB par défaut (aucune
      * requête SQL en Unit — le critère SQL est couvert en Feature par
      * `AgentTtlResolverTest`). Défaut 3600 : iso comportement historique
      * (non-régression de la constante `ttl_seconds` ex-ligne 74).

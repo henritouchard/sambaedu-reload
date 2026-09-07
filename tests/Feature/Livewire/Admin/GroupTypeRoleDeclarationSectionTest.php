@@ -26,8 +26,8 @@ use Tests\TestCase;
 use Tests\Traits\InstallsCollegeRoleProfile;
 
 /**
- * Story 62.3 — AC8 : la section « Rôles disponibles » de la modale d'édition d'un
- * type, et AC5 : le refus de retrait, en TOUT-OU-RIEN.
+ * La section « Rôles disponibles » de la modale d'édition d'un
+ * type, et : le refus de retrait, en TOUT-OU-RIEN.
  *
  * Le test qui compte le plus ici est
  * {@see self::a_refused_removal_writes_absolutely_nothing()} : un refus tardif,
@@ -47,7 +47,7 @@ class GroupTypeRoleDeclarationSectionTest extends TestCase
         $this->withoutVite();
         $this->seed(GroupRoleSeeder::class);
         $this->seed(GroupTypeSeeder::class);
-        // Story 62.3 — l'écran édite des déclarations ; la migration n'en pose
+        // L'écran édite des déclarations ; la migration n'en pose
         // plus. On installe le profil scolaire pour disposer d'un état de départ
         // réaliste (classe déclarée avec surcharges, projet déclaré partiellement,
         // cours sans aucune déclaration).
@@ -78,10 +78,6 @@ class GroupTypeRoleDeclarationSectionTest extends TestCase
         return (int) GroupType::where('key', $key)->firstOrFail()->id;
     }
 
-    // =========================================================================
-    // Accès — la double garde, prouvée par un retrait EN COURS DE SESSION
-    // =========================================================================
-
     #[Test]
     public function a_non_admin_cannot_reach_the_section(): void
     {
@@ -98,7 +94,7 @@ class GroupTypeRoleDeclarationSectionTest extends TestCase
     {
         // Fermeture CLASSIQUE et capture par RÉFÉRENCE : une fonction fléchée
         // capturerait `$allowed` par valeur, le droit ne serait jamais retiré, et
-        // le test passerait sans rien prouver (patron 62.1/62.2).
+        // le test passerait sans rien prouver.
         $allowed = true;
         Gate::before(function ($user, string $ability) use (&$allowed) {
             return ($ability === 'server.admin' && $allowed) ? true : null;
@@ -123,10 +119,6 @@ class GroupTypeRoleDeclarationSectionTest extends TestCase
             DB::table('group_type_roles')->where('group_type_key', 'projet')->count(),
         );
     }
-
-    // =========================================================================
-    // AC8 — l'état de la section
-    // =========================================================================
 
     #[Test]
     public function opening_a_declared_type_loads_its_declarations_and_local_labels(): void
@@ -183,10 +175,6 @@ class GroupTypeRoleDeclarationSectionTest extends TestCase
             'un type neuf naît en régime de repli, sans déclaration',
         );
     }
-
-    // =========================================================================
-    // AC8 — l'enregistrement du delta
-    // =========================================================================
 
     #[Test]
     public function saving_applies_additions_removals_and_local_labels_at_once(): void
@@ -246,10 +234,6 @@ class GroupTypeRoleDeclarationSectionTest extends TestCase
             DB::table('group_type_roles')->where('group_role_key', 'inexistant')->count(),
         );
     }
-
-    // =========================================================================
-    // AC5 — le refus de retrait, en TOUT-OU-RIEN
-    // =========================================================================
 
     #[Test]
     public function a_refused_removal_writes_absolutely_nothing(): void
@@ -312,10 +296,6 @@ class GroupTypeRoleDeclarationSectionTest extends TestCase
         $this->assertSame(['member', 'manager'], RoleCatalog::assignableKeys('classe'));
     }
 
-    // =========================================================================
-    // AC8 — la liste et l'encart des rôles
-    // =========================================================================
-
     #[Test]
     public function the_list_shows_the_declared_roles_of_each_type(): void
     {
@@ -338,10 +318,9 @@ class GroupTypeRoleDeclarationSectionTest extends TestCase
     }
 
     /**
-     * Clôture de la review 62.1 #4 : l'onglet « Rôles » renvoie au mécanisme.
+     * L'onglet « Rôles » renvoie au mécanisme.
      *
-     * Le renvoi vivait dans un bandeau permanent en tête d'onglet ; il vit
-     * désormais SOUS LE CHAMP « Libellé », c'est-à-dire au moment précis où
+     * Le renvoi vit SOUS LE CHAMP « Libellé », c'est-à-dire au moment précis où
      * l'administrateur saisit la valeur qu'un type de groupe peut surcharger.
      * Ce qui est épinglé ici est le RENVOI, pas son emplacement — mais il doit
      * exister : sans lui, on renomme un rôle en croyant avoir renommé partout.
@@ -362,7 +341,7 @@ class GroupTypeRoleDeclarationSectionTest extends TestCase
 
     /**
      * Une clé de type HÉRITÉE (non-slug) est éditable ET déclarable depuis
-     * l'écran — le scénario que la review 62.2 #1 a rendu jouable.
+     * l'écran.
      */
     #[Test]
     public function an_inherited_type_key_is_declarable_from_the_screen(): void
@@ -391,10 +370,6 @@ class GroupTypeRoleDeclarationSectionTest extends TestCase
         // `custom`, son homonyme de casse, n'a rien attrapé.
         $this->assertSame([], GroupTypeRole::declaredFor('custom'));
     }
-
-    // =========================================================================
-    // Suggestions de libellé — du CONSTAT, jamais un vocabulaire livré
-    // =========================================================================
 
     /**
      * Rien n'empêchait « Prof », « Professeur » et « Enseignant » de coexister sur

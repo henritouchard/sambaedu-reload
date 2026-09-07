@@ -219,10 +219,6 @@ new class extends Component
         $this->resetPage();
     }
 
-    // ========================================
-    // Ajouter les apps sélectionnées à un profil
-    // ========================================
-
     public function addAppsToProfile(): void
     {
         if (empty($this->selectedApps)) {
@@ -294,10 +290,6 @@ new class extends Component
         $this->selectedProfileIds = [];
         $this->selectedApps = [];
     }
-
-    // ========================================
-    // Déployer les apps sélectionnées sur un groupe de postes
-    // ========================================
 
     public function deployApps(): void
     {
@@ -395,10 +387,6 @@ new class extends Component
     {
         $this->resetPage();
     }
-
-    // ========================================
-    // AppStore Modal
-    // ========================================
 
     #[On('open-app-store-modal')]
     public function openAppStoreModal(): void

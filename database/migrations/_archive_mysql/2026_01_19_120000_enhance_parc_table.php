@@ -44,7 +44,6 @@ return new class extends Migration {
             // Timestamps Laravel
             $table->timestamps();
 
-            // Index
             $table->index('parent_id');
         });
 

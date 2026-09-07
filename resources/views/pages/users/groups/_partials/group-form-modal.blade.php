@@ -17,7 +17,7 @@ use Illuminate\Support\Facades\Log;
  * Création seule : l'édition (membres, quota, capacités, PP, partage de classe)
  * reste une page dédiée, trop riche pour une modale.
  *
- * **Story 62.2 — le choix de type vient du CATALOGUE, et c'est un changement de
+ * **le choix de type vient du CATALOGUE, et c'est un changement de
  * comportement ASSUMÉ.** La liste d'`<option>` était écrite en dur ici, et
  * divergeait déjà de celle de l'édition SQL. Depuis la bascule, les types
  * proposés sont ceux de `/admin/settings/groups` — donc `role` et `function`
@@ -67,7 +67,7 @@ new class extends Component {
 
         $validated = $this->validate([
             'name' => ['required', 'string', 'max:255', 'regex:/^[a-zA-Z0-9._@-]+$/'],
-            // Story 62.2 — le vocabulaire vient du CATALOGUE, plus d'une liste
+            // Le vocabulaire vient du CATALOGUE, plus d'une liste
             // d'`<option>` recopiée. Le service refuse de toute façon une valeur
             // hors catalogue ; la règle `in:` est là pour que le refus se lise
             // sous le champ plutôt qu'en toast d'exception.

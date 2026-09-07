@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Filesystem\Backend\Posix;
 
 /**
- * Story 60.4 — la NEUTRALISATION d'une sortie d'erreur système avant qu'elle
+ * La NEUTRALISATION d'une sortie d'erreur système avant qu'elle
  * n'entre dans un rapport.
  *
  * **Pourquoi cette classe existe.** Le contrat exige qu'un échec NOMME sa cause,
@@ -17,8 +17,8 @@ namespace App\Services\Filesystem\Backend\Posix;
  * Sans elle, la neutralité des rapports serait vraie sur le chemin heureux (où
  * aucun geste n'échoue, donc aucun texte système ne remonte) et fausse partout
  * ailleurs — c'est-à-dire précisément dans les cas pour lesquels le `detail`
- * existe. C'est la signature de défaut que cet epic rencontre à chaque story ;
- * elle se ferme ici, au point exact où le texte franchit la ligne.
+ * existe. C'est une signature de défaut récurrente ; elle se ferme ici, au point
+ * exact où le texte franchit la ligne.
  *
  * Le remplacement garde la PHRASE (« argument invalide », « permission refusée »,
  * « aucun espace disponible ») et jette le VOCABULAIRE. C'est ce qui reste

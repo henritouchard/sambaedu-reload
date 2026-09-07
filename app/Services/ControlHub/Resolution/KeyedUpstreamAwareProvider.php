@@ -7,7 +7,7 @@ namespace App\Services\ControlHub\Resolution;
 use App\Services\Agent\Contracts\KeyedExclusiveProvider;
 
 /**
- * Story 28.3 — Variante du {@see UpstreamAwareProvider} pour un provider interne
+ * Variante du {@see UpstreamAwareProvider} pour un provider interne
  * qui implémente {@see KeyedExclusiveProvider} (ex. `registry`).
  *
  * RELAIE `exclusiveKey()` au provider interne : sans ce relais,

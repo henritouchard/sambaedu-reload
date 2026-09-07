@@ -62,7 +62,7 @@ new #[Title('Déploiement WPKG — Tableau de bord')] class extends Component {
 
     public function getIncidentsProperty()
     {
-        // Story 15.5 / Fix #11 — déduplication par workstation_id via le service.
+        // Déduplication par workstation_id via le service.
         $statuses = $this->severityFilter !== ''
             ? [$this->severityFilter]
             : ['partial', 'failed', 'unknown'];

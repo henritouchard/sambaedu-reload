@@ -223,11 +223,6 @@ class SambaEduConfig
     /**
      * Persiste une clé/valeur dans `/etc/sambaedu/sambaedu.conf` (natif).
      *
-     * Story 16.3b (correctifs post-review 2026-05-12, décision Henri option A
-     * complète) : remplacer le shim `set_config` non-persistant
-     * (`_shim_log_unimplemented` qui modifie le tableau en mémoire uniquement)
-     * par une implémentation native qui écrit réellement sur disque.
-     *
      * **Stratégie d'écriture** : iso-legacy `set_config` (sambaedu/includes/config.inc.php:434)
      * = on relit l'INI brut, on modifie la clé, on réécrit le fichier dans son
      * intégralité. **Trade-off** : les commentaires originaux sont perdus car
@@ -246,7 +241,7 @@ class SambaEduConfig
      * cible (mode `0660 root:www-data` typique SambaEdu). Si l'écriture
      * échoue, on log error et retourne sans throw — le caller décide si
      * fail-fast ou retry au prochain appel. Le legacy fait `die()` en cas
-     * d'échec, ce qui bypass `finally` (cf. tech-debt #3) — on évite ce
+     * d'échec, ce qui bypass `finally` — on évite ce
      * comportement.
      *
      * **Cache** : `reload()` invalide le cache statique pour que la valeur

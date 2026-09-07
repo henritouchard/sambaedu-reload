@@ -132,9 +132,7 @@ class SyncShortcutJob extends BaseControlHubJob
         ];
     }
 
-    // ═══════════════════════════════════════════════════════════════
     // Mapping payload → modèle
-    // ═══════════════════════════════════════════════════════════════
 
     /**
      * Applique les champs du payload normalisé (flat) au modèle Shortcut.
@@ -156,7 +154,6 @@ class SyncShortcutJob extends BaseControlHubJob
             }
         }
 
-        // controlhub_version
         if (array_key_exists('controlhub_version', $payload)) {
             $shortcut->controlhub_version = $payload['controlhub_version'];
         }
@@ -182,9 +179,7 @@ class SyncShortcutJob extends BaseControlHubJob
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════
     // Gestion de l'icône
-    // ═══════════════════════════════════════════════════════════════
 
     /**
      * Traite le champ icon du payload.
@@ -275,9 +270,7 @@ class SyncShortcutJob extends BaseControlHubJob
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════
     // Relations
-    // ═══════════════════════════════════════════════════════════════
 
     /**
      * Sync les workstation_groups par controlhub_id.
@@ -307,9 +300,7 @@ class SyncShortcutJob extends BaseControlHubJob
         $shortcut->workstationGroups()->sync($groupIds);
     }
 
-    // ═══════════════════════════════════════════════════════════════
     // Utilitaires
-    // ═══════════════════════════════════════════════════════════════
 
     /**
      * Vérifie si l'entité locale est à jour par rapport à la version ControlHub.

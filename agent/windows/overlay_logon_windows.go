@@ -9,18 +9,18 @@ import (
 	"sambaedu/agent/shared"
 )
 
-// Écriture de overlay.json par le SERVICE SYSTEM au logon (Story 27.1bis,
-// volet 2 — D1/D2). Déclenchée par le case svc.SessionChange / EventType
-// WTS_SESSION_LOGON (0x5) de service_windows.go. RÉUTILISE le socle 24.6 :
+// Écriture de overlay.json par le SERVICE SYSTEM au logon.
+// Déclenchée par le case svc.SessionChange / EventType
+// WTS_SESSION_LOGON (0x5) de service_windows.go. RÉUTILISE le socle :
 // résolution user/SID via le token de session (WTSQueryUserToken), composition
 // via shared.OverlayDocumentForSession (logique pure, ComposeOverlayDocument
 // inchangé), écriture atomique WriteFileAtomic, ACL <SID>:R via icacls.
 //
 // Contrairement au compagnon (droits user, falsifiable), c'est ici SYSTEM qui
-// possède le fichier — l'élève lit, ne falsifie jamais (NFR5). L'overlay a
-// QUITTÉ la map du compagnon (D1, companion_windows.go).
+// possède le fichier — l'élève lit, ne falsifie jamais. L'overlay a
+// QUITTÉ la map du compagnon (companion_windows.go).
 //
-// NFR7 : aucune dépendance AD — l'identité de session vient du token WTS (LSA),
+// Aucune dépendance AD — l'identité de session vient du token WTS (LSA),
 // jamais de l'annuaire.
 //
 // Tout est best-effort/gracieux : rien ne doit jamais bloquer ni faire échouer
@@ -28,7 +28,7 @@ import (
 // case appelant recover déjà).
 
 // writeOverlayForAllSessions : sur un logon, ré-énumère les sessions
-// interactives (WTS vet-clean, 24.6) et écrit overlay.json pour chacune. La
+// interactives (WTS vet-clean) et écrit overlay.json pour chacune. La
 // nouvelle session y apparaît ; les autres re-convergent (idempotent — même
 // document = même fichier). Gracieux de bout en bout.
 func writeOverlayForAllSessions(store *shared.Store, computerName string, log *shared.Logger) {
@@ -59,7 +59,7 @@ func writeOverlayAtLogon(sessionID uint32, store *shared.Store, computerName str
 	defer userToken.Close()
 
 	// SID de l'utilisateur (clé des ACL et du cache per-SID) — même
-	// sous-système LSA que LookupSID/currentProcessSID (cohérence 24.6).
+	// sous-système LSA que LookupSID/currentProcessSID (cohérence).
 	tokenUser, err := userToken.GetTokenUser()
 	if err != nil {
 		log.Warningf("Overlay au logon : résolution du SID de session impossible (%v) — écriture sautée.", err)
@@ -68,7 +68,7 @@ func writeOverlayAtLogon(sessionID uint32, store *shared.Store, computerName str
 	}
 	sid := tokenUser.User.Sid.String()
 
-	// Liste blanche cohérente avec l'énumération 24.6 : seuls les comptes
+	// Liste blanche cohérente avec l'énumération : seuls les comptes
 	// users réels (S-1-5-21-) ont un cache d'état à composer.
 	if !isInteractiveUserSID(sid) {
 		log.Debugf("Overlay au logon : SID %s hors liste blanche (S-1-5-21-) — ignoré.", sid)
@@ -77,11 +77,11 @@ func writeOverlayAtLogon(sessionID uint32, store *shared.Store, computerName str
 	}
 
 	// %LOCALAPPDATA% de la session, résolu sous SYSTEM via le PROFIL du token
-	// (D2 — chemin per-user conservé %LOCALAPPDATA%\SambaEdu\Agent\overlay.json,
-	// la skin ne change pas de JsonPath). LocalAppData = <profil>\AppData\Local.
+	// (chemin per-user %LOCALAPPDATA%\SambaEdu\Agent\overlay.json, celui que
+	// la skin lit). LocalAppData = <profil>\AppData\Local.
 	profileDir, err := userToken.GetUserProfileDirectory()
 	if err != nil || profileDir == "" {
-		// Fallback documenté (D2/Q2) : profil non résoluble sous SYSTEM
+		// Fallback : profil non résoluble sous SYSTEM
 		// (sessions atypiques) → chemin commun %ProgramData%\SambaEdu\overlay.json.
 		// Limite assumée : perte du per-user multi-session (la skin garde son
 		// JsonPath %LOCALAPPDATA% — ce fallback n'est PAS rendu par défaut ;
@@ -119,12 +119,12 @@ func writeOverlayDocument(overlayPath, sid string, store *shared.Store, computer
 		return
 	}
 	// ACL <SID>:R, SYSTEM/Admins full, héritage retiré — SYSTEM propriétaire,
-	// l'élève LIT mais ne falsifie jamais (NFR5). Posée sur le FICHIER (pas le
+	// l'élève LIT mais ne falsifie jamais. Posée sur le FICHIER (pas le
 	// dossier user, qui appartient au user).
 	//
-	// Micro-fenêtre TOCTOU (#4, limite assumée) : entre WriteFileAtomic et la
+	// Micro-fenêtre TOCTOU (limite assumée) : entre WriteFileAtomic et la
 	// pose d'ACL, le fichier existe brièvement avec l'ACL héritée du dossier
-	// user. C'est le MÊME pattern acté en 24.6 (écriture atomique puis durcissage
+	// user. C'est le MÊME pattern acté (écriture atomique puis durcissage
 	// ACL) ; le risque est borné (fenêtre sub-milliseconde, fichier possédé
 	// SYSTEM, écrasé à chaque logon) et l'ACL finale prime. Non corrigé ici.
 	if err := setOverlayFileACL(overlayPath, sid); err != nil {
@@ -136,7 +136,7 @@ func writeOverlayDocument(overlayPath, sid string, store *shared.Store, computer
 }
 
 // isInteractiveUserSID : liste blanche S-1-5-21- (compte user réel, domaine ou
-// local) — cohérente avec enumerateInteractiveSessions (24.6).
+// local) — cohérente avec enumerateInteractiveSessions.
 func isInteractiveUserSID(sid string) bool {
 	const prefix = "S-1-5-21-"
 

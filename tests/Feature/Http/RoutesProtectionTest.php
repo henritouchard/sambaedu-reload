@@ -15,7 +15,7 @@ use Tests\TestCase;
 use Tests\Traits\CreatesPermissionSchema;
 
 /**
- * Story 7.2 (AC8, AC11) — Protection middleware `can:` sur routes sensibles.
+ * Protection middleware `can:` sur routes sensibles.
  *
  * Vérifie :
  *  - accès direct URL sans permission → 403
@@ -76,13 +76,13 @@ class RoutesProtectionTest extends TestCase
             'parc settings'     => ['/app/parc-settings', 'computer.install'],
             'sync from ad'      => ['/admin/sync-from-ad', 'server.admin'],
             'file policy'       => ['/admin/settings/files', 'server.admin'],
-            // Story 34.2 — lecteurs réseau gérés : feature réservée admin+refnum,
-            // gardée par la permission dédiée `networkshare.view` (review #4). La
+            // Lecteurs réseau gérés : feature réservée admin+refnum,
+            // gardée par la permission dédiée `networkshare.view`. La
             // LISTE est désormais l'onglet « Lecteurs réseaux » de /admin/settings/files
-            // (/admin/shares redirige) ; seul le DÉTAIL reste une route gardée.
+            // (admin/shares redirige) ; seul le DÉTAIL reste une route gardée.
             'shares show'       => ['/admin/shares/1', 'networkshare.view'],
-            // Story 36.4 — règles d'accès aux dossiers : gate policy-backed
-            // `viewAny-folderrule` (correction review #1/#2). Le droit global
+            // Règles d'accès aux dossiers : gate policy-backed
+            // `viewAny-folderrule`. Le droit global
             // `folderrule.view` franchit le gate ; sans lui → 403.
             'folder rules listing' => ['/app/folder-rules', 'folderrule.view'],
             'folder rules show'    => ['/app/folder-rules/1', 'folderrule.view'],
@@ -126,7 +126,7 @@ class RoutesProtectionTest extends TestCase
      * une WorkstationGroup physique (hiérarchie exclusion > global >
      * délégation positive scopée, cf. `PermissionService`).
      *
-     * Story 7.1 (QA e2e 2026-04-24) — comble le trou de couverture :
+     * Comble le trou de couverture :
      * les tests `test_route_returns_403_without_permission` et
      * `test_route_passes_permission_middleware_when_granted` testaient
      * uniquement les droits globaux Spatie. Un user avec UNIQUEMENT une
@@ -141,7 +141,7 @@ class RoutesProtectionTest extends TestCase
             'parc group show'        => ['/app/parc/groups/1', 'computer.view'],
             'parc machine show'      => ['/app/parc/machines/1', 'computer.view'],
             'parc schedules runs'    => ['/app/parc/groups/1/schedules/1/runs', 'computer.view'],
-            // Story 36.4 (correction review #1/#2) — un délégué scopé parc, avec
+            // Un délégué scopé parc, avec
             // UNIQUEMENT `folderrule.manage` sur une salle et AUCUN droit global,
             // atteint la liste des règles (gate `viewAny-folderrule` accepte le
             // scoping, comme `/app/parc`).

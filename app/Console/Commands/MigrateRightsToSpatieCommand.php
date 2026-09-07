@@ -12,7 +12,7 @@ use Throwable;
 /**
  * Commande artisan one-shot — migre les assignations de droits legacy (groupes
  * LDAP dans `rights_rdn` + délégations scopées dans `delegations_rdn`) vers
- * les rôles/délégations Spatie (Story 7.3).
+ * les rôles/délégations Spatie.
  *
  * Usage :
  *   php artisan sambaedu:migrate-rights-to-spatie --dry-run    # Simulation
@@ -78,9 +78,9 @@ class MigrateRightsToSpatieCommand extends Command
         $this->newLine();
 
         // Rapport partiel par défaut : si la migration plante avant retour, on
-        // veut quand même persister un log diagnostiquable (Review #5 — try/finally
+        // veut quand même persister un log diagnostiquable. Le `try/finally`
         // garantit la trace même en cas d'exception, sans transaction DB englobante
-        // qui interagirait mal avec les observers Spatie / cache permissions).
+        // qui interagirait mal avec les observers Spatie / cache permissions.
         $report = [
             'users_scanned'        => 0,
             'roles_assigned'       => 0,

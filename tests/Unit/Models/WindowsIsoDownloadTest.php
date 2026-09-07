@@ -13,7 +13,7 @@ use Tests\TestCase;
 use Tests\Traits\CreatesWindowsIsoSchema;
 
 /**
- * Story 3.6 — AC1.2 — Tests unitaires du modèle WindowsIsoDownload.
+ * Tests unitaires du modèle WindowsIsoDownload.
  */
 class WindowsIsoDownloadTest extends TestCase
 {
@@ -110,7 +110,7 @@ class WindowsIsoDownloadTest extends TestCase
     #[Test]
     public function it_reports_upload_reinject_and_skips_download(): void
     {
-        // Story 3.10 — un download URL télécharge (curl), un upload et une
+        // Un download URL télécharge (curl), un upload et une
         // ré-injection sautent la phase download (fichier déjà sur disque).
         $url = WindowsIsoDownload::factory()->make(['source' => WindowsIsoDownload::SOURCE_URL]);
         self::assertFalse($url->isUpload());

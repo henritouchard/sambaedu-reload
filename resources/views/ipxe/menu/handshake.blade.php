@@ -3,7 +3,7 @@ params
 param mac ${net0/mac}
 param uuid ${uuid}
 param product ${product}
-{{-- Story 4.10 - propagation creds dans le preambule handshake : si un endpoint
+{{-- Propagation creds dans le preambule handshake : si un endpoint
      protege (admin, enrollment...) recoit un mac/uuid vide et bascule ici, on
      re-chaine en conservant username/password (deja saisis via `login`). Vides
      au premier boot (pas encore de login) -> ignores par l'auth. Sans ca, toute

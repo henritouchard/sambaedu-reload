@@ -13,7 +13,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 38.7 / AC9 — lecteur mutualisé du signal « ce parc legacy porte-t-il des
+ * Lecteur mutualisé du signal « ce parc legacy porte-t-il des
  * applications ? ». C'est ce signal (même clé que le linker) qui conditionne la
  * création d'un WorkstationGroup logique (étape 5) et d'un AppProfile (étape 7).
  */

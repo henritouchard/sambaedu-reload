@@ -22,11 +22,11 @@ const (
 
 // Agent : boucle de convergence portée machine (service SYSTEM).
 //
-// Cycle (1 itération, iso-24.2) :
+// Cycle (1 itération) :
 //  1. token relu sur disque (la rotation peut l'avoir changé) ;
 //  2. GET /api/v1/agent/state avec If-None-Match (ETag verbatim) ;
 //  3. 200 → persister cache\state.json + cache\etag.txt ; 304 → cache valide ;
-//  4. construire le rapport (hostname COURT, uuid SMBIOS, items: [] en 24.5) ;
+//  4. construire le rapport (hostname COURT, uuid SMBIOS, items: []) ;
 //  5. POST /api/v1/agent/report ;
 //  6. attendre (intervalle 3600 s + jitter ±10 %, ou backoff).
 type Agent struct {
@@ -34,7 +34,7 @@ type Agent struct {
 	Client *Client
 	Log    *Logger
 
-	// Hostname : nom COURT du poste (defer 24.1 #8 — jamais le FQDN).
+	// Hostname : nom COURT du poste (jamais le FQDN).
 	Hostname string
 
 	// UUID : fournisseur d'UUID SMBIOS, injecté par le binaire Windows
@@ -43,16 +43,16 @@ type Agent struct {
 	UUID func() string
 
 	// MAC : fournisseur de l'adresse MAC de l'adaptateur actif, injecté par le
-	// binaire Windows (Story 25.4) — ancre fiable de rapprochement de la
+	// binaire Windows — ancre fiable de rapprochement de la
 	// demande d'enrôlement porte 2 (le serveur normalise via
 	// MacAddressNormalizer). nil = MAC vide (la demande reste traçable mais non
-	// auto-approuvable — piège n° 5 : jamais de MAC inventée en silence). N'est
+	// auto-approuvable : jamais de MAC inventée en silence). N'est
 	// utilisé que sur le chemin d'auto-enroll (token absent) ; le flux nominal
-	// ne l'envoie pas (X-Agent-Mac volontairement non posé, décision 24.2).
+	// ne l'envoie pas (X-Agent-Mac volontairement non posé, décision).
 	MAC func() string
 
 	// Sessions : énumérateur des sessions interactives (WTS côté Windows,
-	// liste blanche ^S-1-5-21- + login non vide — Story 24.6). nil = aucun
+	// liste blanche ^S-1-5-21- + login non vide —). nil = aucun
 	// fetch de session (tests, plateformes sans sessions).
 	Sessions func() ([]Session, error)
 
@@ -66,31 +66,31 @@ type Agent struct {
 	AssetsACL        func(path string) error
 
 	// UpdateACL : ACL du répertoire de staging d'auto-update (update\, SYSTEM
-	// F + Admins F, PAS de Users:R — Story 25.2). Injectée par le binaire
+	// F + Admins F, PAS de Users:R —). Injectée par le binaire
 	// Windows (icacls). nil = no-op (tests hôte Linux).
 	UpdateACL func(path string) error
 
 	// Rainmeter : store de l'outil de rendu (C:\ProgramData\SambaEdu\Rainmeter)
 	// — provisioning portable au bootstrap + pose de la config verrouillée
-	// (Story 27.1bis). nil = provisioning INERTE (tests, !windows : l'agent ne
+	// . nil = provisioning INERTE (tests, !windows : l'agent ne
 	// pose jamais Rainmeter sur une plateforme sans outil de rendu).
 	Rainmeter *RainmeterStore
 
 	// RainmeterACL : ACL de l'arbre Rainmeter (Users:R, SYSTEM/Admins full —
-	// setAssetsACL réutilisé, Story 27.1bis). Injectée par le binaire Windows.
+	// SetAssetsACL réutilisé). Injectée par le binaire Windows.
 	// nil = no-op (tests hôte Linux).
 	RainmeterACL func(path string) error
 
-	// Primitives Windows de l'auto-update (Story 25.2, décision n° 2),
+	// Primitives Windows de l'auto-update,
 	// injectées par le binaire Windows (newAgent) iso AssetsACL — nil sur
 	// !windows ET en test, l'orchestration shared/ se teste avec des stubs :
 	//   - VerifyAuthenticode : vérifie la signature Authenticode du binaire
 	//     STAGÉ AVANT tout swap (WinVerifyTrust ; erreur = binaire jeté) ;
 	//   - SwapAndRestart : swap atomique anti-brique (shared.PerformSwap :
 	//     copie-atomique→re-hash→rename→rollback) PUIS sortie non-gracieuse
-	//     os.Exit(≠0) sur succès → la recovery SCM relance le binaire vN+1
-	//     (Option A, décision review 25.2). `expectedHash` = hash manifest,
-	//     re-vérifié sur le binaire RÉELLEMENT mis en place (M2). Erreur =
+	//     os.Exit(≠0) sur succès → la recovery SCM relance le binaire vN+1.
+	//     `expectedHash` = hash manifest,
+	//     re-vérifié sur le binaire RÉELLEMENT mis en place. Erreur =
 	//     anti-brique, ancien binaire en place ; pas d'erreur = le process est
 	//     en train de mourir (os.Exit), le reste du cycle n'a pas lieu.
 	// nil = update INERTE (no-op silencieux) : l'auto-update ne tourne qu'en
@@ -108,11 +108,11 @@ type Agent struct {
 	quarantined bool
 
 	// pendingUpdateError : message d'échec du DERNIER cycle d'auto-update
-	// (Story 25.2, décision n° 7) — vidé dans le `BuildReport` du même cycle
+	// — vidé dans le `BuildReport` du même cycle
 	// sous forme d'un item `agent_update` status `error`. PROCESS-LOCAL, jamais
 	// persisté : un échec se rapporte une fois ; le cycle suivant retentera et
 	// re-posera l'item s'il échoue à nouveau. La RÉUSSITE ne pose pas d'item
-	// (la nouvelle `agent_version` du rapport EST la preuve de succès, AC4).
+	// (la nouvelle `agent_version` du rapport EST la preuve de succès).
 	pendingUpdateError string
 
 	// serverTtl : dernier `ttl_seconds` servi par le serveur (enveloppe
@@ -122,7 +122,7 @@ type Agent struct {
 	// redémarré répond 304 et ne re-livre pas l'enveloppe).
 	serverTtl int64
 
-	// wake : canal de réveil au logon (Story 27.9). Le handler SCM Windows y
+	// Wake : canal de réveil au logon. Le handler SCM Windows y
 	// poste un signal NON-BLOQUANT (RequestWake) au WTS_SESSION_LOGON ; la
 	// boucle Run l'écoute dans son `select` de sieste pour partir sur un cycle
 	// frais sans attendre le tick nominal. Bufferisé taille 1 → coalescence
@@ -132,9 +132,9 @@ type Agent struct {
 	// mécanisme est plateforme-agnostique : aucun import Windows dans shared/.
 	wake chan struct{}
 
-	// MachineEngine : moteur de convergence de la portée MACHINE (Story 27.3).
+	// MachineEngine : moteur de convergence de la portée MACHINE.
 	// Le service SYSTEM est le SEUL acteur de la portée machine (le compagnon
-	// l'ignore explicitement, NFR5) — il porte donc son propre moteur, distinct
+	// l'ignore explicitement) — il porte donc son propre moteur, distinct
 	// de celui du compagnon (portées session/machine_user). Premier type machine
 	// du canal agent : `registry` HKLM (ruche machine, droits SYSTEM). nil =
 	// convergence machine INERTE (tests hôte sans handlers, console de debug,
@@ -142,7 +142,7 @@ type Agent struct {
 	MachineEngine *Engine
 
 	// SessionSystemOps : ops registre RÉELLES de la passe SYSTEM PAR-SESSION
-	// (Story 35.7) — décorées PAR SID côté shared (sessionHiveOps : HKCU →
+	// décorées PAR SID côté shared (sessionHiveOps : HKCU →
 	// HKU\<SID>) pour appliquer les items `writer: "system"` des caches
 	// per-session (trees HKCU\…\Policies\*, non écrivables par le compagnon).
 	// Injectées par le binaire Windows (mêmes ops concrètes que le
@@ -151,9 +151,9 @@ type Agent struct {
 	SessionSystemOps RegistryOps
 
 	// machineReportItems : items de rapport de la DERNIÈRE convergence machine
-	// (Story 27.3), vidés dans le BuildReport du même cycle (le service est
+	// vidés dans le BuildReport du même cycle (le service est
 	// in-process : pas de drop, contrairement au compagnon). PROCESS-LOCAL.
-	// Story 35.7 : les verdicts de la passe SYSTEM par-session s'y AJOUTENT
+	// Les verdicts de la passe SYSTEM par-session s'y AJOUTENT
 	// (convergeSessionSystem) — MergeReportItemsByType fusionne avec le
 	// verdict machine et les drops compagnon (pire statut gagne, types
 	// uniques §6).
@@ -200,7 +200,7 @@ func HasNotCompliantItem(items []ReportItem) bool {
 }
 
 // NewAgentForTest construit un Agent avec son canal de réveil initialisé
-// (Story 27.9) — réservé aux tests hôte qui pilotent le réveil. Le binaire
+// réservé aux tests hôte qui pilotent le réveil. Le binaire
 // Windows passe par newAgent (main_windows.go) qui initialise wake de la même
 // manière. Le canal est bufferisé taille 1 (coalescence).
 func NewAgentForTest(base Agent) *Agent {
@@ -210,7 +210,7 @@ func NewAgentForTest(base Agent) *Agent {
 	return &a
 }
 
-// InitWake initialise le canal de réveil bufferisé taille 1 (Story 27.9),
+// InitWake initialise le canal de réveil bufferisé taille 1,
 // appelé à la construction de l'Agent par le binaire Windows (newAgent) AVANT
 // que la goroutine Run ne démarre. Idempotent : ne réinitialise pas un canal
 // déjà créé (on ne veut jamais perdre un signal en vol). Sans cet appel, le
@@ -223,13 +223,13 @@ func (a *Agent) InitWake() {
 }
 
 // RequestWake poste un signal de réveil NON-BLOQUANT sur le canal `wake`
-// (Story 27.9). Appelé par le handler SCM au WTS_SESSION_LOGON. Invariants :
+// . Appelé par le handler SCM au WTS_SESSION_LOGON. Invariants :
 //   - nil-safe : un canal non initialisé (console, tests) = no-op silencieux,
 //     jamais de send sur nil channel (qui bloquerait pour toujours) ;
 //   - non-bloquant (`select … default`) : ne bloque JAMAIS le thread de
 //     contrôle du service (Execute), même si la boucle est occupée (cycle en
 //     vol, HTTP lent) ou si un réveil est déjà en attente ;
-//   - coalescence : le buffer 1 + le `default` jettent les signaux en trop —
+//   - coalescence : le buffer 1 + le `default` jettent les signaux en trop
 //     plusieurs logons rapprochés ⇒ au plus un réveil en file.
 //
 // Le debounce (fenêtre min-interval) est géré CÔTÉ BOUCLE (Run), thread unique
@@ -256,9 +256,9 @@ const (
 )
 
 // ConvergenceFollowUpSeconds : cadence du cycle de RATTRAPAGE qui suit un
-// rapport contenant au moins un item non conforme (Story 2.12.3).
+// rapport contenant au moins un item non conforme.
 //
-// Le problème qu'il règle. La politique de drift est STRICT (27.8) : `Test()`
+// Le problème qu'il règle. La politique de drift est STRICT : `Test`
 // négatif vaut `drift`, MÊME quand l'`Apply` qui suit répare dans la seconde —
 // il n'existe aucun statut « corrigé ». Or le premier passage sur un poste
 // fraîchement réinstallé est non conforme PAR CONSTRUCTION (rien n'est encore
@@ -289,7 +289,7 @@ const ConvergenceFollowUpSeconds = 360
 func (a *Agent) Quarantined() bool { return a.quarantined }
 
 // RunCycle exécute un cycle complet. Toute panique est rattrapée : un agent
-// ne crashe jamais silencieusement (AC2) — log + backoff.
+// ne crashe jamais silencieusement — log + backoff.
 func (a *Agent) RunCycle(cfg Config) (outcome Outcome) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -302,16 +302,16 @@ func (a *Agent) RunCycle(cfg Config) (outcome Outcome) {
 }
 
 func (a *Agent) runCycle(cfg Config) Outcome {
-	// Story 25.4 (Fork 1 = B) : token ABSENT → demande d'enrôlement porte 2,
+	// Token ABSENT → demande d'enrôlement porte 2,
 	// PAS un échec de cycle. Un poste migré (chemin GPO-dispatcher figée) est
 	// installé sans token : il s'auto-enrôle, puis converge dès l'approbation.
 	// Un token PRÉSENT mais corrompu reste un échec de cycle (backoff) côté
-	// ReadToken ci-dessous — un poste enrôlé ne se ré-enrôle JAMAIS auto (FR22).
+	// ReadToken ci-dessous — un poste enrôlé ne se ré-enrôle JAMAIS auto.
 	if !a.Store.TokenExists() {
 		return a.runEnrollment(cfg)
 	}
 
-	// 1. Token relu sur disque À CHAQUE cycle (contrat 23.3).
+	// 1. Token relu sur disque À CHAQUE cycle (contrat).
 	token, err := a.Store.ReadToken()
 	if err != nil {
 		a.Log.Errorf("Cycle en échec : %v", err)
@@ -338,7 +338,7 @@ func (a *Agent) runCycle(cfg Config) Outcome {
 	switch resp.StatusCode {
 	case 200:
 		// Refus d'un major inconnu (§9) : log erreur, cache PRÉSERVÉ, les
-		// check-ins CONTINUENT à cadence normale (piège n° 10) — le rapport
+		// check-ins CONTINUENT à cadence normale — le rapport
 		// part quand même (signal de vie).
 		if st, err := ParseState(resp.Body); err != nil {
 			a.Log.Errorf("État reçu refusé (%v) : cache local préservé, check-ins maintenus.", err)
@@ -375,15 +375,15 @@ func (a *Agent) runCycle(cfg Config) Outcome {
 		return OutcomeBackoff
 	}
 
-	// Story 24.6 (décision 24.3 n° 4 conservée) : après la portée machine,
+	// Après la portée machine,
 	// le cycle rafraîchit aussi les caches de session (IN-PROCESS, même code
-	// que la tâche at-logon — fraîcheur laxe NFR3 : logon + timer) puis
+	// que la tâche at-logon — fraîcheur laxe : logon + timer) puis
 	// synchronise les assets wallpaper (AUSSI hors fetch : zéro session
 	// interactive = pré-téléchargement avant le premier logon ; idempotent,
 	// content-addressed). Une erreur ici ne casse JAMAIS le cycle machine —
 	// les Outcome restent ceux de la portée machine.
 	if !a.quarantined {
-		// Story 27.3 : convergence de la portée MACHINE (registre HKLM, droits
+		// Convergence de la portée MACHINE (registre HKLM, droits
 		// SYSTEM) sur le DERNIER cache d'état. AVANT le fetch des sessions et le
 		// rapport (ses items machine rejoignent le POST /report du cycle). Un
 		// échec ici ne casse JAMAIS le cycle (isolation par item dans le moteur ;
@@ -391,35 +391,35 @@ func (a *Agent) runCycle(cfg Config) Outcome {
 		// valide → re-test level-triggered (drift réimposé).
 		a.convergeMachine()
 		a.fetchSessionStates(cfg)
-		// Story 35.7 : passe SYSTEM PAR-SESSION — applique les items
+		// Passe SYSTEM PAR-SESSION — applique les items
 		// `writer: "system"` (trees HKCU\…\Policies\*, non écrivables par le
 		// compagnon) de chaque cache per-SID dans HKU\<SID>, GREFFÉE après le
-		// fetch (même énumération WTS, jamais de second appel — piège n°12).
+		// fetch (même énumération WTS, jamais de second appel).
 		// Ses verdicts rejoignent machineReportItems → POST /report du cycle.
 		// Best-effort : une session en échec n'empêche ni les autres ni le
 		// cycle ; quarantaine (même tombée PENDANT le fetch) = passe sautée.
 		a.convergeSessionSystem()
 		a.SyncWallpaperAssets(cfg)
-		// Story 27.7 : pré-télécharge les icônes UPLOADÉES de raccourcis
+		// Pré-télécharge les icônes UPLOADÉES de raccourcis
 		// content-addressed (GET HTTP statique sans token) AVANT la passe
 		// compagnon qui pose les `.lnk` ; idempotent, un échec ne casse pas le
 		// cycle (rattrapage au prochain passage, iso sync wallpaper).
 		a.SyncShortcutIcons(cfg)
-		// Story 27.1bis : provisioning de l'outil de rendu Rainmeter au
+		// Provisioning de l'outil de rendu Rainmeter au
 		// BOOTSTRAP du cycle SYSTEM (portable install-if-absent + config
 		// verrouillée), JAMAIS depuis un handler runtime (« handler jamais
-		// installeur » — D3). Idempotent ; un échec ne casse pas le cycle
+		// installeur »). Idempotent ; un échec ne casse pas le cycle
 		// (rattrapage au prochain passage, comme le sync wallpaper).
 		a.SyncRainmeterTool(cfg)
-		// Story 25.2 : auto-update en fin de portée machine, AVANT le rapport
+		// Auto-update en fin de portée machine, AVANT le rapport
 		// (l'item agent_update d'un échec rejoint le POST /report du cycle). Un
 		// succès remplace le binaire puis provoque une SORTIE NON-GRACIEUSE du
-		// process (os.Exit(≠0), Option A) : la recovery SCM relance le binaire
+		// process (os.Exit(≠0)) : la recovery SCM relance le binaire
 		// vN+1. Le POST /report ci-dessous n'a alors pas lieu pour CE cycle —
 		// c'est l'image vN+1 qui rapportera la nouvelle version (preuve de
-		// succès, AC4). Un échec laisse l'agent en place (anti-brique) : le
+		// succès). Un échec laisse l'agent en place (anti-brique) : le
 		// rapport part normalement avec l'item d'échec. Un 403 sur le canal
-		// release ne met PAS le poste en quarantaine globale (M4) : il saute
+		// release ne met PAS le poste en quarantaine globale : il saute
 		// seulement l'update, le report ci-dessous a bien lieu.
 		a.SelfUpdate(cfg)
 	}
@@ -431,7 +431,7 @@ func (a *Agent) runCycle(cfg Config) Outcome {
 	}
 
 	// 4. Rapport — hostname COURT + UUID SMBIOS verbatim ; items RÉELS =
-	// drops session collectés/validés (24.6). Le rapport part MÊME sur 304 :
+	// drops session collectés/validés. Le rapport part MÊME sur 304 :
 	// état inchangé = on rapporte quand même (signal de vie).
 	uuid := ""
 	if a.UUID != nil {
@@ -441,10 +441,10 @@ func (a *Agent) runCycle(cfg Config) Outcome {
 		a.Log.Warningf("UUID SMBIOS vide ou placeholder firmware (%q) : le champ workstation.uuid du rapport n'est pas fiable (warnings identity_mismatch possibles côté serveur).", uuid)
 	}
 	// Items réels du rapport : collecte + validation stricte des drops
-	// session (latence ≤ 1 cycle entre convergence session et rapport,
-	// NFR3 — « forcer la synchro » = 24.7). Aucun drop = items: [] (valide).
+	// session (latence ≤ 1 cycle entre convergence session et rapport).
+	// Aucun drop = items: [] (valide).
 	// Items réels = drops session collectés/validés + un éventuel item
-	// agent_update (échec d'auto-update du cycle, Story 25.2 — vidé ici, un
+	// agent_update (échec d'auto-update du cycle — vidé ici, un
 	// échec se rapporte une fois).
 	// Fix fantômes de conformité : purger les drops des sessions TERMINÉES AVANT
 	// de collecter. Sinon un drop mort (user délogué/reboot) survit sous
@@ -464,7 +464,7 @@ func (a *Agent) runCycle(cfg Config) Outcome {
 		a.Store, a.activeSIDs, a.activeLogins, time.Now(), 2*a.EffectiveInterval(cfg), a.Log,
 	)...)
 	items = append(items, a.drainUpdateReportItems()...)
-	// Story 27.3 : items de la convergence MACHINE (registre HKLM) — in-process,
+	// Items de la convergence MACHINE (registre HKLM) — in-process,
 	// pas de drop. Drainés ici (un statut machine se rapporte au cycle où il a
 	// convergé).
 	items = append(items, a.machineReportItems...)
@@ -518,8 +518,8 @@ func (a *Agent) runCycle(cfg Config) Outcome {
 	}
 }
 
-// convergeMachine exécute une passe de convergence de la portée MACHINE (Story
-// 27.3) sur le dernier cache d'état (state.json SYSTEM). Le service SYSTEM est le
+// convergeMachine exécute une passe de convergence de la portée MACHINE sur le
+// dernier cache d'état (state.json SYSTEM). Le service SYSTEM est le
 // SEUL acteur de cette portée (le compagnon l'ignore). Les items de rapport sont
 // stockés pour rejoindre le POST /report du cycle (in-process, pas de drop).
 //
@@ -575,9 +575,9 @@ func (a *Agent) convergeMachine() {
 	a.Log.Infof("Convergence machine terminée : %d clé(s), %d verdict(s) de type.", len(items), len(a.machineReportItems))
 }
 
-// runEnrollment : cycle « token absent » — demande d'enrôlement porte 2 (Story
-// 25.4, Fork 1 = B). Construit le faisceau {uuid, mac, hostname}, poste SANS
-// bearer, interprète la réponse serveur (25.3) :
+// runEnrollment : cycle « token absent » — demande d'enrôlement porte 2.
+// Construit le faisceau {uuid, mac, hostname}, poste SANS bearer, interprète la
+// réponse serveur :
 //
 //   - EnrollApproved : token reçu → écriture ATOMIQUE (ACL SID via Store) ; le
 //     PROCHAIN cycle relira le token et basculera en convergence (GET /state…).
@@ -599,7 +599,7 @@ func (a *Agent) runEnrollment(cfg Config) Outcome {
 		Hostname: a.Hostname,
 	}
 	if identity.MAC == "" {
-		// Piège n° 5 : une demande sans MAC est traçable mais jamais
+		// Une demande sans MAC est traçable mais jamais
 		// auto-approuvable (ancre de rapprochement absente). On la poste quand
 		// même (l'admin peut approuver manuellement) mais on le signale.
 		a.Log.Warningf("Demande d'enrôlement porte 2 sans MAC : la demande sera tracée mais non auto-approuvable (rapprochement impossible).")
@@ -641,8 +641,7 @@ func (a *Agent) collectUUID() string {
 	return a.UUID()
 }
 
-// collectMAC : MAC de l'adaptateur actif ; chaîne vide admise (jamais inventée,
-// piège n° 5).
+// collectMAC : MAC de l'adaptateur actif ; chaîne vide admise (jamais inventée).
 func (a *Agent) collectMAC() string {
 	if a.MAC == nil {
 		return ""
@@ -718,7 +717,7 @@ func isPlaceholderUUID(uuid string) bool {
 }
 
 // NextBackoff : backoff exponentiel 30 s → ×2 → plafonné à la cadence
-// normale (FR22 — jamais de retry agressif sur un serveur qui redémarre).
+// normale (jamais de retry agressif sur un serveur qui redémarre).
 // current = 0 signifie « pas de backoff en cours ».
 func NextBackoff(current, interval time.Duration) time.Duration {
 	if current <= 0 {
@@ -733,7 +732,7 @@ func NextBackoff(current, interval time.Duration) time.Duration {
 }
 
 // Jitter : tirage entier uniforme symétrique sur ±10 % de l'intervalle
-// (évite les vagues synchronisées sur ~600 postes, D7).
+// (évite les vagues synchronisées sur ~600 postes).
 func (a *Agent) Jitter(interval time.Duration) time.Duration {
 	jitterMax := int64(interval / 10 / time.Second)
 	if jitterMax <= 0 {
@@ -749,8 +748,8 @@ func (a *Agent) Jitter(interval time.Duration) time.Duration {
 	return time.Duration(n-jitterMax) * time.Second
 }
 
-// Run : boucle principale — timer + jitter ±10 % (D7/FR23), backoff
-// exponentiel (FR22), arrêt sur ctx (stop SCM) ou 401 irrécupérable.
+// Run : boucle principale — timer + jitter ±10 %, backoff
+// exponentiel, arrêt sur ctx (stop SCM) ou 401 irrécupérable.
 // Cadence : `ttl_seconds` serveur quand il est connu (voir EffectiveInterval),
 // sinon `interval_seconds` local.
 func (a *Agent) Run(ctx context.Context) {
@@ -758,7 +757,7 @@ func (a *Agent) Run(ctx context.Context) {
 	a.primeServerTtlFromCache()
 
 	backoff := time.Duration(0)
-	// lastCycleStart : instant de début du DERNIER cycle (Story 27.9) — base du
+	// LastCycleStart : instant de début du DERNIER cycle — base du
 	// debounce min-interval côté boucle (thread unique, aucune course avec le
 	// SCM qui ne fait que poster sur `wake`). Tant qu'aucun cycle n'a démarré
 	// (config illisible au boot), la valeur reste zero → time.Since(zero) >>
@@ -772,7 +771,7 @@ func (a *Agent) Run(ctx context.Context) {
 		cfg, err := a.Store.ReadConfig()
 		if err != nil {
 			// Défaut de config : log + retry — un agent ne crashe jamais
-			// silencieusement (AC2).
+			// silencieusement.
 			a.Log.Errorf("Cycle en échec : %v", err)
 		} else {
 			lastCycleStart = time.Now()
@@ -806,8 +805,8 @@ func (a *Agent) Run(ctx context.Context) {
 		}
 
 		// Sieste interruptible : ctx.Done() (stop SCM), échéance nominale, ou
-		// réveil au logon (Story 27.9). Le réveil ne touche NI la cadence
-		// nominale, NI le jitter, NI le backoff (AC5) : il ne fait qu'écourter
+		// réveil au logon. Le réveil ne touche NI la cadence
+		// nominale, NI le jitter, NI le backoff : il ne fait qu'écourter
 		// la sieste, sous garde-fou debounce. On boucle ici pour pouvoir
 		// re-siester le reliquat de debounce sans repartir en haut de boucle
 		// (qui relancerait un cycle prématurément).
@@ -865,7 +864,7 @@ func (a *Agent) applyConvergenceFollowUp(outcome Outcome, interval time.Duration
 // sleepUntilDueOrWake exécute la sieste de fin de cycle en l'interrompant sur :
 //   - ctx.Done() (stop SCM) → retourne false (la boucle Run doit sortir) ;
 //   - l'échéance `sleep` (tick nominal / backoff) → retourne true (cycle frais) ;
-//   - un signal de réveil au logon sur `a.wake` (Story 27.9) → si le debounce
+//   - un signal de réveil au logon sur `a.wake` → si le debounce
 //     l'autorise (>= MinLogonWakeIntervalSeconds depuis lastCycleStart) retourne
 //     true (cycle frais immédiat) ; sinon (coalescence) re-siester le reliquat
 //     du min-interval, BORNÉ par l'échéance nominale restante — le tick nominal
@@ -933,7 +932,7 @@ func (a *Agent) sleepUntilDueOrWake(ctx context.Context, sleep time.Duration, la
 				return true
 			case <-a.wake:
 				// Réveil supplémentaire pendant la fenêtre de debounce :
-				// coalescé (au plus un cycle dans la fenêtre min-interval, AC3).
+				// Coalescé (au plus un cycle dans la fenêtre min-interval).
 				debounceTimer.Stop()
 				a.Log.Debugf("Réveil au logon supplémentaire coalescé pendant le debounce.")
 

@@ -23,11 +23,11 @@ use Tests\TestCase;
  *
  * Couverture :
  *   T2  — Champ `message` ajouté au modèle WorkstationApplicationStatus
- *   T3  — getMachines() retourne installed_apps_count et error_apps_count
- *   T4  — listApplications() retourne deployed_total/installed/error_count
- *   AC1 — Colonne déploiement liste machines : compteurs corrects
- *   AC4 — Taux de réussite liste applications
- *   AC6 — Routes windows-deploy supprimées (404)
+ *  T3 — getMachines() retourne installed_apps_count et error_apps_count
+ *  T4 — listApplications() retourne deployed_total/installed/error_count
+ * colonne déploiement liste machines : compteurs corrects
+ * taux de réussite liste applications
+ * routes windows-deploy supprimées (404)
  */
 class DeploymentReportsIntegrationTest extends TestCase
 {
@@ -53,7 +53,7 @@ class DeploymentReportsIntegrationTest extends TestCase
         parent::tearDown();
     }
 
-    // ─── Helpers ─────────────────────────────────────────────────────────────
+    // Helpers
 
     private function createTablesIfNeeded(): void
     {
@@ -172,7 +172,7 @@ class DeploymentReportsIntegrationTest extends TestCase
             $table->unique(['workstation_id', 'application_id']);
         });
 
-        // Story 27.5 — inventaire per-app rapporté par l'agent (canal natif),
+        // Inventaire per-app rapporté par l'agent (canal natif),
         // source de la colonne « Déploiement » depuis l'extinction du WPKG.
         Schema::create('agent_application_inventory', function (Blueprint $table) {
             $table->id();
@@ -185,7 +185,7 @@ class DeploymentReportsIntegrationTest extends TestCase
             $table->unique(['workstation_id', 'app_id']);
         });
 
-        // Story 16.13bis — table consultée par l'eager-load `migrationStatus`
+        // Table consultée par l'eager-load `migrationStatus`
         // du repo paginateMachines (Workstation::with('migrationStatus')).
         Schema::create('workstations_migration_status', function (Blueprint $table) {
             $table->bigIncrements('id');
@@ -223,7 +223,7 @@ class DeploymentReportsIntegrationTest extends TestCase
     }
 
     /**
-     * Story 27.5 — ligne d'inventaire rapportée par l'agent (canal natif).
+     * Ligne d'inventaire rapportée par l'agent (canal natif).
      * status ∈ {compliant, drift = installé, error = non installé}.
      */
     private function makeAgentInventory(int $workstationId, string $appId, string $status): AgentApplicationInventory
@@ -236,7 +236,7 @@ class DeploymentReportsIntegrationTest extends TestCase
         ]);
     }
 
-    // ─── T2 : Champ message ───────────────────────────────────────────────────
+    // T2 : Champ message
 
     #[Test]
     public function message_field_is_fillable_and_persisted(): void
@@ -264,7 +264,7 @@ class DeploymentReportsIntegrationTest extends TestCase
         $this->assertNull($status->fresh()->message);
     }
 
-    // ─── T3 : getMachines() withCount (canal natif agent — Story 27.5) ────────
+    // T3 : getMachines withCount (canal natif agent —)
 
     #[Test]
     public function get_machines_returns_installed_and_error_counts(): void
@@ -340,8 +340,6 @@ class DeploymentReportsIntegrationTest extends TestCase
         $this->assertEquals(0, $machine->error_apps_count);
     }
 
-    // ─── T4 : couverture de déploiement (cible vs constaté) ──────────────────
-
     private function assign(Application $app, Workstation ...$workstations): void
     {
         foreach ($workstations as $workstation) {
@@ -410,7 +408,7 @@ class DeploymentReportsIntegrationTest extends TestCase
         $this->assertSame(['target' => 0, 'installed' => 0], $coverage[$app->id]);
     }
 
-    // ─── AC6 : Routes windows-deploy supprimées ───────────────────────────────
+    // : Routes windows-deploy supprimées
 
     #[Test]
     public function windows_deploy_reports_route_returns_404(): void

@@ -6,7 +6,7 @@ namespace App\Gpo\Support;
 
 /**
  * Résolveur stateless : mappe le `displayName` d'une GPO vers les sections
- * UI natives déjà refondues (Story 16.3a).
+ * UI natives déjà refondues.
  *
  * Classe **stateless** — méthodes statiques pures, aucune dépendance externe.
  * Pas de container Laravel, pas d'I/O, pas d'accès données.
@@ -27,7 +27,7 @@ final class NativeSectionResolver
     /**
      * Mapping heuristique : clé section → patterns (lowercase contains) + URL + libellé + icône.
      *
-     * Extrait de `NATIVE_SECTIONS_HEURISTICS` de la SFC détail (Story 16.2, AC2.4 / D9).
+     * Extrait de `NATIVE_SECTIONS_HEURISTICS` de la SFC détail.
      *
      * @var array<string, array{patterns: list<string>, url: string, label: string, icon: string}>
      */
@@ -56,7 +56,7 @@ final class NativeSectionResolver
             'label' => 'Gérer les raccourcis',
             'icon' => 'fa-link',
         ],
-        // Story 16.3c — UI admin native Wine (apps Windows sur postes Linux).
+        // UI admin native Wine (apps Windows sur postes Linux).
         // Decision SM D10. Pattern `wine` substring match — cohérence avec les
         // entrées existantes (firefox/thunderbird matchent aussi substring).
         // Risque marginal de faux positif sur GPO `wineries` (très peu probable

@@ -20,7 +20,7 @@ use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
- * Story 8.2.7 — Installation WPKG au catalogue en tâche de fond.
+ * Installation WPKG au catalogue en tâche de fond.
  *
  * Fine enveloppe asynchrone autour de
  * {@see AppStoreService::installApplication()} : ce Job NE réimplémente RIEN
@@ -30,7 +30,7 @@ use Throwable;
  * déjà tout le cycle de vie (`InstallationLog` + `Application`) dans son
  * `try/catch`.
  *
- * Conception (décisions Story 8.2.7) :
+ * Conception (décisions) :
  *  - On passe l'**id** (`int $depotApplicationId`), PAS le modèle entier : une
  *    row stale ou un `firstOrCreate`/sync entre dispatch et pickup rend l'id
  *    plus sûr (cf. {@see \App\Ipxe\Iso\Jobs\DownloadWindowsIsoJob} qui prend
@@ -42,11 +42,11 @@ use Throwable;
  *  - `WithoutOverlapping` keyé sur l'`app_id` du dépôt : empêche deux jobs
  *    concurrents sur la **même** app (défense en profondeur vs le risque de
  *    double-pickup `retry_after=90s` < `$timeout`). L'idempotence de
- *    `installApplication()` (`Application::firstOrCreate`) reste le garde-fou
+ *  `installApplication()` (`Application::firstOrCreate`) reste le garde-fou
  *    de fond.
  *  - `failed()` : garde-fou idempotent qui passe en `Failed` TOUS les logs
  *    non-terminaux de l'app (le service crée
- *    un log par tentative, sans corrélation 1:1 Job↔log) — `inProgress()`
+ *  un log par tentative, sans corrélation 1:1 Job↔log) — `inProgress()`
  *    exclut déjà les états terminaux, donc on ne réécrit jamais un `Success`.
  */
 class InstallApplicationJob implements ShouldQueue

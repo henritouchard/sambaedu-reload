@@ -18,9 +18,9 @@ use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 /**
- * Tests feature de la commande artisan `parc:execute-group-schedules` (story 4-4).
+ * Tests feature de la commande artisan `parc:execute-group-schedules` (-4).
  *
- * 7 tests : 5 AC14 + 2 AC14 one-shot.
+ * 7 tests : 5 + 2 one-shot.
  */
 class ExecuteGroupSchedulesCommandTest extends TestCase
 {

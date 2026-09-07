@@ -14,7 +14,7 @@ use Spatie\Permission\Models\Permission;
  * {@see \App\Models\User} muni d'une permission Spatie (ex. `server.admin`)
  * pour valider les ACs de permissions.
  *
- * Les 5 fichiers de tests Feature de la Story 16.2 dupliquaient ~70 lignes
+ * Les 5 fichiers de tests Feature de la dupliquaient ~70 lignes
  * de bootstrap chacun (Schema::create users + permissions + roles +
  * model_has_*) avec des index nommés à la main pour éviter les collisions.
  *
@@ -24,9 +24,9 @@ use Spatie\Permission\Models\Permission;
  *   plus besoin d'index nommés ad hoc, Laravel les nomme automatiquement
  *   et `hasTable` empêche la double création ;
  * - centralise le drop dans `cleanupSpatieTables()` à appeler depuis
- *   `tearDown()` ;
+ *  `tearDown()` ;
  * - assure la création de la permission `server.admin` (la seule utilisée
- *   par toutes les pages GPO de l'Epic 16).
+ *   par toutes les pages GPO).
  *
  * Usage typique :
  *
@@ -35,16 +35,16 @@ use Spatie\Permission\Models\Permission;
  * {
  *     use BootstrapsSpatieTables;
  *
- *     protected function setUp(): void
+ *  protected function setUp(): void
  *     {
- *         parent::setUp();
- *         $this->bootstrapSpatieTables();
+ *  parent::setUp();
+ *  $this->bootstrapSpatieTables();
  *     }
  *
- *     protected function tearDown(): void
+ *  protected function tearDown(): void
  *     {
- *         $this->cleanupSpatieTables();
- *         parent::tearDown();
+ *  $this->cleanupSpatieTables();
+ *  parent::tearDown();
  *     }
  * }
  * ```

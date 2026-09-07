@@ -7,7 +7,7 @@ namespace App\Exceptions;
 use RuntimeException;
 
 /**
- * Story 54.1 (AC2) — Levée quand un manifest d'extension est INVALIDE.
+ * Levée quand un manifest d'extension est INVALIDE.
  *
  * L'exception porte TOUJOURS le **champ fautif** (`$field`) et la **raison**
  * (`$reason`) : l'admin doit pouvoir corriger sans deviner. Le champ est
@@ -22,7 +22,7 @@ use RuntimeException;
  * d'être chargés**.
  *
  * ⚠️ Le rejet d'une `manifest_version` non supportée est STRICT — aucun repli
- * tolérant (même décision qu'en Story 33.2 pour le schéma d'échange amont).
+ * tolérant (même décision qu'en pour le schéma d'échange amont).
  */
 final class InvalidExtensionManifestException extends RuntimeException
 {
@@ -56,7 +56,7 @@ final class InvalidExtensionManifestException extends RuntimeException
 
     /**
      * Version de manifest déclarée non supportée par cette instance SE5
-     * (rejet strict, pas de repli — iso-décision 33.2).
+     * (rejet strict, pas de repli — iso-décision).
      *
      * @param  list<int>  $supported
      */

@@ -22,10 +22,10 @@ use Symfony\Component\Finder\Finder;
  *
  *  1. **Une description non vide.** C'est la ligne que voit `artisan list` : sans
  *     elle, la commande existe sans qu'on sache pourquoi.
- *  2. **Une description sans vocabulaire de pilotage interne.** « Story 15.5 »,
- *     « NFR3 », « Phase 3+ STUB » ne veulent rien dire pour qui exploite le
- *     serveur — et cette sortie-là, contrairement à un document interne, lui est
- *     destinée.
+ *  2. **Une description sans vocabulaire de pilotage interne.** Un numéro de
+ *     story, d'epic ou de phase, une exigence « NFR3 », une mention « STUB » ne
+ *     veulent rien dire pour qui exploite le serveur — et cette sortie-là,
+ *     contrairement à un document interne, lui est destinée.
  *  3. **Une aide non vide** (`$help`) : la forme longue, où vivent les exemples,
  *     les effets de bord et les codes de retour. La description dit QUOI, l'aide
  *     dit COMMENT et QUAND.

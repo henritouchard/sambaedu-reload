@@ -9,17 +9,16 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 56.1 — Sources DISTANTES : clé pinnée, état de synchro, audit de source.
+ * Sources DISTANTES : clé pinnée, état de synchro, audit de source.
  *
- * Migration **strictement ADDITIVE** : la migration 54.1
+ * Migration **strictement ADDITIVE** : la migration
  * (`2026_07_28_100000_create_extension_registry_tables.php`) n'est PAS
  * retouchée — elle est passée en review et les instances l'ont déjà jouée. Les
  * colonnes `kind` / `url` / `is_official` / `enabled` posées par anticipation
- * en 54.1 suffisaient au MODÈLE multi-sources ; il manquait ce que la
+ *  suffisaient au MODÈLE multi-sources ; il manquait ce que la
  * VÉRIFICATION exige.
  *
- * ══════════════════════════════════════════════════════════════════════════
- *  DÉCISIONS DE CONCEPTION (figées par la story)
+ *  DÉCISIONS DE CONCEPTION
  *
  *  1. **`public_key` = la clé PINNÉE de la source** (base64 d'une clé publique
  *     Ed25519 de 32 octets, ~44 caractères — colonne dimensionnée large à 128
@@ -32,9 +31,9 @@ use Illuminate\Support\Facades\Schema;
  *     `NOT NULL DEFAULT ''` : la source `bundled` n'a pas de clé (ses manifests
  *     sont sur le disque du serveur, aucun transport à authentifier), et une
  *     colonne nullable n'apporte rien qu'une chaîne vide ne dise déjà
- *     (piège #3 de la migration 54.1, reconduit).
+ *     (même raisonnement que pour la colonne `url` du registre).
  *
- *  2. **`sync_status` = la sémantique du CACHE LOCAL (NFR7).** Le registre EST
+ *  2. **`sync_status` = la sémantique du CACHE LOCAL.** Le registre EST
  *     le cache : il n'y a pas de fichier de catalogue à côté. Trois états, cast
  *     par {@see \App\Enums\ExtensionSourceSyncStatus} :
  *       - `ok`          : dernier index vérifié — les `available` sont proposées ;
@@ -43,31 +42,29 @@ use Illuminate\Support\Facades\Schema;
  *       - `error`       : signature ou contenu invalide — fail-closed, les
  *                         `available` de la source sont masquées, les
  *                         `integrated` conservées et signalées, rien n'est pruné.
- *     Aucun `enum()` DB (convention maison) : un `ALTER TYPE` PostgreSQL est un
+ *  Aucun `enum()` DB (convention maison) : un `ALTER TYPE` PostgreSQL est un
  *     coût inutile pour trois valeurs.
  *
  *  3. **`last_error` = une CATÉGORIE, jamais un message brut.** Ce que le
  *     service y écrit est une phrase courte et stable, **sans l'URL** : un
  *     message d'exception Guzzle suffixe l'URI complète, et une URL de dépôt
- *     GitLab peut porter `?private_token=…` (piège documenté par la review 39.4
- *     #E11 d'`ArtifactPullService`). Le détail complet reste dans le journal
+ *     GitLab peut porter `?private_token=…`. Le détail complet reste dans le journal
  *     serveur. Borne 500 caractères, `NOT NULL DEFAULT ''`.
  *
  *  4. **`extension_audit_logs` étendu, PAS de nouvelle table.** `action` est un
  *     string libre EXPRESSÉMENT prévu extensible par le docblock de la
- *     migration 54.2 : `source_add` / `source_enable` / `source_disable` /
+ *  migration : `source_add` / `source_enable` / `source_disable` /
  *     `source_remove` / `source_sync_failed` s'y logent sans schéma nouveau. La
  *     FK `extension_source_id` est `nullOnDelete` (la trace du retrait d'une
  *     source doit SURVIVRE à la disparition de la source), doublée de la
  *     colonne dénormalisée `source_key` — exactement le patron
  *     `extension_id` + `extension_key` de 54.2. Sur un événement de SOURCE,
  *     `extension_key` / `extension_name` valent `''`.
- * ══════════════════════════════════════════════════════════════════════════
  *
  * **Rejouable** : gardes `hasTable` / `hasColumn` partout. La FK est posée en
  * best-effort (SQLite — driver de la suite de tests HÔTE — ne sait pas ajouter
  * une contrainte à une table existante) ; l'échec est journalisé hors SQLite
- * plutôt qu'avalé (patron migration 55.2 `oidc_tokens_user_fk`).
+ * plutôt qu'avalé (patron migration `oidc_tokens_user_fk`).
  *
  * Branches driver `timestampTz` / `timestamp` : les tests HÔTE rejouent toutes
  * les migrations sur SQLite (`RefreshDatabase`).
@@ -80,7 +77,7 @@ return new class extends Migration
     {
         $driver = DB::getDriverName();
 
-        // ── extension_sources : clé pinnée + état de synchro ──────────────
+        // extension_sources : clé pinnée + état de synchro
         if (Schema::hasTable('extension_sources')) {
             Schema::table('extension_sources', function (Blueprint $table) use ($driver): void {
                 if (! Schema::hasColumn('extension_sources', 'public_key')) {
@@ -110,7 +107,7 @@ return new class extends Migration
             });
         }
 
-        // ── extension_audit_logs : événements de SOURCE ───────────────────
+        // extension_audit_logs : événements de SOURCE
         if (Schema::hasTable('extension_audit_logs')) {
             Schema::table('extension_audit_logs', function (Blueprint $table): void {
                 if (! Schema::hasColumn('extension_audit_logs', 'extension_source_id')) {

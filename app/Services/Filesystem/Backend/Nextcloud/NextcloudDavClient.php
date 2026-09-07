@@ -14,7 +14,7 @@ use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 
 /**
- * Story 61.3 — LE TROISIÈME REGISTRE D'APPELS DU DÉPÔT : WebDAV.
+ * LE TROISIÈME REGISTRE D'APPELS DU DÉPÔT : WebDAV.
  *
  * Les deux premiers (OCS et l'endpoint d'administration) parlent en formulaire et
  * répondent en JSON. Celui-ci parle en XML et répond en `multistatus` — et c'est le
@@ -26,13 +26,12 @@ use Illuminate\Support\Facades\Http;
  * dans le code de l'application distante, mesuré contre l'instance : aucune route
  * REST ne pose de règle par chemin.
  *
- * ---------------------------------------------------------------------------
  * **LE PIÈGE STRUCTUREL DE CE PROTOCOLE : L'ENVELOPPE NE CONCLUT RIEN.**
  *
  * Une écriture aboutie et une écriture refusée rendent TOUTES DEUX un `207`. Le
  * verdict est le statut PORTÉ PAR CHAQUE PROPRIÉTÉ, dans le corps. Lire l'enveloppe
- * serait exactement la signature de défaut que cet epic traque depuis les Epics
- * 56/57 : un signal accepté qui n'atteint jamais son destinataire. {@see verdictFor()}
+ * serait exactement la signature de défaut traquée ici : un signal accepté qui
+ * n'atteint jamais son destinataire. {@see verdictFor()}
  * est donc le SEUL endroit qui décide, et il ne regarde jamais le code de
  * l'enveloppe pour un `207`.
  *
@@ -43,10 +42,9 @@ use Illuminate\Support\Facades\Http;
  * illisible ; le traiter en « je n'ai pas pu lire » le rendrait éternellement non
  * mesurable. C'est une réponse, et elle vaut « aucune règle ».
  *
- * ---------------------------------------------------------------------------
  * **AUCUN SHELL, JAMAIS.** L'outil en ligne de commande de l'instance sait tout
  * faire — et il suppose un accès système AU SERVEUR NEXTCLOUD, qu'on n'a pas sur une
- * instance distante ou tierce. Le sondage d'ouverture d'epic s'en était servi ; c'est
+ * instance distante ou tierce. Le sondage d'ouverture s'en était servi ; c'est
  * précisément ce qu'il ne faut pas reproduire. Ce backend est 100 % HTTP, donc
  * falsifiable, donc testable sans réseau. Un test d'architecture l'épingle.
  */
@@ -67,10 +65,6 @@ final class NextcloudDavClient
     public function __construct(private readonly NextcloudConnectionConfig $config)
     {
     }
-
-    // =========================================================================
-    // Structure
-    // =========================================================================
 
     /**
      * Crée UN niveau de collection. **Un seul** : ce protocole ne crée pas les
@@ -115,10 +109,6 @@ final class NextcloudDavClient
 
     private const EXISTENCE_BODY = '<?xml version="1.0" encoding="UTF-8"?>'
         . '<d:propfind xmlns:d="DAV:"><d:prop><d:resourcetype/></d:prop></d:propfind>';
-
-    // =========================================================================
-    // Règles de permissions avancées
-    // =========================================================================
 
     private const ACL_BODY = '<?xml version="1.0" encoding="UTF-8"?>'
         . '<d:propfind xmlns:d="DAV:" xmlns:nc="http://nextcloud.org/ns"><d:prop>'
@@ -244,10 +234,6 @@ final class NextcloudDavClient
         return NextcloudDavOutcome::created(207);
     }
 
-    // =========================================================================
-    // Analyse du corps
-    // =========================================================================
-
     /**
      * Les propriétés de la PREMIÈRE réponse d'un `multistatus`, indexées par nom
      * qualifié, chacune avec le statut qui la porte.
@@ -351,10 +337,6 @@ final class NextcloudDavClient
 
         return $node === null ? null : trim($node->textContent);
     }
-
-    // =========================================================================
-    // Transport
-    // =========================================================================
 
     /**
      * L'URL WebDAV d'un chemin, sous l'espace du compte d'administration.

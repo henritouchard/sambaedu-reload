@@ -9,16 +9,16 @@ use App\Ipxe\Iso\Services\WinpeDriverIngestor;
 use Illuminate\Console\Command;
 
 /**
- * Story 3.10 — AC4.1-4.3 — Ingestion CLI d'une archive de pilotes NIC
+ * Ingestion CLI d'une archive de pilotes NIC
  * (`.exe` InnoSetup Lenovo via `innoextract`, `.zip` Intel via `unzip`) vers
  * le pack persistant `winpe_drivers_path/<famille>/`.
  *
  *   php artisan ipxe:winpe-drivers:ingest <famille> <chemin-archive>
  *
  * Toute la logique vit dans {@see WinpeDriverIngestor} (service PARTAGÉ avec le
- * composant Livewire `iso-windows` — D3, zéro duplication). La commande se
+ * composant Livewire `iso-windows`, zéro duplication). La commande se
  * limite à déléguer, afficher le récap des `.inf` ingérés, et mapper les
- * échecs métier vers un exit non-zéro (AC4.3).
+ * échecs métier vers un exit non-zéro.
  */
 final class IngestWinpeDriversCommand extends Command
 {

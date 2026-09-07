@@ -19,23 +19,21 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 60.4 — LE RÉFÉRENTIEL FIGÉ : iso-comportement, chaîne par chaîne.
+ * LE RÉFÉRENTIEL FIGÉ : iso-comportement, chaîne par chaîne.
  *
- * ---------------------------------------------------------------------------
  * **POURQUOI DES LITTÉRAUX ET PAS UN ORACLE VIVANT.**
  *
  * L'oracle naturel serait la dérivation historique des permissions. Mais elle
- * DÉMÉNAGE pendant cette story : un test qui compilerait les deux chemins depuis
+ * a DÉMÉNAGÉ : un test qui compilerait les deux chemins depuis
  * le même code après la descente comparerait le code à lui-même et ne prouverait
  * rien. Les chaînes ci-dessous ont donc été CAPTURÉES sur le comportement
- * d'AVANT, en premier geste de la story, contre le code de l'Epic 34 encore en
- * place, et figées telles quelles. C'est le seul témoin indépendant qui survive
+ * D'AVANT, contre le code encore en place, et figées telles quelles. C'est le
+ * seul témoin indépendant qui survive
  * au déménagement.
  *
  * Journal de capture : `PosixGoldenCaptureTest` (harnais jetable), exécuté vert
  * le 2026-08-04 avant toute modification, sortie recopiée sans retouche.
  *
- * ---------------------------------------------------------------------------
  * **UNE DIVERGENCE, UNE SEULE, ET ELLE EST DOCUMENTÉE : L'ORDRE D'ÉMISSION.**
  *
  * La dérivation historique parcourait les lignes du pivot dans l'ordre où la base
@@ -47,7 +45,7 @@ use Tests\TestCase;
  *
  * Le nouveau chemin émet dans l'ordre CANONIQUE du plan (par type de sujet, puis
  * identité), qui est déterministe et indépendant du moteur — c'est une exigence de
- * la story 60.1, sans laquelle la comparaison de deux résolutions serait bruitée.
+ * la, sans laquelle la comparaison de deux résolutions serait bruitée.
  *
  * Conséquences, toutes vérifiées ci-dessous :
  *  - pour cinq des six situations, les deux ordres COÏNCIDENT et l'égalité est
@@ -114,10 +112,6 @@ class PosixGoldenAclTest extends TestCase
 
         return app(PosixAclCompiler::class)->compile($plan->nodes[0])->acls;
     }
-
-    // =========================================================================
-    // Les six situations du référentiel
-    // =========================================================================
 
     #[Test]
     public function a_directory_without_audience_yields_exactly_the_canonical_base(): void

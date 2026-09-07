@@ -10,11 +10,11 @@ import (
 // setAgentACL pose l'ACL du canal agent sur un fichier/répertoire :
 // NT AUTHORITY\SYSTEM + BUILTIN\Administrators UNIQUEMENT, héritage retiré —
 // un utilisateur standard ne lit NI n'écrit (frontière de confiance,
-// convention 23.3).
+// convention).
 //
-// Shell-out icacls.exe : échappatoire DOCUMENTÉE et acceptée (iso-24.2,
-// addendum architecture 2026-06-12 — les API ACL de golang.org/x/sys sont
-// inutilement pénibles pour ce besoin). SIDs bruts, jamais de noms localisés :
+// Shell-out icacls.exe : échappatoire assumée (les API ACL de
+// golang.org/x/sys sont inutilement pénibles pour ce besoin). SIDs bruts,
+// jamais de noms localisés :
 // *S-1-5-18 = SYSTEM, *S-1-5-32-544 = Administrators. (OI)(CI) : les
 // fichiers/sous-répertoires héritent.
 func setAgentACL(path string) error {
@@ -25,7 +25,7 @@ func setAgentACL(path string) error {
 	// (OI)(CI) UNIQUEMENT sur les répertoires. Posés via icacls directement
 	// sur un FICHIER, ces flags rendent les ACE inertes pour l'accès au
 	// fichier lui-même : DACL effective VIDE, le rename de writeAtomic
-	// échoue en Accès refusé — constaté lab ws 49 (T12 24.6, A/B icacls
+	// échoue en Accès refusé — constaté lab ws 49 (T12, A/B icacls
 	// avec/sans flags), invisible des tests hôte (icacls = Windows réel).
 	if info.IsDir() {
 		return runIcacls(path,
@@ -43,7 +43,7 @@ func setAgentACL(path string) error {
 }
 
 // resetBinaryACL rétablit sur le binaire de l'agent l'héritage de son
-// répertoire d'installation — le binaire est l'EXCEPTION à la convention 23.3
+// répertoire d'installation — le binaire est l'EXCEPTION à la convention
 // (canal agent = SYSTEM + Admins) : il DOIT rester exécutable par
 // BUILTIN\Users, sinon il n'y a pas de compagnon de session DU TOUT.
 //
@@ -74,8 +74,8 @@ func resetBinaryACL(path string) error {
 	return runIcacls(path, "/reset")
 }
 
-// setSessionCacheACL : ACL du répertoire de cache per-SID (Story 24.6,
-// contrat 24.3) — le user LIT son état ((OI) propage le R aux fichiers),
+// SetSessionCacheACL : ACL du répertoire de cache per-SID (
+// contrat) — le user LIT son état ((OI) propage le R aux fichiers),
 // n'écrit rien, ne lit pas le cache d'un autre SID. Les fichiers héritent
 // (jamais de ré-ACL des tmp : un icacls SYSTEM+Admins retirerait le R).
 func setSessionCacheACL(path, sid string) error {
@@ -87,8 +87,8 @@ func setSessionCacheACL(path, sid string) error {
 	)
 }
 
-// setSessionReportACL : ACL du répertoire de drop per-SID (Story 24.6,
-// contrat 24.4) — grant <SID>:(OI)(CI)M (Modify) : le user ÉCRIT son
+// SetSessionReportACL : ACL du répertoire de drop per-SID (
+// contrat) — grant <SID>:(OI)(CI)M (Modify) : le user ÉCRIT son
 // session-report.json (le M couvre création/rename/suppression — écriture
 // atomique tmp PID + rename), ne lit pas les drops des autres SID.
 func setSessionReportACL(path, sid string) error {
@@ -100,7 +100,7 @@ func setSessionReportACL(path, sid string) error {
 	)
 }
 
-// setAssetsACL : ACL du cache d'assets (Story 24.6, contrat 24.4) —
+// SetAssetsACL : ACL du cache d'assets (contrat)
 // BUILTIN\Users (*S-1-5-32-545) LECTURE : un wallpaper n'est pas un secret
 // et la session doit pouvoir l'afficher. (OI)(CI) : les fichiers héritent.
 func setAssetsACL(path string) error {
@@ -131,11 +131,11 @@ func setRainmeterACL(path string) error {
 }
 
 // setOverlayFileACL : ACL du FICHIER overlay.json écrit par SYSTEM au logon
-// (Story 27.1bis, D1/D2). SYSTEM + Administrators FULL, <SID>:R (Read) —
+// . SYSTEM + Administrators FULL, <SID>:R (Read)
 // héritage retiré : SYSTEM possède/écrit, l'élève LIT mais ne FALSIFIE JAMAIS
-// la donnée affichée (NFR5). Posée sur le FICHIER (le dossier %LOCALAPPDATA%
+// la donnée affichée. Posée sur le FICHIER (le dossier %LOCALAPPDATA%
 // appartient au user) : PAS de (OI)(CI) — ces flags rendraient la DACL
-// effective vide sur un fichier (acquis lab ws 49, T12 24.6 — cf. setAgentACL).
+// effective vide sur un fichier (acquis lab ws 49, T12 — cf. setAgentACL).
 func setOverlayFileACL(path, sid string) error {
 	return runIcacls(path,
 		"/inheritance:r",

@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * Story 4-4 — Audit / historique d'exécution d'une programmation.
+ * -4 — Audit / historique d'exécution d'une programmation.
  *
  * Shape JSONB summary :
  *  - success_count, failed_count, skipped_count : compteurs par run

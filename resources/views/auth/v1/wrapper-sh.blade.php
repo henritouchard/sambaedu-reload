@@ -1,9 +1,8 @@
 @verbatim
 #!/bin/bash
-# === SambaEdu script-execution-logs wrapper (Story 16.12 — Linux) ===
-# Emballe un script user (managed 17.x ou GPO legacy) pour capturer
+# Emballe un script user (managed ou GPO legacy) pour capturer
 # stdout/stderr/exit_code/duration + POST sur /api/v1/script-execution-logs.
-# Token lu depuis /var/lib/sambaedu/auth.json (mode 0600 iso 16.11 D11).
+# Token lu depuis /var/lib/sambaedu/auth.json (mode 0600).
 # Pas de `set -e` : on veut TOUJOURS POST le résultat même si le script
 # user échoue.
 set +e
@@ -23,27 +22,27 @@ SCRIPT_ID=''
 SCRIPT_B64='{{ $script_content_b64 }}'
 
 @verbatim
-# 1. Décodage du script user (base64 → fichier .sh temporaire chmod 700).
+# Décodage du script user (base64 → fichier .sh temporaire chmod 700).
 SCRIPT_FILE="$(mktemp /tmp/sambaedu-script-${CORR}.XXXX.sh)"
 STDOUT_FILE="/tmp/sambaedu-stdout-${CORR}.log"
 STDERR_FILE="/tmp/sambaedu-stderr-${CORR}.log"
 printf '%s' "$SCRIPT_B64" | base64 -d > "$SCRIPT_FILE" 2>/dev/null || { echo '[sambaedu-wrapper] base64 decode failed' >&2; rm -f "$SCRIPT_FILE"; exit 1; }
 chmod 700 "$SCRIPT_FILE"
 
-# 2. Timestamp démarrage (ISO 8601 UTC + ns pour calcul durée).
+# Timestamp démarrage (ISO 8601 UTC + ns pour calcul durée).
 STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 STARTED_NS="$(date +%s%N)"
 
-# 3. Exécution du script user.
+# Exécution du script user.
 bash "$SCRIPT_FILE" > "$STDOUT_FILE" 2> "$STDERR_FILE"
 EXIT_CODE=$?
 
-# 4. Calcul durée en ms.
+# Calcul durée en ms.
 FINISHED_NS="$(date +%s%N)"
 DURATION_MS=$(( (FINISHED_NS - STARTED_NS) / 1000000 ))
 if [ "$DURATION_MS" -lt 0 ]; then DURATION_MS=0; fi
 
-# 5. Status applicatif.
+# Status applicatif.
 if [ "$EXIT_CODE" -eq 0 ]; then
     STATUS='success'
 elif [ "$EXIT_CODE" -eq 124 ]; then
@@ -52,7 +51,7 @@ else
     STATUS='failure'
 fi
 
-# 6. Lecture stdout/stderr (head 4 KB + tail 4 KB max via cut byte-safe).
+# Lecture stdout/stderr (head 4 KB + tail 4 KB max via cut byte-safe).
 read_excerpt() {
     local path="$1"
     if [ ! -s "$path" ]; then echo ''; return; fi
@@ -68,7 +67,7 @@ read_excerpt() {
 STDOUT_EXCERPT="$(read_excerpt "$STDOUT_FILE")"
 STDERR_EXCERPT="$(read_excerpt "$STDERR_FILE")"
 
-# 7. Lecture token (jq prioritaire, fallback python3).
+# Lecture token (jq prioritaire, fallback python3).
 AUTH_FILE='/var/lib/sambaedu/auth.json'
 TOKEN=''
 if [ -r "$AUTH_FILE" ]; then
@@ -89,7 +88,7 @@ if [ -z "$TOKEN" ]; then
     exit "$EXIT_CODE"
 fi
 
-# 8. Construction body JSON via jq (escape robuste). Fallback python3.
+# Construction body JSON via jq (escape robuste). Fallback python3.
 build_body_jq() {
     local sid_arg
     if [ -n "$SCRIPT_ID" ]; then sid_arg="$SCRIPT_ID"; else sid_arg='null'; fi
@@ -138,7 +137,7 @@ else
     BODY="$(build_body_py)"
 fi
 
-# 9. POST avec retry exponentiel (1-2-3 → sleep 2,5,10s).
+# POST avec retry exponentiel (1-2-3 → sleep 2,5,10s).
 SUCCESS=0
 for attempt in 1 2 3; do
     if curl -fsS --max-time 10 -X POST "$ENDPOINT" \
@@ -156,7 +155,7 @@ if [ "$SUCCESS" -eq 0 ]; then
         >> /tmp/sambaedu-wrapper-retry.log 2>/dev/null
 fi
 
-# 10. Cleanup fichiers temp.
+# Cleanup fichiers temp.
 rm -f "$SCRIPT_FILE" "$STDOUT_FILE" "$STDERR_FILE" >/dev/null 2>&1
 
 exit "$EXIT_CODE"

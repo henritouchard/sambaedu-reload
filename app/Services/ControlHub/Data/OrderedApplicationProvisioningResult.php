@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Services\ControlHub\Data;
 
 /**
- * Story 31.3 — DTO de résultat de l'approvisionnement des applications ordonnées
+ * DTO de résultat de l'approvisionnement des applications ordonnées
  * par le contrat amont (controlHub).
  *
  * Retourné par {@see \App\Services\ControlHub\OrderedApplicationProvisioner::provision()}.
@@ -13,15 +13,14 @@ namespace App\Services\ControlHub\Data;
  *
  * Compteurs :
  *  - `provisioned`     : lignes `Application` matérialisées depuis la source (net-new).
- *  - `alreadyPresent`  : `app_id` ordonnés déjà présents en inventaire (no-op, AC3).
- *  - `skipped`         : ordres laissés non matérialisés (catalogue absent / source vide — AC6).
+ *  - `alreadyPresent`  : `app_id` ordonnés déjà présents en inventaire (no-op).
+ *  - `skipped`         : ordres laissés non matérialisés (catalogue absent ou source vide).
  *  - `installDispatched` : poses serveur mises en file (l'app ordonnée n'était pas installée).
  *  - `installSkipped`  : ordres sans recette à tirer (`xml_url` vide) — rien mis en file.
- *  - `failed`          : matérialisations en exception (résilience par app — AC6).
+ *  - `failed`          : matérialisations en exception (la résilience est par app).
  *  - `errors`          : messages d'échec par `app_id` (la boucle n'abandonne jamais).
  *
  * ⚠️ GARDE-FOU R3 : vocabulaire « amont » exclusivement, terme prohibé proscrit.
- * [Source: prd-contrat-manage-se5.md#R3]
  */
 class OrderedApplicationProvisioningResult
 {

@@ -14,7 +14,7 @@ use Illuminate\Support\Facades\Log;
  * `create_remote_json_connection`, `encrypt_json_token`,
  * `get_guacamole_auth_token`, `guacamole_url`).
  *
- * Story 38.4 (AC2) — sortie du `require` FS legacy de {@see RemoteAccessService}.
+ * Sortie du `require` FS legacy de {@see RemoteAccessService}.
  * `feedback_guacamole_scope` : **porter, pas refondre** — le token JSON chiffré
  * (extension guacamole-auth-json du fork interne `sambaedu-guacamole` 1.6.0) est
  * le CONTRAT, reproduit à l'identique :
@@ -197,7 +197,7 @@ class GuacamoleTokenService
             return null;
         }
 
-        // Parité legacy stricte (remote.inc.php:746,758, review 38.4 #5) :
+        // Parité legacy stricte (remote.inc.php:746,758) :
         // le HMAC est calculé sur la clé NON tronquée, PUIS la clé est
         // tronquée à 16 octets pour l'AES-128.
         $hmac = hash_hmac('sha256', $json, $key, true);

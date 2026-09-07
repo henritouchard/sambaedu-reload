@@ -1,4 +1,4 @@
-{{-- Story 3.8 - D6 / AC4.6 - Port iso legacy/modules/ipxe/Win10/action.php cmd_wpkg (LOC 268-311). --}}
+{{-- Port iso legacy/modules/ipxe/Win10/action.php cmd_wpkg (LOC 268-311). --}}
 {{-- Securite critique : ce .cmd s'execute en SYSTEM cote Windows post-reboot. --}}
 REM cmd
 REM  script de demarrage genere automatiquement

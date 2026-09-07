@@ -15,12 +15,12 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 36.7 (AC1/AC6) — page /admin/settings/app-profiles : catalogue des profils
+ * Page /admin/settings/app-profiles : catalogue des profils
  * applicatifs (liste, ajout, édition, activation/désactivation), violations du
  * garde-fou d'authoring remontées en erreurs (pas en 500).
  *
  * Le catalogue `roaming_app_profile` (Firefox/Thunderbird) est seedé + mis à
- * niveau par RefreshDatabase (migrations 36.5 + 36.7).
+ * niveau par RefreshDatabase (migrations +).
  */
 class AppProfilesCatalogPageTest extends TestCase
 {
@@ -38,7 +38,7 @@ class AppProfilesCatalogPageTest extends TestCase
 
         // L'observer d'authoring est enregistré HORS environnement de test
         // (AppServiceProvider) : on le branche ICI pour que l'écriture du catalogue
-        // via la page passe réellement par l'AppProfileAuthoringGuard (AC1).
+        // via la page passe réellement par l'AppProfileAuthoringGuard.
         CapabilityProjection::observe(CapabilityProjectionObserver::class);
     }
 
@@ -108,7 +108,7 @@ class AppProfilesCatalogPageTest extends TestCase
     {
         $this->grant(['server.admin']);
 
-        // Radical `sambaedu` interdit (piège n°1) → violation du guard, PAS un 500.
+        // Le radical `sambaedu` est interdit : le guard le refuse, sans lever de 500.
         Livewire::test(self::PAGE)
             ->call('openCreate')
             ->set('app', 'evil')

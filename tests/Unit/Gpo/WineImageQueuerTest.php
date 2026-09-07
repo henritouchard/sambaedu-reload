@@ -16,7 +16,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Tests Unit `WineImageQueuer` — Story 16.3c AC6.2 / AC1.3.
+ * Tests Unit `WineImageQueuer` —.
  */
 class WineImageQueuerTest extends TestCase
 {

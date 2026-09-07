@@ -21,7 +21,7 @@ use Illuminate\Support\Facades\Process;
 use Throwable;
 
 /**
- * Story 3.6 — D8 / D15 / AC4.3-AC4.7 — Job Laravel Queue qui exécute :
+ * Job Laravel Queue qui exécute :
  *
  *  1. `curl -fSL --max-time {timeout} -o '<iso_path>' '<url>'`
  *     → status pending → downloading.
@@ -30,7 +30,7 @@ use Throwable;
  *     legacy `install-win-iso.sh`) → status downloading → extracting.
  *  3. Soit `success` (exit_code=0), soit `failed` (exit_code ≠ 0 + stderr abrégé).
  *
- * Sécurité (D5 + D8) :
+ * Sécurité :
  *  - **`escapeshellarg()` systématique** sur tous les arguments shell.
  *  - **`Process::run(string)` mode shellline** uniquement quand on a besoin du
  *    sudo + redirect stdout vers fichier. Pour le sudo on construit la
@@ -38,13 +38,13 @@ use Throwable;
  *  - **`tries=1`** — un échec curl ou extraction est terminal.
  *  - **`WithoutOverlapping`** Job middleware (defense in depth couche 2 vs
  *    Cache::lock applicatif couche 1).
- *  - **`timeout=9300s`** (Q1 Henri 2026-05-21 = curl 7200 + extract 1800 +
- *    marge globale 300s ; configurable via env `IPXE_ISO_DOWNLOAD_TIMEOUT` +
+ *  - **`timeout=9300s`** (curl 7200 + extract 1800 + marge globale 300s ;
+ *    configurable via env `IPXE_ISO_DOWNLOAD_TIMEOUT` +
  *    `IPXE_ISO_EXTRACT_TIMEOUT`).
  *  - **Capture stdout/stderr ≤ 2000 chars** dans `error` (DB).
  *  - **Tail stdout/stderr 200 chars** dans le channel log `ipxe`.
  *
- * Concurrence (D15) :
+ * Concurrence :
  *  - `Cache::lock('ipxe.iso.download.global')->release()` dans `finally`
  *    quel que soit le terminus (success, failed, cancelled, exception).
  *  - Le lock est posé côté orchestrator (couche 1). Le Job le release.
@@ -67,7 +67,7 @@ class DownloadWindowsIsoJob implements ShouldQueue
     public int $tries = 1;
 
     /**
-     * Timeout global du Job — Q1 Henri post-review (2026-05-21).
+     * Timeout global du Job.
      *
      * Calculé dynamiquement comme `curl + extract + marge globale 300s` —
      * la marge couvre l'overhead Symfony Process + signal handling +
@@ -145,16 +145,14 @@ class DownloadWindowsIsoJob implements ShouldQueue
         $isoPath        = rtrim($isoStoragePath, '/') . '/' . $download->iso_name;
 
         // Dépôt manuel (upload) OU ré-injection de pilotes (ré-extraction d'une
-        // ISO déjà déployée, Story 3.10) : le fichier est déjà sur disque. On
+        // ISO déjà déployée) : le fichier est déjà sur disque. On
         // saute toute la phase curl et on passe directement à l'extraction.
         $skipsDownload = $download->skipsDownload();
 
         try {
-            // === Phase 1 : Downloading (curl) — flux URL uniquement ===========
-            //
-            // #14 — Transition pending → downloading sous lockForUpdate + check
-            // status pour éviter écrasement d'un cancel concurrent (race
-            // PostgreSQL). Si annulé entre dispatch et pickup => log + return.
+            // Transition pending → downloading sous lockForUpdate + check
+            // status pour éviter d'écraser un cancel concurrent. Si annulé entre
+            // dispatch et pickup => log + return.
             if (! $skipsDownload) {
                 $shouldContinue = DB::transaction(function () use ($download): bool {
                     /** @var WindowsIsoDownload|null $fresh */
@@ -195,12 +193,12 @@ class DownloadWindowsIsoJob implements ShouldQueue
                     escapeshellarg((string) $download->source_url),
                 );
 
-                // Q1 Henri 2026-05-21 : Process::timeout strict (pas de marge +60s
-                // — la marge globale vit dans `$this->timeout` au niveau Job).
+                // Process::timeout strict : la marge globale vit dans
+                // `$this->timeout`, au niveau du Job.
                 $curlResult = Process::timeout($curlTimeout)->run($curlCmd);
 
                 if (! $curlResult->successful()) {
-                    // Opus-A : cleanup best-effort du fichier ISO partiel.
+                    // Cleanup best-effort du fichier ISO partiel.
                     $this->cleanupPartialIso($isoPath, 'curl-failed');
                     $this->markFailed($download, $curlResult->exitCode() ?? -1, $curlResult->errorOutput() ?: $curlResult->output(), 'curl-failed');
 
@@ -217,10 +215,9 @@ class DownloadWindowsIsoJob implements ShouldQueue
             }
 
             // === Phase 2 : Extracting (extraction native, WindowsIsoExtractor) =
-            //
-            // #14 + Q3 — Transition (downloading|pending) → extracting sous
-            // lockForUpdate + check status cancelled. Si annulé avant extract
-            // => bypass + return sans écraser le status `cancelled`.
+            // Transition (downloading|pending) → extracting sous lockForUpdate
+            // + check status cancelled. Si annulé avant extract => bypass +
+            // return sans écraser le status `cancelled`.
             //
             // `started_at` est posé ici si absent (cas upload : pas de phase
             // download qui l'aurait déjà renseigné).
@@ -265,28 +262,20 @@ class DownloadWindowsIsoJob implements ShouldQueue
 
                 return;
             } catch (WinpeDriverInjectionException $e) {
-                // Story 3.10 (AC2.5) — l'injection des pilotes NIC dans le
+                // L'injection des pilotes NIC dans le
                 // boot.wim a échoué (wimlib absent / exit non-zéro / index
                 // invalide). On marque `failed` avec l'exit code wimlib + le
-                // stderr (message exploitable, toast côté UI 3.6) plutôt que de
+                // stderr (message exploitable, toast côté UI) plutôt que de
                 // laisser le Job livrer un boot.wim incomplet (demi-boot).
                 $this->markFailed($download, $e->exitCode, $e->getMessage(), 'winpe-driver-injection-failed');
 
                 return;
             }
 
-            // === Phase 3 : Success ============================================
-            //
-            // Q3 Henri 2026-05-21 : 2e `refresh()` AVANT la transition vers
-            // `success`. AC4.6 étendu : si l'admin a annulé EN COURS d'extract
-            // (rare mais possible si extract est court ou si le polling 60s
-            // décide tardivement), on détecte le cancel et on ne l'écrase
-            // PAS avec `success`. Le contrat reste : un status `cancelled`
-            // n'est jamais écrasé silencieusement.
-            //
-            // #14 — Transition extracting → success sous lockForUpdate +
-            // check status. Si annulé entre extract et success => log + return
-            // sans écrasement.
+            // Transition extracting → success sous lockForUpdate + check
+            // status : si l'admin a annulé EN COURS d'extract, on détecte le
+            // cancel et on ne l'écrase pas avec `success`. Un status
+            // `cancelled` n'est jamais écrasé silencieusement.
             $transitionedToSuccess = DB::transaction(function () use ($download): bool {
                 /** @var WindowsIsoDownload|null $fresh */
                 $fresh = WindowsIsoDownload::query()
@@ -330,7 +319,7 @@ class DownloadWindowsIsoJob implements ShouldQueue
                 'message'     => $e->getMessage(),
             ]);
 
-            // Opus-A : best-effort cleanup ISO partiel si on a déjà téléchargé
+            // Best-effort cleanup ISO partiel si on a déjà téléchargé
             // (l'exception peut arriver après le curl OK).
             $this->cleanupPartialIso($isoPath, 'exception');
 
@@ -349,9 +338,9 @@ class DownloadWindowsIsoJob implements ShouldQueue
      * Handler de défaillance globale Laravel (appelé si `handle()` throw
      * sans être catché — garde-fou pour ne pas laisser une row coincée).
      *
-     * Opus-C : release du lock AVANT les guards `if ($download === null || ...)`
-     * — sinon un row supprimé manuellement (admin DB) laisse le lock zombi
-     * 7200s. Toujours release puis return.
+     * Le lock est relâché AVANT les guards `if ($download === null || ...)` :
+     * sinon une row supprimée manuellement en base laisserait le lock zombi
+     * 7200 s. Toujours release, puis return.
      */
     public function failed(?Throwable $exception): void
     {
@@ -420,7 +409,7 @@ class DownloadWindowsIsoJob implements ShouldQueue
     }
 
     /**
-     * Opus-A — Cleanup best-effort du fichier ISO partiel après échec curl
+     * Cleanup best-effort du fichier ISO partiel après échec curl
      * (ou exception). Évite que 5 retries successifs accumulent ~30 Go
      * d'ISO partielles sur une VM 100 Go.
      *

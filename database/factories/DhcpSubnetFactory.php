@@ -8,7 +8,7 @@ use App\Models\DhcpSubnet;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
- * Story 8.3 — Factory des sous-réseaux DHCP (VLAN).
+ * Factory des sous-réseaux DHCP (VLAN).
  *
  * @extends Factory<DhcpSubnet>
  */

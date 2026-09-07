@@ -10,20 +10,19 @@ use Illuminate\Support\Facades\Log;
 /**
  * Service natif de gestion de comptes utilisateurs AD via `samba-tool user`.
  *
- * Story 16.3b (correctifs post-review 2026-05-12, décision Henri option A
- * complète) : remplacer le shim `create_ad_user` / `usersetpassword` /
- * `user_valid_passwd` non-fonctionnel (`_shim_log_unimplemented`) par une
- * implémentation native réutilisable, indépendante du legacy.
+ * Remplace les shims `create_ad_user` / `usersetpassword` /
+ * `user_valid_passwd` non fonctionnels par une implémentation native
+ * réutilisable, indépendante du legacy.
  *
  * Périmètre :
- *  - `exists()`     — `samba-tool user list` filtré (présence du compte)
- *  - `create()`     — `samba-tool user create` (mot de passe fixe)
+ *  - `exists()` — `samba-tool user list` filtré (présence du compte)
+ *  - `create()` — `samba-tool user create` (mot de passe fixe)
  *  - `setPassword()` — `samba-tool user setpassword`
  *  - `validatePassword()` — `samba-tool user syncpasswords --no-cache-ldb --terminate` n'est pas adapté,
  *    on utilise plutôt une commande `samba-tool user show` + best-effort bind test.
  *
  * **Logging** : channel `gpo` retenu (opérations admin AD à effet de bord —
- * cohérence Story 16.1 AC2.3 « actions admin GPO » loguées sur le channel
+ * Cohérence « actions admin GPO » loguées sur le channel
  * dédié) — pas `daily` car ces appels ne se produisent **pas** par requête
  * runtime poste : ils ne sont déclenchés que sur installation vierge (1ère
  * fois) ou drift recovery, et représentent une mutation AD persistante qu'on
@@ -31,9 +30,9 @@ use Illuminate\Support\Facades\Log;
  *
  * **Sécurité shell** : tous les appels passent par `SambaToolRunner` (mode
  * array, échappement automatique des arguments). Aucune concaténation de
- * string, aucun `shell_exec` direct (garde-fou archi Story 16.1 AC2.2).
+ * string, aucun `shell_exec` direct (garde-fou archi).
  *
- * @since Story 16.3b
+ * @since
  * @see SambaToolRunner pour l'exécution shell sécurisée.
  */
 class AdUserManager
@@ -99,7 +98,7 @@ class AdUserManager
      * Commande : `samba-tool user create <login> <password> --use-username-as-cn --description=<desc>`.
      *
      * @param  string  $samaccountname  Login AD (validé regex stricte).
-     * @param  string  $password  Mot de passe initial (transmis en argv —
+     * @param string $password Mot de passe initial (transmis en argv
      *                            traité confidentiellement par `SambaToolRunner`,
      *                            jamais loggué).
      * @param  array<string, string>  $attributes  Attributs additionnels facultatifs :

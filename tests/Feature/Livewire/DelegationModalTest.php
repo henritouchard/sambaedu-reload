@@ -21,7 +21,7 @@ use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
 /**
- * Tests Feature Livewire de la modale `delegation-modal` (Story 7.1.bis).
+ * Tests Feature Livewire de la modale `delegation-modal` (.bis).
  *
  * UX état→action mono-permission extraite de l'ancien tab Délégations du drawer.
  * Couvre :
@@ -207,7 +207,6 @@ class DelegationModalTest extends TestCase
         return $admin;
     }
 
-
     private function modalComponent(): string
     {
         return 'pages::users._partials.delegation-modal';
@@ -226,10 +225,6 @@ class DelegationModalTest extends TestCase
             'is_active' => true,
         ]);
     }
-
-    // ========================================================================
-    // applyDelegationActions — Auto selon l'état courant
-    // ========================================================================
 
     public function test_auto_grants_when_user_has_no_access(): void
     {
@@ -438,14 +433,14 @@ class DelegationModalTest extends TestCase
     }
 
     /**
-     * Story 49.2 (AC7) — INVERSION ASSUMÉE d'un comportement.
+     * INVERSION ASSUMÉE d'un comportement.
      *
      * Ce test s'appelait `test_auto_for_nonexistent_user_creates_minimal_eloquent_user`
      * et vérifiait qu'un login absent de SQL mais présent dans l'AD provoquait
      * la création d'une ligne `users` minimale (`role='autre'`, `is_active=true`
      * en dur). Ce fallback est supprimé : Postgres est la vérité pour
      * l'existence d'un compte côté SE5, et une ligne fabriquée dont les valeurs
-     * ne sont le miroir de rien est précisément ce que l'Epic 49 élimine.
+     * ne sont le miroir de rien est précisément ce que l' élimine.
      *
      * Nouveau contrat : aucune ligne créée, aucune délégation, l'utilisateur est
      * simplement compté en erreur (l'admin est invité à attendre la sync).
@@ -504,10 +499,6 @@ class DelegationModalTest extends TestCase
         $this->assertEquals(0, Delegation::count());
     }
 
-    // ========================================================================
-    // userSummaries
-    // ========================================================================
-
     public function test_user_summaries_reflects_current_state_per_user(): void
     {
         $admin = $this->grantAdminPermission($this->makeUser('dmod-sum-admin'));
@@ -530,10 +521,6 @@ class DelegationModalTest extends TestCase
         $this->assertEquals('none', $summaries['sum-dmod-none']['source']);
         $this->assertEquals('grant', $summaries['sum-dmod-none']['action_suggested']);
     }
-
-    // ========================================================================
-    // Validations
-    // ========================================================================
 
     public function test_apply_without_users_does_nothing(): void
     {

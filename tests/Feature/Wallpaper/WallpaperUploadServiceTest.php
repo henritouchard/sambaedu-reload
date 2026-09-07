@@ -272,7 +272,7 @@ class WallpaperUploadServiceTest extends TestCase
     public function default_upload_does_not_match_orphan_row(): void
     {
         // Un row orphan historique `(type, NULL, NULL, is_default=false)` ne
-        // doit PAS être matché lors d'un upload défaut étab (post-review #4).
+        // doit PAS être matché lors d'un upload défaut étab.
         $orphanAsset = WallpaperAsset::create([
             'filename' => 'orphan.jpg',
             'checksum' => hash('sha256', 'orphan'),

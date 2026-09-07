@@ -5,7 +5,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 36.5 (AC8) — capacité de PREUVE + CATALOGUE du mécanisme HORS-REGISTRE
+ * Capacité de PREUVE + CATALOGUE du mécanisme HORS-REGISTRE
  * `app_profile` : `roaming_app_profile`. La demande fondatrice « retrouver ses
  * signets Firefox sur n'importe quel poste » se projette sur la redirection du
  * profil applicatif vers le home réseau (report du mécanisme SE4
@@ -14,26 +14,26 @@ use Illuminate\Support\Facades\Schema;
  *
  * SOCLE (pas d'override par maille) : le mécanisme est de portée SESSION et
  * s'applique à TOUTE session user dès que la capacité est ACTIVE et que la
- * politique de fichiers monte le home K: (gate FilePolicyService['home'], AC7) —
+ * politique de fichiers monte le home K: (gate FilePolicyService['home'])
  * iso le jeu fixe K:/H: des lecteurs. `value_type=toggle`/`default_value=on`
  * sont cosmétiques : le provider {@see \App\Services\Agent\Providers\AppProfileCapabilityProvider}
  * ne consomme QUE `is_active` (aucune lecture d'assignation/override).
  *
  * CATALOGUE (catalogue-first) = spec JSON de la projection : Firefox +
- * Thunderbird (décision Henri 2026-07-21 — ces deux-là suffisent, le mécanisme
+ * Thunderbird (ces deux-là suffisent, le mécanisme
  * reste générique : une 3ᵉ app = une entrée, pas du code). Chaque entrée porte
  * `app`, `link` (relatif au profil Windows), `server` (relatif au home réseau),
  * `profile_name`, `install_hash` (section Firefox `[Install<hash>]` — valeurs SE4
  * des chemins d'install standards) et `cache_local` (dossier de cache épinglé
- * LOCAL sous %LOCALAPPDATA%, AC5 — report du `AppData\Local\cacheFirefox` SE4).
+ * LOCAL sous %LOCALAPPDATA% — report du `AppData\Local\cacheFirefox` SE4).
  *
  * Nom de profil `managed.default` : NEUF, STABLE, NON versionné, HORS radical
- * `sambaedu` (AC4, piège n°1) — jamais matché par la garde
- * `referencesSambaeduProfile()` du mécanisme `legacy_cleanup` (38.3). Le
+ * `sambaedu` — jamais matché par la garde
+ * `referencesSambaeduProfile` du mécanisme `legacy_cleanup`. Le
  * garde-fou d'authoring {@see \App\Services\Agent\Providers\AppProfileAuthoringGuard}
  * le VÉRIFIE (radical interdit refusé à la persistance).
  *
- * Pattern iso 36.1/36.2 : `updateOrInsert` par `key` puis par
+ * Pattern iso : `updateOrInsert` par `key` puis par
  * `(capability_id, os, mechanism)`, idempotent, garde `hasTable`, `down()` par
  * suppression de la `key` (FK cascade → projection + assignments). Description
  * ≤ 255 (contrainte varchar PG — sinon migrate /vm casse en 22001, invisible en
@@ -60,7 +60,7 @@ return new class extends Migration
                 'value_type' => 'toggle',
                 'options' => null,
                 'default_value' => 'on',
-                // Dépendance rendue explicite (AC7) : sans le home K: monté, le
+                // Dépendance rendue explicite : sans le home K: monté, le
                 // mécanisme n'émet AUCUN item (rediriger vers une cible non montée
                 // n'a pas de sens). Réglé sur /admin/settings/files.
                 'warning' => 'Dépend du montage du home réseau K: (politique de gestion des fichiers, '

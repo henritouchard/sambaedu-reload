@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Enums;
 
 /**
- * Story 60.1 — les QUATRE natures de nœud d'un plan de fichiers. Enum FERMÉE :
+ * Les QUATRE natures de nœud d'un plan de fichiers. Enum FERMÉE :
  * toute valeur inconnue rencontrée dans une `nodes_spec` stockée fait rejeter la
  * recette ({@see App\Models\DirectoryTemplate::assertValidTreeSpec()}).
  *
@@ -20,7 +20,7 @@ namespace App\Enums;
  *                      NI les données (cas réel : `_echange`, dont la bascule
  *                      historique passe l'accès de la classe à « rien » en
  *                      conservant le dossier). Modéliser ce nœud « optionnel »
- *                      détruirait des données à la désactivation — D9 : aucune
+ *                      détruirait des données à la désactivation — aucune
  *                      suppression implicite n'est exprimable.
  *  - `par_membre`    : un nœud PAR MEMBRE du groupe portant le rôle d'arête visé,
  *                      avec octroi NOMINATIF (sujet = identité interne du membre).
@@ -55,7 +55,7 @@ enum PlanNodeNature: string
 
     /**
      * `false` pour `contenu_libre` UNIQUEMENT : le plan ne prétend rien sur les
-     * ENFANTS de ce nœud. Drapeau destiné à la relecture d'état (60.4) — un
+     * ENFANTS de ce nœud. Drapeau destiné à la relecture d'état — un
      * enfant non modélisé sous un tel nœud n'est pas un écart.
      */
     public function governsChildren(): bool

@@ -8,8 +8,8 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 3.6 — D6 / AC3.* — Lecture filesystem best-effort des versions
- * Windows actuellement déployées sous `/var/sambaedu/unattended/install/os/`.
+ * Lecture filesystem best-effort des versions Windows actuellement déployées
+ * sous `/var/sambaedu/unattended/install/os/`.
  *
  * Pour Win10 et Win11, lit (si présent) les fichiers
  * `{base}/Win{N}/version` (courante) + `{base}/Win{N}-old/version` (ancienne)
@@ -19,7 +19,7 @@ use Illuminate\Support\Facades\Log;
  * Pourquoi un service dédié plutôt qu'un helper statique ?
  *  - Injection / mock dans les tests (`Storage::fake()` ou `Filesystem` mock).
  *  - Singleton dans le container (cf. `IpxeServiceProvider`).
- *  - Frontière D1 : sous-namespace `App\Ipxe\Iso\Services\*`.
+ *  - Frontière de namespace : `App\Ipxe\Iso\Services\*`.
  */
 class WindowsIsoSourcesReader
 {

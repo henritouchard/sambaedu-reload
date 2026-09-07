@@ -10,8 +10,6 @@ use App\Ipxe\Services\IpxeService;
 use Illuminate\Http\Response;
 
 /**
- * Story 3.2 — AC2.1 / D2.
- *
  * Controller fin — délègue 100% à {@see IpxeService::handleAdmin()}.
  *
  * **Sert** : `GET|POST /ipxe/admin` (port natif du legacy
@@ -19,10 +17,10 @@ use Illuminate\Http\Response;
  *
  * **Middlewares attachés en `routes/web.php`** :
  *
- *  - `auth.v1.lan-only` (16.11 — restriction RFC1918).
+ *  - `auth.v1.lan-only` (restriction RFC1918).
  *  - `throttle:600,1`.
  *
- * Pattern iso 3.1 `IpxeBootController` (DO-6).
+ * Pattern iso `IpxeBootController` (DO-6).
  */
 class IpxeAdminController extends Controller
 {

@@ -17,8 +17,7 @@ use Livewire\Component;
  * LA PAGE DE CONNEXION À L'INSTANCE NEXTCLOUD — bloc 1 de l'onglet
  * « Emplacements et cloud » de /admin/settings/files.
  *
- * ---------------------------------------------------------------------------
- * **STORY 63.3 — CE BLOC A DÉMÉNAGÉ, IL N'A PAS ÉTÉ RÉÉCRIT.** Il était
+ * **CE BLOC A DÉMÉNAGÉ, IL N'A PAS ÉTÉ RÉÉCRIT.** Il était
  * l'onglet « Personnels et partagés » ; il est maintenant révélé par la position
  * « Nextcloud » du choix de cloud, et par elle seule. La sonde-garde
  * fail-closed, le diagnostic persisté, la re-sonde après changement de secret,
@@ -33,7 +32,6 @@ use Livewire\Component;
  * {@see \App\Services\Filesystem\FileLocationPolicyMirror}. Ce composant lit
  * donc les quatre booléens persistés et les REPASSE inchangés à chaque
  * enregistrement — il n'écrit que des réglages de connexion.
- * ---------------------------------------------------------------------------
  *
  * Composant enfant (nested) — double garde `server.admin`, et **racine stable**.
  *
@@ -42,24 +40,21 @@ use Livewire\Component;
  * (`wire:model.blur`). `save()` reste public — c'est le point d'entrée unique,
  * appelé par le hook `updated()`.
  *
- * ---------------------------------------------------------------------------
- * **LE SECRET NE TRANSITE JAMAIS EN RETOUR (story 61.1).** L'app password admin
+ * **LE SECRET NE TRANSITE JAMAIS EN RETOUR.** L'app password admin
  * est un champ d'ÉCRITURE SEULE : il n'est jamais préchargé depuis le stock, et
  * la propriété est VIDÉE dès qu'elle est persistée — sans quoi elle repartirait
  * dans l'instantané Livewire du rendu suivant, c'est-à-dire dans le HTML de la
  * page. L'écran ne montre que le FAIT qu'un secret est enregistré, jamais sa
  * valeur. Un test l'épingle sur le HTML rendu.
- * ---------------------------------------------------------------------------
  *
- * ---------------------------------------------------------------------------
- * **STORY 61.2 (recadrée le 2026-08-08) — LA CONNEXION EST FAIL-CLOSED.**
+ * **LA CONNEXION EST FAIL-CLOSED.**
  * L'écran ne se contente pas d'enregistrer une configuration : il VÉRIFIE que le
  * compte saisi peut administrer l'instance, **avant** de la persister. Une
  * configuration que la sonde refuse n'est pas enregistrée du tout, la précédente
  * reste en vigueur, et le motif exact est affiché — jamais « accepté puis
  * silencieusement dégradé ».
  *
- * **Il n'y a plus de « mode ».** La story 61.2 avait livré un choix entre instance
+ * **Il n'y a plus de « mode ».** La avait livré un choix entre instance
  * administrée et compte porteur délégué. Mesuré contre une instance réelle, un
  * compte ordinaire ne peut créer ni Team folder, ni groupe, ni partage de groupe :
  * sans Team folder, pas de clôture — donc pas de cloisonnement, qui est le problème
@@ -68,12 +63,12 @@ use Livewire\Component;
  *
  * **La sonde-garde ne parle à l'instance QUE quand ce qui DÉFINIT LA CONNEXION
  * change** — l'URL de l'instance, l'identifiant admin, la vérification TLS (revue
- * 61.2 #1 : ne comparer que l'identifiant laissait passer un changement d'URL, donc
+ * Ne comparer que l'identifiant laissait passer un changement d'URL, donc
  * une cible jamais vérifiée). Le point de sauvegarde est global à l'onglet : sonder
  * à chaque enregistrement ferait d'une panne d'instance un verrou sur le répertoire
  * personnel, les partages ou l'hôte SMB — des réglages qui ne la concernent pas.
  *
- * **Le cas du SECRET est différent, et il est traité à part (revue 61.2 #3)** :
+ * **Le cas du SECRET est différent, et il est traité à part** :
  * l'enregistrement d'un app password n'est JAMAIS annulé par une sonde. Refuser de
  * STOCKER un secret que l'instance ne confirme pas rendrait une instance
  * injoignable définitivement inconfigurable — or l'app password est ÉMIS par
@@ -82,14 +77,13 @@ use Livewire\Component;
  * dernier changement de secret » sinon — état persisté, donc il survit au
  * rechargement. Le fail-closed porte sur la CONFIGURATION DE CONNEXION ; l'honnêteté,
  * elle, porte sur tout.
- * ---------------------------------------------------------------------------
  */
 new class extends Component {
     use WithToasts;
 
     /**
      * ⚠️ **LA CAPACITÉ N'EST PLUS UNE PROPRIÉTÉ, ET C'EST UNE CORRECTION DE
-     * SÉCURITÉ** (revue 63.3).
+     * SÉCURITÉ** (revue).
      *
      * Elle l'était, lue au seul `mount()`. Or ce composant est monté au CLIC sur
      * la position « Nextcloud » du choix de cloud, c'est-à-dire **avant** que le
@@ -99,7 +93,7 @@ new class extends Component {
      * qu'un navigateur ne le fait pas :
      *  - {@see self::guardConnectionChange()} rendait `true` **sans jamais
      *    sonder** — URL et compte administrateur persistés sans la moindre
-     *    vérification, c'est-à-dire le fail-closed de la story 61.2
+     * vérification, c'est-à-dire le fail-closed de la
      *    court-circuité sur le parcours de PREMIÈRE configuration, le seul qui
      *    compte ;
      *  - {@see self::reprobeAfterSecretChange()} effaçait le diagnostic au lieu
@@ -216,8 +210,7 @@ new class extends Component {
         // emplacements et du cloud actif par le miroir — et tout le reste sont
         // relus et repassés par `patchGlobal()`. Une page de connexion qui
         // écrirait une capacité ouvrirait un second chemin de décision, celui-là
-        // même que cette story ferme ; ici, elle n'en a structurellement plus le
-        // moyen.
+        // même qu'on ferme ici ; cette page n'en a structurellement plus le moyen.
         try {
             FilePolicyService::patchGlobal([
                 'nextcloud_server_url' => $this->nextcloudServerUrl,
@@ -254,7 +247,7 @@ new class extends Component {
      * version de SE5 serait sinon publiée une fois pour toutes et jamais
      * rafraîchie. L'opération est idempotente et ne coûte qu'une empreinte.
      *
-     * **Story 63.2 — plus AUCUNE condition.** La publication était gardée par la
+     * **plus AUCUNE condition.** La publication était gardée par la
      * capacité Nextcloud et par la case « poser le raccourci » ; la case a
      * disparu (le raccourci suit le cloud actif) et le produit ne décide plus de
      * rien ici. Publier une icône n'active rien et ne se voit nulle part tant
@@ -271,7 +264,7 @@ new class extends Component {
     }
 
     /**
-     * AC2 — LA SONDE-GARDE : la configuration enregistrée est une configuration que
+     * LA SONDE-GARDE : la configuration enregistrée est une configuration que
      * le compte peut honorer.
      *
      * Rend `false` quand elle est REFUSÉE — l'appelant n'écrit alors rien du tout.
@@ -282,20 +275,18 @@ new class extends Component {
      * refuserait la saisie d'une configuration en cours de constitution, ce qui
      * interdirait de la constituer.
      *
-     * ---------------------------------------------------------------------------
-     * **CORRECTION DE REVUE (61.2 #1) — L'URL ET LE TLS SONT DE LA CONNEXION, PAS
+     * **L'URL ET LE TLS SONT DE LA CONNEXION, PAS
      * DU DÉCOR.** La première rédaction ne comparait que l'IDENTIFIANT du compte.
      * Changer la seule URL — déménagement d'hébergeur, ou simple faute de frappe —
      * traversait donc la garde sans le moindre appel : `setGlobal()` persistait une
      * nouvelle cible avec un compte qui n'avait JAMAIS été vérifié capable de
-     * l'administrer là-bas. C'est précisément ce que l'AC2 interdit. Le drapeau TLS
+     * L'administrer là-bas. C'est précisément ce que l' interdit. Le drapeau TLS
      * relève du même raisonnement : il décide de ce qui est joignable.
      *
      * **Recadrage du 2026-08-08** : la garde portait aussi sur le MODE visé. Les
      * modes ont disparu ; la question qu'elle pose est désormais unique — « ce
      * compte est-il administrateur de l'instance ? » — et {@see NextcloudConnectionProbe}
      * y répond déjà.
-     * ---------------------------------------------------------------------------
      *
      * Une sauvegarde qui ne touche que l'hôte SMB ne parle donc JAMAIS à
      * l'instance ; capacité éteinte, aucun appel non plus — il n'y a alors aucune
@@ -377,10 +368,9 @@ new class extends Component {
     }
 
     /**
-     * CORRECTION DE REVUE (61.2 #3) — REMPLACER UN SECRET NE LAISSE PLUS UN MODE
+     * REMPLACER UN SECRET NE LAISSE PLUS UN MODE
      * DÉCLARÉ « VÉRIFIÉ » QU'IL N'EST PLUS.
      *
-     * ---------------------------------------------------------------------------
      * **NON BLOQUANTE, ET C'EST LE CŒUR DE LA DÉCISION.** L'enregistrement du
      * secret n'est JAMAIS annulé par le résultat de cette sonde. Refuser de STOCKER
      * un app password que l'instance ne confirme pas rendrait une instance
@@ -397,7 +387,6 @@ new class extends Component {
      *
      * Un « non vérifié » affiché n'est pas un échec : c'est le seul état honnête.
      * Il est persisté avec le diagnostic, donc il survit au rechargement.
-     * ---------------------------------------------------------------------------
      */
     private function reprobeAfterSecretChange(string $stored): void
     {
@@ -533,15 +522,11 @@ new class extends Component {
         $this->toastSuccess('Provisionnement Nextcloud enfilé. Le rapport apparaîtra ici une fois terminé.');
     }
 
-    // =========================================================================
-    // AC7 — le rattachement explicite d'identité
-    // =========================================================================
-
     /**
      * Ouvre la modale de rattachement depuis un compte « introuvable » du dernier
      * rapport. Le champ est **pré-rempli avec le candidat nommé par le rapport**
      * quand il en existe un : ce sont exactement les identifiants que l'instance a
-     * proposés et que SE5 a refusé d'adopter tout seul (revue 61.1, correction #2).
+     * proposés et que SE5 a refusé d'adopter tout seul.
      */
     public function openLinkModal(string $login, ?string $candidate = null): void
     {
@@ -734,8 +719,7 @@ new class extends Component {
                 </div>
 
                 @if ($probeResult && ($probeResult['unverified_since_secret_change'] ?? false))
-                    {{-- Correction de revue 61.2 #3 — L'ÉTAT HONNÊTE APRÈS UN
-                         CHANGEMENT DE SECRET. Le secret EST enregistré (jamais
+                    {{-- L'ÉTAT HONNÊTE APRÈS UN CHANGEMENT DE SECRET. Le secret EST enregistré (jamais
                          annulé par la sonde : une instance injoignable resterait
                          sinon inconfigurable), mais la position déclarée n'est plus
                          confirmée, et l'écran le DIT. Cet état est persisté : il
@@ -822,7 +806,7 @@ new class extends Component {
                                 <span class="badge badge-warning badge-outline">Introuvables : {{ $lastReport['users']['introuvables'] }}</span>
                                 <span class="badge badge-error badge-outline">Échecs : {{ $lastReport['users']['echecs'] }}</span>
                                 <span class="badge badge-ghost">Hors périmètre : {{ $lastReport['users']['exclus'] }}</span>
-                                {{-- Correction de revue 61.3 #1 — le plafond NON écrit se voit. Le
+                                {{-- Le plafond NON écrit se voit. Le
                                      `?? 0` n'est pas de la coquetterie : un rapport mis en cache
                                      AVANT cette correction ne porte pas la clé, et l'écran doit
                                      continuer de s'afficher. --}}
@@ -832,7 +816,7 @@ new class extends Component {
                                         {{ $lastReport['users']['quotas_indetermines'] }}
                                     </span>
                                 @endif
-                                {{-- Story 63.4 — L'ÉCRASEMENT SE VOIT. Le balayage réécrit le
+                                {{-- L'ÉCRASEMENT SE VOIT. Le balayage réécrit le
                                      plafond de tout compte que SE5 gouverne, y compris s'il
                                      avait été réglé à la main dans l'instance. Le `?? 0` couvre
                                      les rapports mis en cache avant ce compteur. --}}
@@ -877,7 +861,7 @@ new class extends Component {
                                                 <td>{{ $issue['issue'] }}</td>
                                                 <td class="text-base-content/60">{{ $issue['detail'] }}</td>
                                                 <td class="text-right">
-                                                    {{-- AC7 — le rattachement EXPLICITE : pré-rempli du
+                                                    {{-- Le rattachement EXPLICITE : pré-rempli du
                                                          candidat que l'instance a proposé et que SE5 a
                                                          refusé d'adopter tout seul.
 
@@ -906,7 +890,7 @@ new class extends Component {
         </div>
     </div>
 
-    {{-- « Effet sur le poste » a QUITTÉ ce bloc (Story 63.3) : il est porté par
+    {{-- « Effet sur le poste » a QUITTÉ ce bloc : il est porté par
          les deux cartes d'emplacement, seul endroit où il est vrai. Ce qui reste
          ici est ce que cet écran-là ne dit pas — ce que l'instance publie. --}}
     <div class="flex items-start gap-3 rounded-lg bg-base-200 px-3 py-2">

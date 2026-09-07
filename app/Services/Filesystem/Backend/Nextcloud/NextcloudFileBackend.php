@@ -22,20 +22,16 @@ use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Support\Facades\Cache;
 
 /**
- * Story 61.3 — LE SECOND BACKEND RÉEL : un dossier d'équipe Nextcloud, derrière la
+ * LE SECOND BACKEND RÉEL : un dossier d'équipe Nextcloud, derrière la
  * MÊME ligne de contrat.
  *
- * C'est ici que l'AUTORITÉ BASCULE. La story 61.1 avait ajouté un chemin d'accès
- * sans toucher à qui écrit les droits ; 61.2 avait connecté et sondé l'instance
- * sans rien exécuter. Ce fichier traverse la ligne : un partage peut désormais
- * vivre entièrement dans le cloud, sans aucun chemin SMB (D7 — une impossibilité
- * vérifiée, pas une coupe de périmètre).
+ * C'est ici que l'AUTORITÉ BASCULE : un partage peut vivre entièrement dans le
+ * cloud, sans aucun chemin SMB.
  *
  * Le modèle d'implémentation est le backend du serveur de fichiers historique, à
  * l'identique : mêmes signatures, MÊME ORDRE D'EFFONDREMENT, lecture avant
  * écriture, verrou de passage, rapport couvrant exactement les nœuds du plan.
  *
- * ---------------------------------------------------------------------------
  * **LA CONVENTION DE PRÉCÉDENCE — le legs nommé du contrat, tenu ici aussi.**
  *
  *     `echec` > `non_exprimable` > `non_implemente` > `applique` > `conforme`
@@ -47,10 +43,9 @@ use Illuminate\Support\Facades\Cache;
  * (HTTP séquencé) — c'est l'orchestrateur qui, au-dessus, dit « engagé, pas achevé »
  * quand il enfile.
  *
- * ---------------------------------------------------------------------------
  * **LA CLÔTURE EST EFFECTIVE, ET C'EST LA RAISON D'ÊTRE DE CE BACKEND.**
  *
- * Le sondage d'ouverture d'epic a mesuré, sur le mécanisme de PARTAGE, la fuite qui
+ * Le sondage d'ouverture a mesuré, sur le mécanisme de PARTAGE, la fuite qui
  * a fait naître {@see \App\Services\Filesystem\Plan\PlanNode::$closure} : un octroi
  * posé sur un ancêtre propage au sous-arbre, l'instruction de retrait est acceptée
  * sans effet, et la relecture rend un accès là où on demandait zéro. Ce backend
@@ -64,7 +59,6 @@ use Illuminate\Support\Facades\Cache;
  * nœud rend `non_exprimable` en nommant le rôle. Jamais `applique` sur la foi d'une
  * enveloppe verte — l'enveloppe de ce protocole ne conclut rien par construction.
  *
- * ---------------------------------------------------------------------------
  * **L'ORDRE DES GESTES EST UN ORDRE DE SÛRETÉ, pas seulement de dépendance.**
  *
  *  1. adopter ou créer le dossier d'équipe (reconnaissance sur le point de montage
@@ -82,15 +76,14 @@ use Illuminate\Support\Facades\Cache;
  *     qui élargit est le dernier : si la séquence s'interrompt, elle s'interrompt
  *     du côté fermé.
  *
- * ---------------------------------------------------------------------------
  * **L'IDEMPOTENCE EST VRAIE, ET ELLE SE JOUE SUR LE RELU.** Chaque écriture est
  * précédée d'une lecture, et la comparaison porte sur les valeurs RELUES en
  * IGNORANT les champs que le serveur ajoute (le libellé d'affichage d'un principal,
- * la barre oblique d'un point de montage). Cet epic a rencontré trois fois le même
+ * la barre oblique d'un point de montage). Ce produit a rendu trois fois le même
  * piège ; comparer l'envoyé au relu produirait une dérive permanente avec tous les
  * doubles verts.
  *
- * **AUCUN OUTIL EN LIGNE DE COMMANDE.** Le sondage 60.0 posait sa clôture avec
+ * **AUCUN OUTIL EN LIGNE DE COMMANDE.** Le sondage posait sa clôture avec
  * l'outil d'administration de l'instance : c'est un accès système AU SERVEUR
  * NEXTCLOUD, qu'on n'a pas sur une instance distante ou tierce. Ce backend est
  * 100 % HTTP, et un test d'architecture l'épingle.
@@ -112,10 +105,6 @@ final class NextcloudFileBackend implements FileBackend
     {
         return FileBackendName::Nextcloud;
     }
-
-    // =========================================================================
-    // provision
-    // =========================================================================
 
     public function provision(FilePlan $plan): ReconciliationReport
     {
@@ -167,7 +156,6 @@ final class NextcloudFileBackend implements FileBackend
             }
         }
 
-        // --- 1. Le dossier d'équipe : adopté sur le point de montage RELU -----
         $folder = $this->resolveFolder($folders, $plan->rootPath);
 
         if ($folder['error'] !== null) {
@@ -180,13 +168,11 @@ final class NextcloudFileBackend implements FileBackend
         $folderId = $folder['id'];
         $rootTouched = $folder['created'];
 
-        // --- 2. Le groupe STRUCTUREL d'administration -------------------------
         $structural = $this->ensureStructuralAccess($folders, $folderId, $config, $folder['groups'], $rootTouched);
         if ($structural !== null) {
             return $this->everyNode($plan, static fn (string $p): NodeReconciliation => NodeReconciliation::echec($p, $structural));
         }
 
-        // --- 3. L'interrupteur des permissions avancées, AVANT les plafonds ---
         if (! ($folder['aclEnabled'] ?? false)) {
             $toggled = $folders->enableAdvancedPermissions($folderId);
             if ($toggled->isFailure()) {
@@ -199,10 +185,8 @@ final class NextcloudFileBackend implements FileBackend
             $rootTouched = true;
         }
 
-        // --- 4. Les groupes du plan et leur appartenance ----------------------
         $groupFailures = $this->convergeGroups($folders, $projection, $config, $rootTouched);
 
-        // --- 5 & 6. L'arborescence PUIS les règles, un niveau à la fois --------
         //
         // **LECTURE AVANT ÉCRITURE, ICI AUSSI.** On relit l'état du nœud d'abord :
         // il dit à la fois si le dossier existe et quelles règles y sont posées. Un
@@ -220,7 +204,6 @@ final class NextcloudFileBackend implements FileBackend
             $this->reconcileNode($dav, $plan, $node, $projection, $outcomes[$path], $details[$path]);
         }
 
-        // --- 7. Les plafonds, EN DERNIER (le seul geste qui élargit) -----------
         $ceilingFailures = $this->convergeCeilings($folders, $folderId, $folder['groups'], $projection);
 
         foreach ([$groupFailures, $ceilingFailures] as $failures) {
@@ -456,27 +439,6 @@ final class NextcloudFileBackend implements FileBackend
             }
 
             foreach (array_diff($current, $wanted) as $userId) {
-                // ---------------------------------------------------------------
-                // CORRECTION DE REVUE 61.3 #4 — LA GARDE EXISTE MAINTENANT.
-                //
-                // Ce commentaire décrivait une protection que la boucle n'appliquait
-                // PAS : le retrait était inconditionnel. Le compte d'administration
-                // n'appartient pas aux groupes du plan ; s'il s'y trouve, c'est un
-                // état voulu par l'exploitant, pas une dérive à corriger — et le
-                // retirer lui ferait perdre l'accès qu'il s'est donné. C'est la même
-                // doctrine que celle appliquée aux groupes ÉTRANGERS quelques lignes
-                // plus bas : hors du plan, hors du geste.
-                //
-                // La classe de défaut est vicieuse : le retrait réussit, le passage
-                // est vert, et l'effet ne se manifeste qu'au passage SUIVANT, sous la
-                // forme d'un dossier soudain inatteignable.
-                //
-                // **Comparaison insensible à la casse, à dessein.** Les deux erreurs
-                // ne coûtent pas le même prix : sauter un retrait laisse une
-                // appartenance périmée, qui se voit ; retirer à tort retire l'accès
-                // du compte qui écrit, ce qui ne se voit pas avant le passage
-                // suivant. On protège plus large que strictement nécessaire.
-                // ---------------------------------------------------------------
                 if (mb_strtolower((string) $userId) === mb_strtolower($config->adminUser)) {
                     continue;
                 }
@@ -781,14 +743,10 @@ final class NextcloudFileBackend implements FileBackend
         return $bits;
     }
 
-    // =========================================================================
-    // deprovision
-    // =========================================================================
-
     /**
      * RÉVOQUE les octrois — SANS DÉTRUIRE NI LE DOSSIER NI SON CONTENU.
      *
-     * **Aucun chemin de production ne supprime un dossier d'équipe** (D9, épinglé
+     * **Aucun chemin de production ne supprime un dossier d'équipe** (épinglé
      * par test). La séquence est : retirer les règles posées sur les nœuds du plan,
      * puis retirer de la carte du dossier les groupes que SE5 y a mis. Le dossier
      * reste, ses données restent, et le compte d'administration y garde accès —
@@ -883,10 +841,6 @@ final class NextcloudFileBackend implements FileBackend
             $lock->release();
         }
     }
-
-    // =========================================================================
-    // inspect
-    // =========================================================================
 
     /**
      * RELIT l'état, nœud par nœud, RACINE COMPRISE, et le REPROJETTE en vocabulaire
@@ -1063,19 +1017,15 @@ final class NextcloudFileBackend implements FileBackend
         return false;
     }
 
-    // =========================================================================
-    // quota
-    // =========================================================================
-
     /**
-     * Story 61.3 — LE PREMIER BACKEND QUI SAIT PLAFONNER UNE ZONE.
+     * LE PREMIER BACKEND QUI SAIT PLAFONNER UNE ZONE.
      *
      * Le plafond d'un dossier d'équipe porte sur LE DOSSIER ENTIER : le plafond du
      * nœud RACINE s'y projette exactement, et un plafond porté par un SOUS-nœud est
      * `non_exprimable` — c'est une limite du MODÈLE, permanente, pas une dette de
      * notre code. L'affichage MASQUE ce réglage là où il ne veut rien dire.
      *
-     * **Ce n'est PAS le quota d'une personne** (frontière D8) : budgéter un compte
+     * **Ce n'est PAS le quota d'une personne** : budgéter un compte
      * est l'affaire du provisionnement des utilisateurs, et ce backend n'a aucun
      * chemin vers les comptes — un test l'épingle des deux côtés.
      *
@@ -1173,12 +1123,8 @@ final class NextcloudFileBackend implements FileBackend
         return NodeReconciliation::echec($path, 'le dossier d\'équipe a disparu de l\'inventaire entre la pose et la relecture.');
     }
 
-    // =========================================================================
-    // location
-    // =========================================================================
-
     /**
-     * Story 60.5 — OÙ ce plan vit, POUR AFFICHAGE.
+     * OÙ ce plan vit, POUR AFFICHAGE.
      *
      * Une phrase, pas une adresse à réutiliser : elle dit l'instance et le nom du
      * dossier d'équipe, c'est-à-dire ce qu'il faut savoir pour aller vérifier à la
@@ -1194,10 +1140,6 @@ final class NextcloudFileBackend implements FileBackend
 
         return sprintf('%s — dossier d\'équipe « %s »', $config->baseUrl, $plan->rootPath);
     }
-
-    // =========================================================================
-    // Effondrement et utilitaires
-    // =========================================================================
 
     private function remotePath(FilePlan $plan, string $nodePath): string
     {

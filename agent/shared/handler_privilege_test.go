@@ -7,13 +7,11 @@ import (
 	"testing"
 )
 
-// Tests du handler `privilege` (Story 35.6, contrat §7.9) — fake PrivilegeOps
+// Tests du handler `privilege` (contrat §7.9) — fake PrivilegeOps
 // en mémoire. Le fake porte AUSSI des titulaires « posés à la main » pour
-// prouver la réconciliation de CONTENEUR (D4 : le handler possède la liste
+// prouver la réconciliation de CONTENEUR (le handler possède la liste
 // ENTIÈRE — surnuméraires révoqués) et compte les LookupSid (mémo PAR PASSE,
-// piège #7).
-
-// --- Fake PrivilegeOps ---------------------------------------------------------
+// une seule fois par compte).
 
 type fakePrivilegeOps struct {
 	// sids : annuaire nom (minuscule) → SID (les comptes résolubles du poste).
@@ -86,8 +84,6 @@ func (f *fakePrivilegeOps) holderCount(privilege string) int {
 	return len(f.holders[strings.ToLower(privilege)])
 }
 
-// --- Helpers ------------------------------------------------------------------
-
 const rdpDeny = "SeDenyRemoteInteractiveLogonRight"
 
 func privItem(privilege string, accounts []string) StateItem {
@@ -103,8 +99,6 @@ func privItem(privilege string, accounts []string) StateItem {
 		Payload:   map[string]any{"privilege": privilege, "accounts": arr},
 	}
 }
-
-// --- (a) accord des manquants + relecture conforme + 2e Apply zéro op ---------
 
 func TestPrivilegeApplyThenIdempotent(t *testing.T) {
 	ops := newFakePrivilegeOps()
@@ -136,8 +130,6 @@ func TestPrivilegeApplyThenIdempotent(t *testing.T) {
 		t.Fatalf("apply idempotent attendu : grantCnt=%d revokeCnt=%d", ops.grantCnt, ops.revokeCnt)
 	}
 }
-
-// --- (b) titulaire retiré à la main ⇒ re-drift STRICT à travers le moteur ------
 
 func TestPrivilegeThroughEngineStrictRedrift(t *testing.T) {
 	ops := newFakePrivilegeOps()
@@ -173,12 +165,10 @@ func TestPrivilegeThroughEngineStrictRedrift(t *testing.T) {
 	}
 }
 
-// --- (c) titulaire surnuméraire (ajouté à la main) ⇒ révocation ---------------
-
 func TestPrivilegeStrayHolderRevoked(t *testing.T) {
 	ops := newFakePrivilegeOps()
 	// Un admin a accordé le deny à `Profs` À LA MAIN : hors état désiré → le
-	// handler possède la liste ENTIÈRE (D4), le surnuméraire est RÉVOQUÉ.
+	// handler possède la liste ENTIÈRE, le surnuméraire est RÉVOQUÉ.
 	_ = ops.GrantPrivilege("S-1-5-21-1111-2222-3333-1104", rdpDeny)
 	ops.grantCnt = 0
 	h := &PrivilegeHandler{Ops: ops}
@@ -203,8 +193,6 @@ func TestPrivilegeStrayHolderRevoked(t *testing.T) {
 		t.Fatalf("après réconciliation : conforme attendu (ok=%v err=%v)", ok, err)
 	}
 }
-
-// --- (d) accounts: [] ⇒ privilège vidé (off réel) ------------------------------
 
 func TestPrivilegeEmptyAccountsEmptiesThePrivilege(t *testing.T) {
 	ops := newFakePrivilegeOps()
@@ -236,7 +224,7 @@ func TestPrivilegeOutOfAllowlistIsIsolatedItemError(t *testing.T) {
 	ops := newFakePrivilegeOps()
 	h := &PrivilegeHandler{Ops: ops}
 	items := []StateItem{
-		// Droit *grant* (verrouillerait la machine) — refus agent (piège #9).
+		// Droit *grant* (verrouillerait la machine) — refus agent.
 		privItem("SeRemoteInteractiveLogonRight", []string{"Eleves"}),
 		// Item SÛR → doit converger malgré le refus isolé.
 		privItem(rdpDeny, []string{"Eleves"}),
@@ -257,7 +245,7 @@ func TestPrivilegeOutOfAllowlistIsIsolatedItemError(t *testing.T) {
 	}
 
 	// À travers le moteur : verdict `error` pour le type (l'erreur remonte
-	// TOUJOURS, grain 27.8).
+	// TOUJOURS, grain).
 	engine := &Engine{Handlers: map[string]Handler{"privilege": h}}
 	report := engine.RunPass(items, AppliedState{})
 	if len(report) != 1 || report[0].Status != "error" {
@@ -265,14 +253,12 @@ func TestPrivilegeOutOfAllowlistIsIsolatedItemError(t *testing.T) {
 	}
 }
 
-// --- (f) compte irrésoluble ⇒ erreur d'item SANS application partielle ---------
-
 func TestPrivilegeUnresolvableAccountNoPartialApplication(t *testing.T) {
 	ops := newFakePrivilegeOps()
 	h := &PrivilegeHandler{Ops: ops}
 	items := []StateItem{
 		// `Fantome` est irrésoluble : l'item ENTIER est en erreur — `Eleves`
-		// (résoluble, MÊME privilège) ne doit PAS être accordé (piège #8 : un
+		// (résoluble, MÊME privilège) ne doit PAS être accordé (un
 		// deny partiel laisserait un trou silencieux).
 		privItem(rdpDeny, []string{"Eleves", "Fantome"}),
 		// Un AUTRE privilège (autre item) converge normalement.
@@ -296,8 +282,6 @@ func TestPrivilegeUnresolvableAccountNoPartialApplication(t *testing.T) {
 		t.Fatalf("l'AUTRE privilège aurait dû converger (effort maximal)")
 	}
 }
-
-// --- (g) payload invalide ⇒ error pour le type ---------------------------------
 
 func TestPrivilegeInvalidPayloadIsError(t *testing.T) {
 	h := &PrivilegeHandler{Ops: newFakePrivilegeOps()}
@@ -325,8 +309,6 @@ func TestPrivilegeInvalidPayloadIsError(t *testing.T) {
 	}
 }
 
-// --- (h) mémo SID PAR PASSE (compteur du fake, piège #7) -----------------------
-
 func TestPrivilegeSidMemoisedPerPassOnly(t *testing.T) {
 	ops := newFakePrivilegeOps()
 	h := &PrivilegeHandler{Ops: ops}
@@ -352,10 +334,8 @@ func TestPrivilegeSidMemoisedPerPassOnly(t *testing.T) {
 	}
 }
 
-// --- (i) AUCUN store (attesté structurellement, piège #2) ----------------------
-
 func TestPrivilegeHandlerHasNoStore(t *testing.T) {
-	// D4 : le privilège EST le conteneur (titulaires énumérables via LSA) —
+	// Le privilège EST le conteneur (titulaires énumérables via LSA) —
 	// contrairement à FsAclHandler (StatePath), le handler ne porte AUCUN champ
 	// de store et PrivilegeOps n'expose AUCUNE op de fichier. Attesté
 	// structurellement : les champs du handler sont EXACTEMENT {Ops, Log}.
@@ -373,8 +353,6 @@ func TestPrivilegeHandlerHasNoStore(t *testing.T) {
 	}
 }
 
-// --- (j) compte à LARGE PORTÉE ⇒ erreur d'item SANS application partielle ------
-
 func TestPrivilegeBroadPrincipalRefused(t *testing.T) {
 	for _, account := range []string{"Domain Users", "Everyone"} {
 		t.Run(account, func(t *testing.T) {
@@ -383,7 +361,7 @@ func TestPrivilegeBroadPrincipalRefused(t *testing.T) {
 			items := []StateItem{
 				// SeDeny* LÉGITIME (passe l'allowlist) mais posée sur un principal
 				// large → verrouillerait le poste : erreur d'item, `Eleves` (MÊME
-				// item) NON accordé (pas d'application partielle, piège #8).
+				// item) NON accordé (pas d'application partielle).
 				privItem(rdpDeny, []string{"Eleves", account}),
 				// Un AUTRE privilège sûr converge (effort maximal).
 				privItem("SeDenyBatchLogonRight", []string{"Profs"}),
@@ -408,8 +386,6 @@ func TestPrivilegeBroadPrincipalRefused(t *testing.T) {
 		})
 	}
 }
-
-// --- Dédoublonnage par privilège (dernière occurrence, iso desiredSpecs) -------
 
 func TestPrivilegeDedupByPrivilegeName(t *testing.T) {
 	ops := newFakePrivilegeOps()

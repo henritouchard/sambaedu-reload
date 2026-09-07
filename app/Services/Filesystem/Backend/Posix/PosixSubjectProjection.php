@@ -7,7 +7,7 @@ namespace App\Services\Filesystem\Backend\Posix;
 use App\Enums\FileBackendOutcome;
 
 /**
- * Story 60.4 — résultat de la traduction d'un SUJET DE PLAN en sujet d'ACL.
+ * Résultat de la traduction d'un SUJET DE PLAN en sujet d'ACL.
  *
  * Trois issues, et pas une de plus :
  *  - RÉSOLU : un type d'entrée (`user` ou `group`) et un nom que l'annuaire

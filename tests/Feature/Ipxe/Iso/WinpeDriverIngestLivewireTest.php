@@ -24,7 +24,7 @@ use Tests\Traits\CreatesPermissionSchema;
 use Tests\Traits\CreatesWindowsIsoSchema;
 
 /**
- * Story 3.10 — AC4.4 / AC6.2b — Upload UI Livewire des pilotes NIC.
+ * .2b — Upload UI Livewire des pilotes NIC.
  *
  * Le composant délègue à la MÊME logique d'ingestion que la commande artisan
  * (service partagé {@see \App\Ipxe\Iso\Services\WinpeDriverIngestor}). On teste
@@ -284,7 +284,7 @@ class WinpeDriverIngestLivewireTest extends TestCase
     }
 
     /**
-     * #3 (review 3.10) — AC4.4 « gate server.admin effective » : un utilisateur
+     * « Gate server.admin effective » : un utilisateur
      * sans la permission ne peut même pas monter le composant (abort 403 dans
      * mount()), donc ne peut pas atteindre `ingestDrivers`. Preuve par test
      * négatif (la couverture partait toujours d'un admin auparavant).

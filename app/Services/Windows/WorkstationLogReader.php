@@ -34,7 +34,7 @@ class WorkstationLogReader
         $filename = basename($ws->log_path);
 
         // 2. Validation regex stricte : alphanum + . _ - uniquement, suffixe .log obligatoire
-        //    Remplace le str_ends_with() qui devient redondant.
+        //  Remplace le str_ends_with() qui devient redondant.
         if (!preg_match('/^[A-Za-z0-9._-]+\.log$/i', $filename)) {
             return new WorkstationLogReadResult(null, true, false);
         }

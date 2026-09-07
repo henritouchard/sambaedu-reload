@@ -19,15 +19,15 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 56.5 (AC4) — la carte « Santé » de la fiche d'extension, et le bouton
+ * La carte « Santé » de la fiche d'extension, et le bouton
  * « Sonder maintenant ».
  *
- * Fichier NOUVEAU, volontairement : {@see ExtensionDetailPageTest} (54.1/54.2),
- * {@see ExtensionAppOperationsPageTest} (56.3) et {@see ExtensionScopesPageTest}
- * (56.4) restent VERBATIM — qu'elles passent inchangées est la preuve que cette
+ * Fichier NOUVEAU, volontairement : {@see ExtensionDetailPageTest},
+ * {@see ExtensionAppOperationsPageTest} et {@see ExtensionScopesPageTest}
+ *  restent VERBATIM — qu'elles passent inchangées est la preuve que cette
  * carte s'ajoute sans rien déplacer.
  *
- * ⚠️ Le RENDU ne sonde jamais (NFR9) : la carte affiche l'état PERSISTÉ. Le seul
+ * ⚠️ Le RENDU ne sonde jamais : la carte affiche l'état PERSISTÉ. Le seul
  * chemin de mesure à la demande est le bouton, et un test l'affirme par
  * `Http::assertNothingSent()` au rendu.
  */
@@ -82,9 +82,7 @@ class ExtensionHealthCardTest extends TestCase
             ->create(['key' => 'hello', 'name' => 'Hello', 'version' => $version]);
     }
 
-    // ══════════════════════════════════════════════════════════════════════
-    // AC4 — la carte n'existe que là où il y a quelque chose à sonder
-    // ══════════════════════════════════════════════════════════════════════
+    // La carte n'existe que là où il y a quelque chose à sonder
 
     #[Test]
     public function the_health_card_is_visible_for_an_installed_app(): void
@@ -117,9 +115,7 @@ class ExtensionHealthCardTest extends TestCase
             ->assertDontSeeHtml('data-testid="health-card"');
     }
 
-    // ══════════════════════════════════════════════════════════════════════
-    // AC4 — contenus
-    // ══════════════════════════════════════════════════════════════════════
+    // Contenus
 
     #[Test]
     public function a_never_probed_app_shows_an_unknown_badge_and_no_incident(): void
@@ -176,8 +172,8 @@ class ExtensionHealthCardTest extends TestCase
     }
 
     /**
-     * La carte réutilise le badge de mise à jour de 56.3 — la règle n'est pas
-     * recalculée (review 56.1 #3).
+     * La carte réutilise le badge de mise à jour — la règle n'est pas
+     * recalculée.
      */
     #[Test]
     public function the_card_reuses_the_existing_update_available_flag_for_versions(): void
@@ -195,10 +191,6 @@ class ExtensionHealthCardTest extends TestCase
             ->assertSeeHtml('data-testid="health-installed-version"');
     }
 
-    // ══════════════════════════════════════════════════════════════════════
-    // NFR9 — le rendu ne sonde JAMAIS
-    // ══════════════════════════════════════════════════════════════════════
-
     #[Test]
     public function rendering_the_detail_page_never_probes_anything(): void
     {
@@ -210,9 +202,7 @@ class ExtensionHealthCardTest extends TestCase
         Http::assertNothingSent();
     }
 
-    // ══════════════════════════════════════════════════════════════════════
-    // AC4 — « Sonder maintenant » : mesure ET persiste
-    // ══════════════════════════════════════════════════════════════════════
+    // « Sonder maintenant » : mesure ET persiste
 
     #[Test]
     public function probe_now_persists_a_reachable_state_and_toasts_success(): void
@@ -258,9 +248,7 @@ class ExtensionHealthCardTest extends TestCase
         self::assertSame($before, ExtensionAuditLog::query()->count());
     }
 
-    // ══════════════════════════════════════════════════════════════════════
     // Sécurité — Gate DANS la méthode (defense-in-depth)
-    // ══════════════════════════════════════════════════════════════════════
 
     #[Test]
     public function probe_now_is_forbidden_without_server_admin(): void
@@ -299,15 +287,8 @@ class ExtensionHealthCardTest extends TestCase
         self::assertSame(Extension::HEALTH_OK, $extension->refresh()->health_status);
     }
 
-    // ══════════════════════════════════════════════════════════════════════
-    // Tolérance aux pannes du bouton « Sonder maintenant » (review 56.5 #2)
-    //
-    // Les notes de développement affirmaient ces deux comportements « prouvés »
-    // alors qu'aucun test ne les exerçait. Le code était juste — la preuve
-    // manquait. Sur la story qui clôt un epic dont l'incident fondateur est
-    // « une page d'extension a fait tomber tout SE5 », ça ne peut pas rester
-    // une affirmation.
-    // ══════════════════════════════════════════════════════════════════════
+    // Une page d'extension ne doit jamais faire tomber SE5 : le bouton
+    // « Sonder maintenant » absorbe les pannes du registre et du réseau.
 
     #[Test]
     public function probing_when_the_registry_has_vanished_toasts_instead_of_exploding(): void
@@ -318,7 +299,7 @@ class ExtensionHealthCardTest extends TestCase
         $component = Livewire::test(self::PAGE, ['id' => $extension->id]);
 
         // La table disparaît ENTRE le montage et le clic (fenêtre de migration,
-        // scénario QA 10.1 de l'Epic 54).
+        // scénario QA).
         Schema::drop('extensions');
 
         $component->call('probeNow')->assertOk();
@@ -338,9 +319,7 @@ class ExtensionHealthCardTest extends TestCase
         $component->call('probeNow')->assertOk();
     }
 
-    // ══════════════════════════════════════════════════════════════════════
     // Lien vers le journal, pré-filtré
-    // ══════════════════════════════════════════════════════════════════════
 
     #[Test]
     public function the_page_links_to_the_audit_journal_prefiltered_on_this_extension(): void

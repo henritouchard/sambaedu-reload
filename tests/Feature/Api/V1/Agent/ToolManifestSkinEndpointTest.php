@@ -16,11 +16,11 @@ use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Tests\TestCase;
 
 /**
- * Story 25.6 — `GET /api/v1/agent/tools-manifest` (D8b) + `GET /api/v1/agent/overlay-skin` (D7).
+ * `GET /api/v1/agent/tools-manifest` + `GET /api/v1/agent/overlay-skin`.
  *
  * Le manifest expose l'outil ACTIF `{key, filename, sha256, size}` (le SHA-256
  * que l'agent vérifie AVANT extraction) + la skin `{filename, sha256}`. Outil
- * absent ou désactivé → `tool: null` (no-op gracieux côté agent — D4). La skin
+ * absent ou désactivé → `tool: null` (no-op gracieux côté agent). La skin
  * est SERVIE par la route agent authentifiée token (PAS d'alias public),
  * filename FIXE (anti-traversal par construction), 404 INDISTINCT, intégrité
  * SHA-256 exposée au manifest. Chaîne `auth.v1.secure-headers` + `throttle` +
@@ -93,7 +93,7 @@ final class ToolManifestSkinEndpointTest extends TestCase
         ]);
     }
 
-    // ── AC3/AC4 — manifest : tool actif + skin ───────────────────────────
+    // — manifest : tool actif + skin
 
     #[Test]
     public function manifest_exposes_active_tool_and_skin_with_checksums(): void
@@ -145,7 +145,7 @@ final class ToolManifestSkinEndpointTest extends TestCase
             ->assertJson(['tool' => null]);
     }
 
-    // ── AC4 — serving skin authentifié, intégrité, anti-traversal ────────
+    // — serving skin authentifié, intégrité, anti-traversal
 
     #[Test]
     public function skin_is_served_with_exact_content_to_authenticated_agent(): void
@@ -181,7 +181,7 @@ final class ToolManifestSkinEndpointTest extends TestCase
         self::assertSame(hash_file('sha256', $canonical), hash_file('sha256', $response->baseResponse->getFile()->getPathname()));
     }
 
-    // ── sécurité du canal (middleware inchangé) ──────────────────────────
+    // sécurité du canal (middleware inchangé)
 
     #[Test]
     public function manifest_requires_bearer_token(): void

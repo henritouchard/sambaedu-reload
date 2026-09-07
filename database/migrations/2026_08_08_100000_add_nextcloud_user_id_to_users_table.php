@@ -7,18 +7,16 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 61.1 — LE CACHE DE RÉSOLUTION D'IDENTITÉ NEXTCLOUD.
+ * LE CACHE DE RÉSOLUTION D'IDENTITÉ NEXTCLOUD.
  *
- * ---------------------------------------------------------------------------
  * **C'EST UN CACHE, PAS UNE AUTORITÉ.** La vérité de l'identité Nextcloud est
  * chez Nextcloud. Cette colonne évite de la redemander à chaque geste ; elle est
  * nullable, reconstructible (`nextcloud:provision` la remplit à nouveau), et sa
  * perte ne coûte que des appels réseau — jamais un accès.
- * ---------------------------------------------------------------------------
  *
  * **Le précédent qu'elle remplace.** SE4 cachait cette même correspondance dans
  * l'attribut AD `Id NC` (`../sambaedu/includes/cloud.inc.php:702`, réécriture
- * `:715-719`). SE5 ne peut PAS reprendre ce précédent : depuis l'Epic 49, l'AD est
+ * `:715-719`). SE5 ne peut PAS reprendre ce précédent : l'AD est
  * un artefact COMPILÉ depuis Postgres, ni source d'autorité ni lieu d'écriture
  * d'état applicatif. Y écrire un identifiant applicatif ferait de l'annuaire une
  * base de données parallèle, que la prochaine reprojection écraserait en silence.

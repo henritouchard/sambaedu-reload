@@ -80,10 +80,10 @@ class WpkgProcessReportsCommandTest extends TestCase
         return $path;
     }
 
-    // ─── Tests ───────────────────────────────────────────────────────────────
+    // Tests
 
     /**
-     * AC #6 : Fichier rapport présent → POST appelé → fichier archivé.
+     * Fichier rapport présent → POST appelé → fichier archivé.
      */
     public function test_valid_report_is_processed_and_archived(): void
     {
@@ -110,7 +110,7 @@ class WpkgProcessReportsCommandTest extends TestCase
     }
 
     /**
-     * AC #6 : API retourne 200 unchanged → fichier archivé sans warning (Fix #10 : 304 → 200).
+     * API retourne 200 unchanged → fichier archivé sans warning.
      */
     public function test_unchanged_report_is_archived(): void
     {
@@ -135,7 +135,7 @@ class WpkgProcessReportsCommandTest extends TestCase
     }
 
     /**
-     * AC #6 : API retourne 500 → fichier PAS archivé, warning loggé.
+     * API retourne 500 → fichier PAS archivé, warning loggé.
      */
     public function test_api_error_does_not_archive_file(): void
     {
@@ -153,7 +153,7 @@ class WpkgProcessReportsCommandTest extends TestCase
     }
 
     /**
-     * AC #6 : Répertoire vide → commande termine sans erreur.
+     * Répertoire vide → commande termine sans erreur.
      */
     public function test_empty_directory_exits_successfully(): void
     {
@@ -164,7 +164,7 @@ class WpkgProcessReportsCommandTest extends TestCase
     }
 
     /**
-     * AC #6 : Option --path override le chemin par défaut.
+     * Option --path override le chemin par défaut.
      */
     public function test_path_option_overrides_default(): void
     {
@@ -182,7 +182,7 @@ class WpkgProcessReportsCommandTest extends TestCase
     }
 
     /**
-     * AC #6 : Chemin introuvable → erreur propre.
+     * Chemin introuvable → erreur propre.
      */
     public function test_nonexistent_path_returns_failure(): void
     {
@@ -191,7 +191,7 @@ class WpkgProcessReportsCommandTest extends TestCase
     }
 
     /**
-     * Fix #6 : Fichier modifié il y a moins de 10s → ignoré par le worker.
+     * Fichier modifié il y a moins de 10s → ignoré par le worker.
      */
     public function test_recent_file_is_skipped(): void
     {
@@ -213,7 +213,7 @@ class WpkgProcessReportsCommandTest extends TestCase
     }
 
     /**
-     * AC #6 : Plusieurs fichiers — un succès, une erreur — compteurs corrects.
+     * Plusieurs fichiers — un succès, une erreur — compteurs corrects.
      */
     public function test_multiple_files_with_mixed_results(): void
     {
@@ -228,7 +228,6 @@ class WpkgProcessReportsCommandTest extends TestCase
         $this->artisan('wpkg:process-reports')
             ->assertExitCode(1); // Au moins une erreur → FAILURE
 
-        // PC-OK archivé
         $archivedOk = glob("{$this->archiveDir}/PC-OK_*.txt");
         $this->assertNotEmpty($archivedOk);
 

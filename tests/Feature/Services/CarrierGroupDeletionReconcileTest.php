@@ -21,7 +21,7 @@ use Tests\TestCase;
 use Tests\Traits\CreatesPermissionSchema;
 
 /**
- * Story 49.1 — correction de review : la DISPARITION d'un groupe porteur.
+ * Correction de review : la DISPARITION d'un groupe porteur.
  *
  * Le cleanup du balayage AD (`UserGroupService::syncFromAd()`) supprime les
  * groupes absents de l'annuaire par un `delete()` de MASSE : aucun event
@@ -31,7 +31,7 @@ use Tests\Traits\CreatesPermissionSchema;
  * sur AUCUNE passe, y compris `users:reproject-group-profiles` rejouée. Sans
  * rattrapage explicite, les anciens membres gardent le profil À VIE.
  *
- * C'est le même piège que le dernier porteur (D4/AC4), et il se traite de la
+ * C'est le même piège que le dernier porteur, et il se traite de la
  * même façon : capture AVANT la suppression, révocation explicite APRÈS.
  *
  * Ces tests verrouillent les deux moitiés : le mécanisme
@@ -59,10 +59,6 @@ class CarrierGroupDeletionReconcileTest extends TestCase
         $this->dropPermissionSchema();
         parent::tearDown();
     }
-
-    // ========================================================================
-    // Helpers
-    // ========================================================================
 
     private function role(string $name): Role
     {
@@ -123,10 +119,6 @@ class CarrierGroupDeletionReconcileTest extends TestCase
             $rightRepository,
         );
     }
-
-    // ========================================================================
-    // Le trou, démontré sur le mécanisme générique
-    // ========================================================================
 
     #[Test]
     public function the_generic_reconciliation_alone_can_never_revoke_an_orphaned_profile(): void
@@ -205,7 +197,7 @@ class CarrierGroupDeletionReconcileTest extends TestCase
         app(GroupRightsProfileService::class)->reconcile($alice);
 
         // Technicien fédéré : hors périmètre, membre d'aucun groupe, son rôle
-        // est piloté par son login fédéré (AC3).
+        // est piloté par son login fédéré.
         $ext = $this->user('ext-technicien', 'federated');
         $ext->assignRole($technicien);
 
@@ -236,10 +228,6 @@ class CarrierGroupDeletionReconcileTest extends TestCase
         self::assertSame(['users' => 0, 'assigned' => 0, 'removed' => 0, 'errors' => 0], $stats);
         self::assertSame(['prof'], $this->roleNames($alice));
     }
-
-    // ========================================================================
-    // Le câblage réel : le cleanup du balayage AD
-    // ========================================================================
 
     #[Test]
     public function the_ad_sweep_cleanup_revokes_the_profile_of_a_deleted_carrier_group(): void

@@ -19,7 +19,7 @@ use Illuminate\Console\Command;
  * d'autre : sans un geste pour le remplir, tout octroi NOMINATIF (le dossier
  * personnel d'un élève) échouerait en nommant une remédiation qui n'existerait
  * pas. Un message qui renvoie vers un geste absent est exactement le défaut que
- * cet epic combat.
+ * ce modèle combat.
  *
  * **Trois gestes, et un seul écrit :**
  *  - sans option — dit l'identité actuellement en cache (lecture pure, aucun

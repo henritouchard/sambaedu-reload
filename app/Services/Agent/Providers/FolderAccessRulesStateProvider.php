@@ -18,40 +18,40 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Story 36.4 (D1) — Provider `fs_acl` **BI-ALIMENTÉ** : capacités (36.1) ET
- * règles d'accès aux dossiers (36.4), dans UN SEUL provider compilé.
+ * Provider `fs_acl` **BI-ALIMENTÉ** : capacités ET
+ * règles d'accès aux dossiers, dans UN SEUL provider compilé.
  *
- * **Pourquoi UN seul provider (piège #1 — condition structurelle de l'AC).**
+ * **Pourquoi UN seul provider.**
  * `StateCompiler::compileProvider()` appelle `itemsFor()` puis `selectExclusive()`
  * provider PAR provider, sans arbitrage croisé. Enregistrer un second provider
  * `fs_acl` à côté de {@see FsAclCapabilityProvider} produirait DEUX items de même
  * identité `{path|trustee|ace_type}` au state pour une collision règle↔capacité
  * (le dédup du handler Go trancherait par ordre trié — aveugle à la maille). La
- * condition de l'AC d'epic « collision arbitrée par le compilateur (maille/récence)
- * » est donc que les deux flux de candidats passent par UNE SEULE sélection
+ * condition d'une collision arbitrée par le compilateur (maille/récence) est donc
+ * que les deux flux de candidats passent par UNE SEULE sélection
  * exclusive → COMPOSITION : ce provider enveloppe {@see FsAclCapabilityProvider}
  * (`final`) et unionne ses candidats aux candidats-règles. `StateCompiler` reste
- * INTOUCHÉ (garde-fou D2 d'epic).
+ * INTOUCHÉ, et c'est le garde-fou.
  *
  * **Délégation d'identité.** `type()`/`semantics()`/`scope()` et surtout
  * `exclusiveKey()` sont DÉLÉGUÉS au provider capacités — l'identité
  * `{path|trustee|ace_type}` est définie à UN endroit. Deux candidats (règle ET
  * capacité) de même identité sont donc en concurrence (la maille la plus
  * spécifique/la plus récente gagne, `selectExclusive()` EXISTANT) ; les identités
- * distinctes coexistent (cumul, doctrine 36.1 piège #2).
+ * distinctes coexistent (cumul assumé).
  *
- * **Byte-identité golden (piège #5).** Sans AUCUNE règle en base,
+ * **Byte-identité golden.** Sans AUCUNE règle en base,
  * `ruleCandidates()` renvoie vide ⇒ `concat([])` rend EXACTEMENT les candidats
  * capacités, même ordre ⇒ `FROZEN_STATE_HASH` INCHANGÉ.
  *
- * **Portée MACHINE (piège #7).** Le service SYSTEM fetch SANS `?user`
+ * **Portée MACHINE.** Le service SYSTEM fetch SANS `?user`
  * (`TargetContext::for($ws, null)`) et les règles doivent SORTIR : on n'utilise
  * QUE la chaîne parc du contexte (`physicalGroupDepths` étendue aux ancêtres ∪
  * `logicalGroupIds`) — JAMAIS l'inverse (early-return sur user null de
  * `DrivesStateProvider`). Un pivot User/UserGroup est impossible par construction
  * (types validés — {@see FolderAccessRule::ALLOWED_ASSIGNABLE_TYPES}).
  *
- * **Postgres pur (NFR7, critère Keycloak).** Zéro AD/LdapRecord/APCu : lecture du
+ * **Postgres pur (critère Keycloak).** Zéro AD/LdapRecord/APCu : lecture du
  * pivot restreinte aux ids parc du contexte, trustee dérivé par jointure
  * `user_groups` (résolution SID côté POSTE, LSA).
  */
@@ -61,7 +61,7 @@ final class FolderAccessRulesStateProvider implements KeyedExclusiveProvider, St
      * Offset de `sourceId` des candidats-règles pour rester INJECTIF dans le pool
      * composé avec les candidats capacités (`sourceId = capability.id`, petits) —
      * `resolveExclusiveWinner()` départage en DERNIER recours par `sourceId` desc
-     * (piège #6, iso discipline `DrivesStateProvider` « 2 + pivot_id »). La récence
+     * (iso discipline `DrivesStateProvider` « 2 + pivot_id »). La récence
      * réelle (`updatedAt` non null des deux côtés) tranche AVANT ce tiebreak dans
      * tous les cas réalistes.
      */
@@ -88,7 +88,7 @@ final class FolderAccessRulesStateProvider implements KeyedExclusiveProvider, St
 
     /**
      * Identité DÉLÉGUÉE au provider capacités : `{path|trustee|ace_type}` définie
-     * à UN endroit (36.1). C'est la condition de l'arbitrage règle↔capacité.
+     * à UN endroit. C'est la condition de l'arbitrage règle↔capacité.
      */
     public function exclusiveKey(array $payload): string
     {
@@ -96,8 +96,9 @@ final class FolderAccessRulesStateProvider implements KeyedExclusiveProvider, St
     }
 
     /**
-     * `candidats_capacités ∪ candidats_règles` (bruts, sans arbitrage — D2). Sans
-     * règle en base, byte-identique aux candidats capacités (piège #5).
+     * `candidats_capacités ∪ candidats_règles` (bruts, sans arbitrage : celui-ci
+     * reste au compilateur). Sans règle en base, byte-identique aux candidats
+     * capacités.
      *
      * @return Collection<int, StateCandidate>
      */
@@ -110,7 +111,7 @@ final class FolderAccessRulesStateProvider implements KeyedExclusiveProvider, St
      * Candidats des règles applicables au contexte — un candidat par (règle ×
      * assignation parc matchante), étiqueté de sa maille. Lecture Postgres PURE :
      * pivot restreint à la chaîne parc du contexte (`physicalGroupDepths` étendue
-     * aux ancêtres — pour l'héritage salle-enfant→bâtiment-parent, piège #8 — ∪
+     * aux ancêtres, pour l'héritage salle-enfant→bâtiment-parent ∪
      * `logicalGroupIds`).
      *
      * @return Collection<int, StateCandidate>
@@ -175,10 +176,10 @@ final class FolderAccessRulesStateProvider implements KeyedExclusiveProvider, St
                     'ace_type' => (string) $row->ace_type,
                     'rights' => (string) $row->rights,
                     'applies_to' => (string) $row->applies_to,
-                    // Off réel (D3) : règle inactive ⇒ retrait honnête `absent`.
+                    // Off réel : règle inactive ⇒ retrait honnête `absent`.
                     'ensure' => ((bool) $row->is_active) ? 'present' : 'absent',
                 ],
-                // Récence D10 : max(rule.updated_at, pivot.updated_at) — modifier la
+                // Récence : max(rule.updated_at, pivot.updated_at) — modifier la
                 // règle OU son assignation la « rafraîchit » face à un override de
                 // capacité de même identité.
                 updatedAt: $this->maxDate($row->rule_updated_at, $row->pivot_updated_at),

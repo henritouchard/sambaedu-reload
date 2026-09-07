@@ -11,7 +11,7 @@ use Tests\Support\IpxeSchemaBootstrapper;
 use Tests\TestCase;
 
 /**
- * Story 3.4 — AC5.2 / T6.3.
+ * T6.3.
  *
  * Tests feature de la route native `GET|POST /ipxe/linux/preseed`.
  */
@@ -140,7 +140,7 @@ class IpxeLinuxPreseedEndpointTest extends TestCase
     }
 
     /* ------------------------------------------------------------------
-     * Post-review #1 — `late_command` doit pointer sur la route native SE5
+     * `late_command` doit pointer sur la route native SE5
      * `/ipxe/linux/action` (sans `.php`) et JAMAIS sur `action.php` legacy.
      * Si le bug repasse, `LinuxPostInstallTracker::record()` n'est plus
      * appelé en prod (le callback tombe sur le catchall legacy).

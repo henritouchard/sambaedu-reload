@@ -7,19 +7,19 @@ use Livewire\Attributes\Computed;
 use Livewire\Component;
 
 /**
- * Story 25.5 — Surface progression du déploiement (AC1, AC4).
+ * Surface progression du déploiement.
  *
  * LECTURE SEULE : agrège, par ring, la version CIBLÉE
  * (`agent_release_rings.release.version`) vs les versions RAPPORTÉES par les
- * postes (`workstations.agent_reported_version`, persistée par la greffe report
- * 25.5). Montre l'avancée de la canari (1 poste → 1 salle → parc) : combien de
+ * postes (`workstations.agent_reported_version`, persistée par la greffe report).
+ * Montre l'avancée de la canari (1 poste → 1 salle → parc) : combien de
  * postes sont à jour / en retard / jamais vus, et la fraîcheur de la donnée.
  *
  * **Ring EFFECTIF (pas multi-comptage)** : un poste appartient typiquement à un
- * groupe physique ET 1-2 groupes logiques (pivot global 4.11), donc à plusieurs
+ * groupe physique ET 1-2 groupes logiques (pivot global), donc à plusieurs
  * rings. Mais le manifest ne lui sert qu'UNE version. On l'attribue donc à un
  * seul ring — celui qui gouverne réellement sa version cible = le plus
- * récemment ciblé parmi ses groupes (récence, FR4 « la plus récente gagne »,
+ * récemment ciblé parmi ses groupes (« la plus récente gagne »,
  * iso {@see \App\Services\Agent\Releases\ReleaseManifestService::resolveRingRelease()}).
  * Sans ce dédoublonnage, un poste compté dans chaque ring apparaîtrait « en
  * retard » dans les rings qui ne le servent pas.
@@ -36,7 +36,7 @@ return new class extends Component {
     public function rings()
     {
         // Rings ciblés, du plus récent au plus ancien : c'est À LA FOIS l'ordre
-        // d'affichage ET l'ordre de résolution du ring effectif (récence FR4 —
+        // d'affichage ET l'ordre de résolution du ring effectif (récence —
         // iso ReleaseManifestService::resolveRingRelease, tie-break id desc).
         $rings = AgentReleaseRing::query()
             ->with(['release', 'workstationGroup'])
@@ -67,7 +67,7 @@ return new class extends Component {
 
         // Ordre de résolution = rings AVEC une release, du plus récent au plus
         // ancien (un ring orphelin — release nulle, état défensif — est ignoré :
-        // le poste retombe sur le candidat suivant puis la stable, iso AC3).
+        // Le poste retombe sur le candidat suivant puis la stable, iso).
         $resolutionOrder = $rings->filter(fn (AgentReleaseRing $r): bool => $r->release !== null);
 
         // Postes appartenant à AU MOINS un groupe ciblé, avec leurs SEULES

@@ -8,17 +8,17 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Story 56.4 — garde-fous architecturaux de l'**API extensions `/api/ext/v1/`**.
+ * Garde-fous architecturaux de l'**API extensions `/api/ext/v1/`**.
  *
  * Calque de {@see OidcRoutesTest} et de {@see ScriptsOsNamespaceTest} : scan
  * TEXTUEL, `PHPUnit\Framework\TestCase` pur, aucune application bootstrapée.
  *
- * Trois propriétés, chacune apprise à ses dépens par une story antérieure :
+ * Trois propriétés, chacune apprise à ses dépens :
  *
  *  1. **Le contrat v1 est FERMÉ** — exactement deux routes, en GET seul.
- *     Le contrat est public et gelé (NFR11) : ajouter une route ou un verbe
- *     doit être un acte DÉLIBÉRÉ, pas un ajout qui passe en revue.
- *  2. **Le bloc vit APRÈS le groupe 16.12** — la fenêtre de 1500 caractères
+ *     Le contrat est public et gelé : ajouter une route ou un verbe doit
+ *     être un acte DÉLIBÉRÉ, pas un ajout qui passe en revue.
+ *  2. **Le bloc vit APRÈS le dernier groupe** — la fenêtre de 1500 caractères
  *     qu'inspecte `ScriptsOsNamespaceTest` précède `script-execution-logs` :
  *     tout bloc inséré avant la casse (fiche mémoire du projet).
  *  3. **`routes/api.php` ignore le fournisseur d'identité** — ni son préfixe
@@ -46,12 +46,11 @@ class ExtApiRoutesTest extends TestCase
     /** Le texte du groupe `ext/v1`, du `Route::prefix` à son `});` de clôture. */
     private function extBlock(string $content): string
     {
-        // ⚠️ Review 56.4 #2 — toutes les assertions ci-dessous portent sur CE
-        // bloc. Sans la garde d'unicité, un SECOND groupe `ext/v1` ajouté
-        // ailleurs dans le fichier (par erreur ou par contournement) échappait
-        // à l'intégralité du contrat fermé : « exactement deux routes »,
-        // « lecture seule », « un scope par route » n'auraient plus rien
-        // verrouillé.
+        // Toutes les assertions du fichier portent sur CE bloc. Sans la garde
+        // d'unicité, un SECOND groupe `ext/v1` déclaré ailleurs dans le fichier
+        // échapperait à l'intégralité du contrat fermé : « exactement deux
+        // routes », « lecture seule », « un scope par route » ne verrouilleraient
+        // plus rien.
         self::assertSame(
             1,
             substr_count($content, "Route::prefix('ext/v1')"),
@@ -111,9 +110,9 @@ class ExtApiRoutesTest extends TestCase
         self::assertStringContainsString("'ext.token:profile'", $block);
         self::assertStringContainsString("'ext.token:groups'", $block);
 
-        // Deux seaux (review 56.4 #3) : un garde-fou anonyme sur le groupe,
-        // et le seau PAR EXTENSION sur chaque route — celui-là ne peut vivre
-        // qu'après `ext.token`, seul à connaître le client.
+        // Deux seaux : un garde-fou anonyme sur le groupe, et le seau PAR
+        // EXTENSION sur chaque route — celui-là ne peut vivre qu'après
+        // `ext.token`, seul à connaître le client.
         self::assertMatchesRegularExpression('/throttle:\d+,\d+/', $block);
         self::assertSame(
             2,
@@ -130,7 +129,7 @@ class ExtApiRoutesTest extends TestCase
      * ⚠️ LE piège du projet (fiche mémoire `routes/api.php` fenêtre 1500) :
      * `ScriptsOsNamespaceTest` cherche `auth.v1.workstation` dans les 1500
      * caractères qui PRÉCÈDENT `script-execution-logs`. Un bloc inséré avant
-     * le groupe 16.12 repousse la fenêtre et casse ce test — pour une raison
+     * le groupe repousse la fenêtre et casse ce test — pour une raison
      * que rien ne relierait au coupable.
      */
     #[Test]
@@ -219,7 +218,7 @@ class ExtApiRoutesTest extends TestCase
         self::assertStringContainsString('namespace App\\Http\\Controllers\\Api\\Ext\\V1;', $content);
 
         // Il ne résout JAMAIS d'utilisateur lui-même : l'identité de la requête
-        // est le jeton, injecté par le middleware (doctrine 23.2).
+        // est le jeton, injecté par le middleware (doctrine).
         self::assertSame(
             0,
             preg_match('/User::query\s*\(/', $content),

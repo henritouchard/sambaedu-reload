@@ -101,8 +101,6 @@ func printerItem(cupsName string, isDefault bool) StateItem {
 
 func conn(cupsName string) string { return `\\SE4FS\` + cupsName }
 
-// --- Set cible + idempotence -------------------------------------------------
-
 func TestPrintersApplyInstallsTargetSetThenIdempotent(t *testing.T) {
 	ops := newFakePrinterOps()
 	h := &PrintersHandler{Ops: ops}
@@ -132,8 +130,6 @@ func TestPrintersApplyInstallsTargetSetThenIdempotent(t *testing.T) {
 	}
 }
 
-// --- Suppression level-triggered (sortie des règles) -------------------------
-
 func TestPrintersRemovesManagedPrinterDroppedFromRules(t *testing.T) {
 	ops := newFakePrinterOps()
 	h := &PrintersHandler{Ops: ops}
@@ -160,8 +156,6 @@ func TestPrintersRemovesManagedPrinterDroppedFromRules(t *testing.T) {
 		t.Fatalf("attendu 1 désinstallation, obtenu %d", ops.removeCalls)
 	}
 }
-
-// --- Une imprimante UTILISATEUR n'est jamais désinstallée --------------------
 
 func TestPrintersNeverTouchesUserInstalledPrinter(t *testing.T) {
 	ops := newFakePrinterOps()
@@ -195,8 +189,6 @@ func TestPrintersNeverTouchesUserInstalledPrinter(t *testing.T) {
 		t.Fatalf("test devrait être conforme (homonyme ignoré, impB installée)")
 	}
 }
-
-// --- Imprimante par défaut posée sur l'item marqué --------------------------
 
 func TestPrintersSetsDefaultOnMarkedItem(t *testing.T) {
 	ops := newFakePrinterOps()
@@ -249,7 +241,7 @@ func TestPrintersDefaultFollowsRuleChange(t *testing.T) {
 	}
 }
 
-// Décision Henri 27.2 (review F2/M1) : quand l'admin DÉCOCHE le défaut partout
+// Quand l'admin DÉCOCHE le défaut partout
 // (plus aucun is_default au payload), l'ancien défaut Windows RESTE en place —
 // Windows exige toujours UNE imprimante par défaut, aucune cible naturelle vers
 // quoi rebasculer. Comportement figé : ni Apply ni Test ne touchent au défaut
@@ -291,8 +283,6 @@ func TestPrintersDefaultRemovedLeavesCurrentInPlace(t *testing.T) {
 		t.Fatalf("aucun SetDefault attendu au décochage, obtenu %d appels supplémentaires", ops.setDefCalls-callsBefore)
 	}
 }
-
-// --- Item error isolé : serveur d'impression injoignable ---------------------
 
 func TestPrintersServerUnreachableIsErrorIsolated(t *testing.T) {
 	ops := newFakePrinterOps()
@@ -347,8 +337,6 @@ func TestPrintersErrorDoesNotBlockOtherTypes(t *testing.T) {
 	}
 }
 
-// --- Payload invalide → error (enveloppe) ------------------------------------
-
 func TestPrintersInvalidPayloadIsError(t *testing.T) {
 	ops := newFakePrinterOps()
 	h := &PrintersHandler{Ops: ops}
@@ -370,8 +358,6 @@ func TestPrintersInvalidPayloadIsError(t *testing.T) {
 		})
 	}
 }
-
-// --- Machine d'états §5 via le moteur (STRICT inconditionnel, Story 27.8) -----
 
 func TestPrintersThroughEngineSection5(t *testing.T) {
 	items := []StateItem{printerItem("imp1", false)}
@@ -424,8 +410,6 @@ func TestPrintersThroughEngineSection5(t *testing.T) {
 		})
 	}
 }
-
-// --- Empreinte d'agrégat stable, ordre serveur (réutilise le moteur) ----------
 
 func TestPrintersAggregateHashIsServerOrderConcat(t *testing.T) {
 	items := []StateItem{printerItem("imp1", false), printerItem("imp2", true)}

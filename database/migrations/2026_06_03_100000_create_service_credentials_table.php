@@ -16,7 +16,7 @@ use Illuminate\Support\Facades\Schema;
  *   - `name`        : identifiant logique du compte (`se4install`, …), unique.
  *   - `secret`      : mot de passe de base, CHIFFRÉ at-rest (cast `encrypted`
  *                     du modèle → AES-256-GCM via APP_KEY).
- *   - `totp_secret` : secret base32 du TOTP (pas de 6 h, SHA256, 6 digits —
+ *  - `totp_secret` : secret base32 du TOTP (pas de 6 h, SHA256, 6 digits
  *                     parité legacy `oathtool -s 6h`), CHIFFRÉ at-rest. Nullable
  *                     tant que le port TOTP n'est pas câblé.
  *

@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 3.11 — D4 — Table dédiée `workstation_reinstall_requests`.
+ * Table dédiée `workstation_reinstall_requests`.
  *
  * Persiste l'intention de réinstallation OS armée par poste depuis l'admin
  * web (poste unique ou fan-out salle/groupe/multi-sélection). **Une ligne =
@@ -17,7 +17,7 @@ use Illuminate\Support\Facades\Schema;
  * Cette table est volontairement SÉPARÉE de `Workstation::programmed_action`
  * (colonne JSON déjà utilisée par le suivi *post-install* Linux/Windows) : la
  * superposer créerait une collision entre « install à armer » et « install
- * terminée à annoncer » (D4).
+ * terminée à annoncer ».
  *
  * Cycle de vie du `status` :
  *   armed      → requête créée, reboot pas encore déclenché (triggered_at null)
@@ -25,7 +25,7 @@ use Illuminate\Support\Facades\Schema;
  *   installing → l'installeur a démarré (WinPE / debian-installer)
  *   done       → callback post-install confirmé (LinuxPostInstallTracker /
  *                WindowsPostInstallTracker) — ne sera plus servie
- *   failed     → TTL dépassé ou plafond de serves atteint (garde anti-boucle D5)
+ *   failed     → TTL dépassé ou plafond de serves atteint (garde anti-boucle)
  *   canceled   → annulée depuis l'UI, ou poste devenu `protected` (D10 niveau 3)
  *
  * Type PostgreSQL `timestamptz` (fallback `timestamp` sous SQLite) — patron
@@ -57,7 +57,7 @@ return new class extends Migration
                 ->default('armed')
                 ->comment('armed | serving | installing | done | failed | canceled');
 
-            // Garde anti-boucle (D5) : nb de PXE boots pour lesquels l'install a
+            // Garde anti-boucle : nb de PXE boots pour lesquels l'install a
             // été servie, borné par reinstall.max_boot_serves.
             $table->unsignedInteger('boot_served_count')->default(0);
 
@@ -77,9 +77,9 @@ return new class extends Migration
                 $table->timestampTz('scheduled_at')->nullable();
                 // Reboot PXE forcé déclenché (idempotence du tick D11).
                 $table->timestampTz('triggered_at')->nullable();
-                // Dernier PXE boot servi (garde anti-boucle D5).
+                // Dernier PXE boot servi (garde anti-boucle).
                 $table->timestampTz('boot_served_at')->nullable();
-                // TTL (garde anti-boucle + libération du slot de concurrence D5/D11).
+                // TTL (garde anti-boucle + libération du slot de concurrence).
                 $table->timestampTz('expires_at')->nullable();
                 $table->timestampsTz();
             } else {

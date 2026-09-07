@@ -17,16 +17,16 @@ use Illuminate\Support\Facades\Event;
 use Tests\TestCase;
 
 /**
- * Story 39.4 — Canal ④ : ingestion + persistance ADDITIVE des champs `delivery_mode` / `artifact`
+ * Canal ④ : ingestion + persistance ADDITIVE des champs `delivery_mode` / `artifact`
  * (items) et `executable` (catalog_apps), + déclenchement du pull (précédence locale, dispatch).
  *
  * Couverture ciblée :
- * - AC4  : persistance additive des nouveaux champs, no-op à 0 binaire strictement préservé.
- * - AC5  : PIÈGE D'IDEMPOTENCE — ré-ingestion à URL différente / checksum identique → mutated=false,
- *          aucun événement, AUCUN nouveau job de pull (LE garde-fou de non-régression de la story).
- * - AC6  : `delivery_mode` inconnu accepté sans rejet, stocké tel quel.
- * - AC7  : `executable` persisté (checksum/filename/size), AUCUN pull déclenché pour catalog_apps.
- * - AC8  : dispatch conditionnel à la précédence locale (asset absent → pending + job ;
+ * - persistance additive des nouveaux champs, no-op à 0 binaire strictement préservé.
+ * - PIÈGE D'IDEMPOTENCE — ré-ingestion à URL différente / checksum identique → mutated=false,
+ *          aucun événement, AUCUN nouveau job de pull.
+ * - `delivery_mode` inconnu accepté sans rejet, stocké tel quel.
+ * - `executable` persisté (checksum/filename/size), AUCUN pull déclenché pour catalog_apps.
+ * - dispatch conditionnel à la précédence locale (asset absent → pending + job ;
  *          asset présent → aucun job).
  *
  * ⚠️ Tests HÔTE (php8.4 + pdo_sqlite). QUEUE_CONNECTION=sync ⇒ Bus::fake() OBLIGATOIRE pour
@@ -57,7 +57,7 @@ class UpstreamArtifactIngestionTest extends TestCase
         ], $overrides);
     }
 
-    // ── AC4 — persistance additive + no-op à 0 binaire ────────────────────────
+    // — persistance additive + no-op à 0 binaire
 
     public function test_delivery_mode_and_artifact_persisted_on_wallpaper_item(): void
     {
@@ -89,7 +89,7 @@ class UpstreamArtifactIngestionTest extends TestCase
             'artifact_checksum' => str_repeat('a', 64),
             'artifact_filename' => 'corporate-wallpaper.png',
             'artifact_size' => 12345,
-            // AC2/AC5 : l'URL n'est PAS une colonne (aucune assertion possible dessus).
+            // L'URL n'est PAS une colonne (aucune assertion possible dessus).
             'pull_status' => ControlHubArtifactPullStatus::Pending->value,
         ]);
 
@@ -166,7 +166,7 @@ class UpstreamArtifactIngestionTest extends TestCase
             'pull_status' => null,
         ]);
 
-        // Aucun artefact ⇒ AUCUN job de pull (comportement à 0 binaire strictement inchangé — AC10).
+        // Aucun artefact ⇒ AUCUN job de pull (comportement à 0 binaire strictement inchangé —).
         Bus::assertNotDispatched(PullContractArtifactJob::class);
     }
 
@@ -197,7 +197,7 @@ class UpstreamArtifactIngestionTest extends TestCase
         Bus::assertNotDispatched(PullContractArtifactJob::class);
     }
 
-    // ── AC5 — LE piège d'idempotence : URL différente, checksum identique = no-op ──
+    // — LE piège d'idempotence : URL différente, checksum identique = no-op
 
     public function test_reingest_same_checksum_different_url_is_noop_and_dispatches_no_new_pull(): void
     {
@@ -234,7 +234,7 @@ class UpstreamArtifactIngestionTest extends TestCase
         $this->assertDatabaseCount('controlhub_contract_items', 1);
     }
 
-    // ── AC6 — delivery_mode inconnu accepté, non arbitré ──────────────────────
+    // — delivery_mode inconnu accepté, non arbitré
 
     public function test_unknown_delivery_mode_is_accepted_and_stored(): void
     {
@@ -257,7 +257,7 @@ class UpstreamArtifactIngestionTest extends TestCase
         ]);
     }
 
-    // ── AC7 — executable persisté SANS pull ───────────────────────────────────
+    // — executable persisté SANS pull
 
     public function test_catalog_app_executable_is_persisted_without_any_pull(): void
     {
@@ -285,11 +285,11 @@ class UpstreamArtifactIngestionTest extends TestCase
             'executable_size' => 55555,
         ]);
 
-        // AC7 : persistance SEULE — aucun job de pull pour catalog_apps.executable.
+        // Persistance SEULE — aucun job de pull pour catalog_apps.executable.
         Bus::assertNotDispatched(PullContractArtifactJob::class);
     }
 
-    // ── AC8 — précédence locale : asset déjà présent ⇒ aucun pull ─────────────
+    // — précédence locale : asset déjà présent ⇒ aucun pull
 
     public function test_local_wallpaper_present_by_checksum_dispatches_no_pull(): void
     {

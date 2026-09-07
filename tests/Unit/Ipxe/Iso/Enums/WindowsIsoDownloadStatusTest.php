@@ -9,7 +9,7 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Story 3.6 — AC1.3 — Tests unitaires de l'enum WindowsIsoDownloadStatus.
+ * Tests unitaires de l'enum WindowsIsoDownloadStatus.
  */
 class WindowsIsoDownloadStatusTest extends TestCase
 {

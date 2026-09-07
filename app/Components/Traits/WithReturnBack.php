@@ -20,7 +20,7 @@ namespace App\Components\Traits;
  *       #[Url]
  *       public ?string $from = null;
  *
- *       public function backUrl(): string
+ *  public function backUrl(): string
  *       {
  *           return $this->resolveBack(route('app.parc.index', ['tab' => 'machines']));
  *       }
@@ -49,7 +49,7 @@ trait WithReturnBack
      * Valide qu'une valeur `from` est un chemin relatif same-origin sûr.
      *
      * Accepté : commence par un seul `/` (ex. `/app/parc?tab=machines`).
-     * Rejeté  : `null`, chaîne vide, ou toute forme pouvant devenir réseau —
+     * Rejeté : `null`, chaîne vide, ou toute forme pouvant devenir réseau
      *           `//host` (protocol-relative) et `/\host` (le `\` est normalisé
      *           en `/` par les navigateurs). Empêche toute redirection ouverte.
      */

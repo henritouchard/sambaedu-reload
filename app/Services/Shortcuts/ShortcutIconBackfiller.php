@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Log;
 
 /**
  * Backfill des icônes UPLOADÉES existantes name-addressed → content-addressed
- * (Story 27.7, AC5). Calque `WallpaperLibraryBackfiller` : extrait de la
+ * . Calque `WallpaperLibraryBackfiller` : extrait de la
  * commande pour être testable, copie (jamais déplace), idempotent (dédup
  * checksum + re-run no-op), fail-soft.
  *

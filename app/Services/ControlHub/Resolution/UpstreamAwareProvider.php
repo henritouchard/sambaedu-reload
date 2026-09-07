@@ -12,7 +12,7 @@ use App\Services\Agent\TargetContext;
 use Illuminate\Support\Collection;
 
 /**
- * Story 28.3 — Décorateur AMONT d'un {@see StateProvider}.
+ * Décorateur AMONT d'un {@see StateProvider}.
  *
  * Enrobe un provider local et fait de son `itemsFor()` la réunion
  * **`candidats_internes ∪ candidats_amont`**, où les candidats amont
@@ -22,15 +22,15 @@ use Illuminate\Support\Collection;
  * {@see \App\Services\Agent\Providers\AbstractCapabilityStateProvider} (Broadcast
  * ∪ overrides par maille), généralisé à l'amont.
  *
- * **Discipline D2 (CRITIQUE)** : le décorateur n'arbitre RIEN — ni tri, ni
+ * **Discipline de non-arbitrage (CRITIQUE)** : le décorateur n'arbitre RIEN — ni tri, ni
  * filtre, ni dédup, ni précédence par maille. Il n'est qu'une **source
  * supplémentaire de candidats bruts**. La précédence amont > local vit dans
  * `StateCompiler::specificity()` SEUL (maille `Upstream`). Un décorateur qui
- * trierait/élirait par maille = violation bloquante (Enforcement Guidelines).
+ * trierait/élirait par maille = violation bloquante.
  *
- * **NFR3 — pass-through strict** : sans contrat actif, la source renvoie `[]` ⇒
+ * **Pass-through strict** : sans contrat actif, la source renvoie `[]` ⇒
  * `concat([])` rend exactement les candidats internes, dans le même ordre ⇒ le
- * compilé est byte-identique au provider non décoré (test révélateur 28.3).
+ * compilé est byte-identique au provider non décoré (test révélateur).
  *
  * **Préservation `KeyedExclusiveProvider`** : si le provider interne implémente
  * ce marqueur (ex. `registry`), le décorateur DOIT l'exposer aussi — sinon
@@ -77,15 +77,15 @@ class UpstreamAwareProvider implements StateProvider
     /**
      * `candidats_internes ∪ candidats_amont` (bruts, sans arbitrage). Quand la
      * source est vide (aucun contrat actif), `concat([])` rend les candidats
-     * internes inchangés (pass-through strict — NFR3).
+     * internes inchangés (pass-through strict).
      *
      * @return Collection<int, \App\Services\Agent\StateCandidate>
      */
     public function itemsFor(TargetContext $ctx): Collection
     {
-        // Story 30.4 — on relaie `$ctx` à la source : elle en a besoin pour
+        // On relaie `$ctx` à la source : elle en a besoin pour
         // résoudre les labels portés par le poste (items `target_type = label`).
-        // Sans item label dans le contrat, la source court-circuite (NFR3 : aucune
+        // Sans item label dans le contrat, la source court-circuite (aucune
         // requête WG, pass-through strict inchangé).
         $upstream = $this->source->candidatesFor($this->inner->type(), $this->inner->scope(), $ctx);
 

@@ -76,14 +76,14 @@ return [
 
         // Staging des paquets téléchargés, CONTENT-ADDRESSED
         // (`<staging>/<key>/<sha256>.deb`). Un paquet vérifié y survit à un
-        // échec d'installation : la relance ne re-télécharge pas (NFR8). Le
+        // échec d'installation : la relance ne re-télécharge pas. Le
         // helper root REFUSE d'installer un `.deb` situé hors de ce répertoire.
         'staging_path' => env('EXTENSIONS_INSTALL_STAGING_PATH', storage_path('app/extensions/packages')),
 
         // Borne DURE de la taille d'un paquet (256 MiB). Appliquée à la LECTURE,
         // pas après coup : une borne vérifiée quand les octets sont déjà arrivés
         // ne borne rien, elle déplace juste l'épuisement de la RAM vers le
-        // disque (leçon review 56.1 #2).
+        // disque.
         'package_max_bytes' => (int) env('EXTENSIONS_INSTALL_PACKAGE_MAX_BYTES', 268_435_456),
 
         // Durée totale du téléchargement d'un paquet (un `.deb` de plusieurs
@@ -104,14 +104,14 @@ return [
         'helper_path' => env('EXTENSIONS_INSTALL_HELPER_PATH', '/usr/share/sambaedu/sbin/sambaedu-ext-helper.sh'),
 
         // Plage de ports de boucle locale ASSIGNÉS par SE5 aux backends
-        // d'extensions (jamais déclarés par un manifest — décision 56.2 #1).
+        // d'extensions (jamais déclarés par un manifest).
         // Le premier libre est pris sous le verrou global d'installation.
         'port_range' => [
             (int) env('EXTENSIONS_INSTALL_PORT_MIN', 8600),
             (int) env('EXTENSIONS_INSTALL_PORT_MAX', 8699),
         ],
 
-        // Story 56.3 — Durée maximale du Job de fond qui exécute une opération
+        // Durée maximale du Job de fond qui exécute une opération
         // depuis l'UI (`RunExtensionOperationJob`). Téléchargement (300 s) +
         // apt (dépendances, maintainer scripts) + redémarrage + marge large.
         //
@@ -149,10 +149,10 @@ return [
 
         // Durée totale d'une sonde. Sonder 5 backends morts coûte au pire
         // ~15 s au scheduler — et JAMAIS rien à une page (la navbar LIT l'état
-        // persisté, elle ne sonde pas : NFR9).
+        // persisté, elle ne sonde pas).
         'timeout' => (int) env('EXTENSIONS_HEALTH_TIMEOUT', 3),
 
-        // Budget de temps du CHECK DOCTOR (review 56.5 #1). Lui, contrairement
+        // Budget de temps du CHECK DOCTOR. Lui, contrairement
         // au scheduler, tourne dans une requête HTTP bornée par
         // `max_execution_time`, à côté des autres checks réseau : au-delà de ce
         // budget il rend un verdict PARTIEL en nommant ce qu'il n'a pas mesuré,
@@ -164,8 +164,8 @@ return [
         // ne SAIT plus. DÉRIVÉ de la période de sonde — `ext:health:check` passe
         // toutes les 5 minutes (`routes/console.php`), on tolère 3 passages
         // manqués : 3 × 300 s = 900 s. Les deux réglages sont liés et l'énoncé
-        // est ici (leçon review 56.3 #2 : deux valeurs liées qui vivent chacune
-        // de son côté finissent par diverger en silence). Changer la période du
+        // est ici : deux valeurs liées qui vivent chacune de son côté finissent
+        // par diverger en silence. Changer la période du
         // scheduler, c'est changer cette valeur.
         'stale_after' => (int) env('EXTENSIONS_HEALTH_STALE_AFTER', 900),
     ],

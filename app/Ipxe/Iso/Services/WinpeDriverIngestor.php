@@ -9,10 +9,10 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
 
 /**
- * Story 3.10 — Service d'ingestion PARTAGÉ des archives de pilotes WinPE (NIC)
+ * Service d'ingestion PARTAGÉ des archives de pilotes WinPE (NIC)
  * vers le pack persistant `winpe_drivers_path/<famille>/`.
  *
- * **Point unique de logique (D3, tranché par Henri)** : la commande artisan
+ * **Point unique de logique** : la commande artisan
  * {@see \App\Console\Commands\IngestWinpeDriversCommand} ET le composant
  * Livewire `iso-windows` appellent ce service — ZÉRO duplication. Le composant
  * passe `getRealPath()` du fichier uploadé (jamais `move()` —
@@ -41,7 +41,7 @@ final class WinpeDriverIngestor
      * @param  string  $famille  Nom de famille (ex. `intel-i219`) — strictement
      *                          validé (anti path-traversal).
      * @param  string  $archivePath  Chemin disque de l'archive (peut être un
-     *                               `getRealPath()` Livewire sans extension).
+     *  `getRealPath()` Livewire sans extension).
      * @param  string|null  $originalFilename  Nom d'origine (ex. `u1etn.exe`)
      *                                        utilisé pour détecter le type quand
      *                                        `$archivePath` n'a pas d'extension
@@ -167,7 +167,7 @@ final class WinpeDriverIngestor
 
     /**
      * Dispatch d'extraction par extension. Vérifie la présence du binaire
-     * AVANT extraction pour un message clair (AC4.2).
+     * AVANT extraction pour un message clair.
      */
     private function extractArchive(string $extension, string $archivePath, string $tmpDir): void
     {
@@ -218,7 +218,7 @@ final class WinpeDriverIngestor
 
     /**
      * Vérifie qu'un binaire externe est disponible (`command -v`). Message
-     * clair indiquant le paquet à installer si absent (AC4.2 / AC5.1).
+     * clair indiquant le paquet à installer si absent.
      */
     private function assertBinaryAvailable(string $binary, string $package): void
     {
@@ -263,7 +263,7 @@ final class WinpeDriverIngestor
 
     /**
      * Indique si un dossier contient encore au moins un fichier (récursif).
-     * Sert à détecter un résidu non purgé avant ré-ingestion (#5).
+     * Sert à détecter un résidu non purgé avant ré-ingestion.
      */
     private function directoryHasFiles(string $dir): bool
     {

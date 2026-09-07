@@ -10,9 +10,9 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 1bis.18f — Tests Feature de l'endpoint /admin/gpo/del-roam.sh.
+ * Tests Feature de l'endpoint /admin/gpo/del-roam.sh.
  *
- * Couvre AC #6 + AC #10 cas #7-8 :
+ * Couvre :
  *  - Auth IP whitelistée OU paramètre `se4_key` valide
  *  - Content-Type: text/plain
  *  - Format byte-fidèle au legacy (header + Firefox lines + lignes dynamiques)

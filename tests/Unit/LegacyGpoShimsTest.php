@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 /**
- * Tests unitaires pour les shims GPO (story 1bis.18g).
+ * Tests unitaires pour les shims GPO (.18g).
  *
  * Couvre :
  *  - search_ad(type='gpo'|'site'|'subnet') : LDAP RÉEL (pas Eloquent), mock
@@ -45,10 +45,10 @@ class LegacyGpoShimsTest extends TestCase
         parent::setUp();
 
         // Désactivé : portage natif Laravel des fonctions GPO en cours
-        // (Epic 16/17). Le shim `legacy/gpo_shim.inc.php` n'a plus vocation
+        // (17). Le shim `legacy/gpo_shim.inc.php` n'a plus vocation
         // à être maintenu une fois le portage complet — voir mémoire
         // [[feedback_guacamole_scope]] (analogue : supporter, pas refondre).
-        // @todo Supprimer ce test lors de story 16.13 (retrait des shims GPO).
+        // @todo Supprimer ce test lors de (retrait des shims GPO).
         $this->markTestSkipped('Désactivé pendant le portage natif Laravel des fonctions GPO (Epic 16/17).');
 
         $this->withoutVite();
@@ -140,12 +140,8 @@ class LegacyGpoShimsTest extends TestCase
         };
     }
 
-    // ═══════════════════════════════════════════════════════════════════════
-    //  AC #1 — search_ad(type='gpo')
-    // ═══════════════════════════════════════════════════════════════════════
-
     /**
-     * AC #1 — search_ad(type='gpo') interroge l'AD via ldap_search sur la
+     * search_ad(type='gpo') interroge l'AD via ldap_search sur la
      * branche CN=Policies,CN=System, avec le filtre exact attendu.
      */
     public function test_search_ad_gpo_found_returns_ldap_entry(): void
@@ -170,8 +166,8 @@ class LegacyGpoShimsTest extends TestCase
 
         $result = search_ad($this->config, 'Wallpaper', 'gpo');
 
-        // Post-fix 40e9b4b : search_ad() retire la clé 'count' pour matcher la
-        // sémantique legacy (callers utilisent count($result) > 0 et $result[0]).
+        // search_ad() retire la clé 'count' pour respecter la sémantique
+        // legacy : les callers font count($result) > 0 puis $result[0].
         $this->assertIsArray($result);
         $this->assertArrayNotHasKey('count', $result);
         $this->assertCount(1, $result);
@@ -191,9 +187,9 @@ class LegacyGpoShimsTest extends TestCase
     }
 
     /**
-     * AC #1 — Given la GPO n'existe pas, Then retour `[]` (tableau vide).
-     * Post-fix 40e9b4b : la clé 'count' est retirée, les callers legacy font
-     * count($result) > 0. Un false reste réservé aux erreurs LDAP (bind refusé).
+     * Given la GPO n'existe pas, Then retour `[]` (tableau vide).
+     * La clé 'count' est retirée : les callers legacy font count($result) > 0.
+     * Un false reste réservé aux erreurs LDAP (bind refusé).
      */
     public function test_search_ad_gpo_not_found_returns_count_zero(): void
     {
@@ -210,7 +206,7 @@ class LegacyGpoShimsTest extends TestCase
     }
 
     /**
-     * AC #1 — Given connexion LDAP refusée, Then retour `false`
+     * Given connexion LDAP refusée, Then retour `false`
      * (remonter l'erreur, ne pas la masquer en "not found").
      */
     public function test_search_ad_gpo_ldap_down_returns_false(): void
@@ -225,7 +221,7 @@ class LegacyGpoShimsTest extends TestCase
     }
 
     /**
-     * AC #1 — Wildcard : `search_ad(*, 'gpo')` utilise le filtre objectclass
+     * Wildcard : `search_ad(*, 'gpo')` utilise le filtre objectclass
      * seul (pas de matching sur cn/displayname).
      */
     public function test_search_ad_gpo_wildcard_uses_objectclass_only_filter(): void
@@ -241,12 +237,8 @@ class LegacyGpoShimsTest extends TestCase
         $this->assertEquals('(objectclass=grouppolicycontainer)', $searchCall['args'][2]);
     }
 
-    // ═══════════════════════════════════════════════════════════════════════
-    //  AC #2 — search_ad(type='site') et search_ad(type='subnet')
-    // ═══════════════════════════════════════════════════════════════════════
-
     /**
-     * AC #2 — search_ad(type='site') interroge CN=Sites,CN=Configuration.
+     * search_ad(type='site') interroge CN=Sites,CN=Configuration.
      */
     public function test_search_ad_site_uses_correct_branch(): void
     {
@@ -276,7 +268,7 @@ class LegacyGpoShimsTest extends TestCase
     }
 
     /**
-     * AC #2 — search_ad(type='subnet') interroge CN=Subnets,CN=Sites,CN=Configuration.
+     * search_ad(type='subnet') interroge CN=Subnets,CN=Sites,CN=Configuration.
      */
     public function test_search_ad_subnet_uses_correct_branch(): void
     {
@@ -293,7 +285,7 @@ class LegacyGpoShimsTest extends TestCase
     }
 
     /**
-     * AC #2 — search_ad(type='subnet', *) retourne [] quand aucun résultat.
+     * search_ad(type='subnet', *) retourne [] quand aucun résultat.
      */
     public function test_search_ad_subnet_returns_empty_array_when_none(): void
     {
@@ -308,12 +300,8 @@ class LegacyGpoShimsTest extends TestCase
         $this->assertCount(0, $result);
     }
 
-    // ═══════════════════════════════════════════════════════════════════════
-    //  AC #3 — modify_ad(type='gpo')
-    // ═══════════════════════════════════════════════════════════════════════
-
     /**
-     * AC #3 — modify_ad(type='gpo') avec un DN direct appelle
+     * modify_ad(type='gpo') avec un DN direct appelle
      * ldap_mod_replace avec les bons attrs.
      */
     public function test_modify_ad_gpo_replace_with_dn_calls_ldap_mod_replace(): void
@@ -339,7 +327,7 @@ class LegacyGpoShimsTest extends TestCase
     }
 
     /**
-     * AC #3 — modify_ad(type='gpo') avec un CN résout d'abord le DN.
+     * modify_ad(type='gpo') avec un CN résout d'abord le DN.
      */
     public function test_modify_ad_gpo_resolves_dn_from_cn(): void
     {
@@ -364,7 +352,7 @@ class LegacyGpoShimsTest extends TestCase
     }
 
     /**
-     * AC #3 — modify_ad(type='gpo') sur GPO inexistante → false + log.
+     * modify_ad(type='gpo') sur GPO inexistante → false + log.
      */
     public function test_modify_ad_gpo_missing_returns_false_and_logs(): void
     {
@@ -379,7 +367,7 @@ class LegacyGpoShimsTest extends TestCase
     }
 
     /**
-     * AC #3 — modify_ad(type='gpo', mode='add') n'est pas supporté → false + log.
+     * modify_ad(type='gpo', mode='add') n'est pas supporté → false + log.
      */
     public function test_modify_ad_gpo_unsupported_mode_returns_false(): void
     {
@@ -389,12 +377,8 @@ class LegacyGpoShimsTest extends TestCase
         $this->assertDatabaseHas('error_logs', ['source' => 'legacy']);
     }
 
-    // ═══════════════════════════════════════════════════════════════════════
-    //  AC #4 — Wrappers samba-tool GPO (fallback shim)
-    // ═══════════════════════════════════════════════════════════════════════
-
     /**
-     * AC #4 — gpolistcontainers parse correctement la sortie samba-tool.
+     * gpolistcontainers parse correctement la sortie samba-tool.
      * Testé via la fonction exposée dans gpo_shim.inc.php (fallback shim
      * utilisé sur host — en VM les includes legacy originaux prennent le
      * dessus mais le contrat est identique).
@@ -420,7 +404,7 @@ class LegacyGpoShimsTest extends TestCase
     }
 
     /**
-     * AC #4 + #10 — gpolistcontainers avec nom malicieux (injection) est
+     * gpolistcontainers avec nom malicieux (injection) est
      * correctement échappé via escapeshellarg. L'assertion vérifie que la
      * quote fermante de l'attaquant est bien échappée (les ' à l'intérieur
      * deviennent '\''), ce qui empêche le shell d'exécuter la commande
@@ -451,7 +435,7 @@ class LegacyGpoShimsTest extends TestCase
     }
 
     /**
-     * AC #4 — gpogetlink parse format "GPO: ...", "Name: ...", "Options: ...".
+     * gpogetlink parse format "GPO: ...", "Name: ...", "Options: ...".
      */
     public function test_gpogetlink_parses_output_into_gpo_array(): void
     {
@@ -476,7 +460,7 @@ class LegacyGpoShimsTest extends TestCase
     }
 
     /**
-     * AC #4 — gposetlink retourne true quand samba-tool réussit.
+     * gposetlink retourne true quand samba-tool réussit.
      */
     public function test_gposetlink_succeeds_when_exit_code_zero(): void
     {
@@ -492,7 +476,7 @@ class LegacyGpoShimsTest extends TestCase
     }
 
     /**
-     * AC #4 — gpodellink accepte 0 ou 255 comme succès (convention legacy).
+     * gpodellink accepte 0 ou 255 comme succès (convention legacy).
      */
     public function test_gpodellink_accepts_exit_code_255_as_success(): void
     {
@@ -504,7 +488,7 @@ class LegacyGpoShimsTest extends TestCase
     }
 
     /**
-     * AC #4 — gpodellink échoue sur un code autre que 0 ou 255.
+     * gpodellink échoue sur un code autre que 0 ou 255.
      */
     public function test_gpodellink_fails_on_other_exit_codes(): void
     {
@@ -515,12 +499,8 @@ class LegacyGpoShimsTest extends TestCase
         $this->assertFalse($result);
     }
 
-    // ═══════════════════════════════════════════════════════════════════════
-    //  AC #5 — Fonctions SYSVOL + bridge Kerberos
-    // ═══════════════════════════════════════════════════════════════════════
-
     /**
-     * AC #5 + #11 — Avant tout exec smbclient, _shim_gpo_ensure_krb5ccname
+     * Avant tout exec smbclient, _shim_gpo_ensure_krb5ccname
      * positionne KRB5CCNAME.
      */
     public function test_sysvol_put_sets_krb5ccname_before_exec(): void
@@ -537,7 +517,7 @@ class LegacyGpoShimsTest extends TestCase
     }
 
     /**
-     * AC #5 — sysvol_put avec source string appelle smbclient avec
+     * sysvol_put avec source string appelle smbclient avec
      * --use-kerberos=required et construit la bonne commande.
      */
     public function test_sysvol_put_uses_kerberos_required(): void
@@ -555,7 +535,7 @@ class LegacyGpoShimsTest extends TestCase
     }
 
     /**
-     * AC #5 — read_gpo_sysvol retourne false si smbclient ne télécharge
+     * read_gpo_sysvol retourne false si smbclient ne télécharge
      * aucun fichier (cas "GPO file absent attendu").
      */
     public function test_read_gpo_sysvol_returns_false_when_file_missing(): void
@@ -571,7 +551,7 @@ class LegacyGpoShimsTest extends TestCase
     }
 
     /**
-     * AC #5 + #9i — update_gpo_sysvol écrit atomiquement (temp+rename).
+     * update_gpo_sysvol écrit atomiquement (temp+rename).
      * On vérifie qu'après l'appel, le fichier final existe et aucun .tmp.*
      * ne traîne.
      */
@@ -579,8 +559,8 @@ class LegacyGpoShimsTest extends TestCase
     {
         $this->mockExec(['output' => [], 'return' => 0]);
 
-        // Note : le tmppath est maintenant construit via _shim_gpo_safe_tmppath
-        // (#M2) = sys_get_temp_dir() . '/sambaedu_sysvol_' . safe($gpo['cn']).
+        // Le tmppath est construit par _shim_gpo_safe_tmppath() :
+        // sys_get_temp_dir() . '/sambaedu_sysvol_' . safe($gpo['cn']).
         // $gpo['cn'] est prioritaire sur displayname pour anti path traversal.
         $cnRaw = '{GUID-' . uniqid() . '}';
         $gpo = ['cn' => $cnRaw, 'displayname' => 'AtomicTestDisplay'];
@@ -592,7 +572,7 @@ class LegacyGpoShimsTest extends TestCase
         $this->assertTrue($ok);
 
         // Le nom dans le path est sanitize (seulement [a-zA-Z0-9_{}.-]),
-        // et suffixé par getmypid() . '_' . uniqid() (anti race condition).
+        // et suffixé par getmypid(). '_'. uniqid() (anti race condition).
         // On localise le dossier via glob sur le préfixe.
         $safeCn = preg_replace('/[^a-zA-Z0-9_{}\.-]/', '_', $cnRaw);
         $candidates = glob(sys_get_temp_dir() . '/sambaedu_sysvol_' . $safeCn . '_*');
@@ -612,7 +592,7 @@ class LegacyGpoShimsTest extends TestCase
     }
 
     /**
-     * AC #5 + #9i — update_gpo_sysvol en mode commit=true déclenche sysvol_put
+     * update_gpo_sysvol en mode commit=true déclenche sysvol_put
      * et décore $gpo avec increment_user/increment_machine selon file.target.
      */
     public function test_update_gpo_sysvol_commit_decorates_gpo_with_increment_flags(): void
@@ -638,7 +618,7 @@ class LegacyGpoShimsTest extends TestCase
     }
 
     /**
-     * AC #5 + #9g — sysvol_acl_reset appelle smbcacls avec les bons args.
+     * sysvol_acl_reset appelle smbcacls avec les bons args.
      */
     public function test_sysvol_acl_reset_calls_smbcacls(): void
     {
@@ -653,12 +633,8 @@ class LegacyGpoShimsTest extends TestCase
         $this->assertStringContainsString('--sddl', $command);
     }
 
-    // ═══════════════════════════════════════════════════════════════════════
-    //  AC #10 — Audit sécurité escapeshellarg
-    // ═══════════════════════════════════════════════════════════════════════
-
     /**
-     * AC #10 — Inspection du code source : toutes les commandes exec des
+     * Inspection du code source : toutes les commandes exec des
      * wrappers GPO fallback utilisent escapeshellarg() pour les paramètres
      * d'entrée utilisateur ($name, $gpo, $container, $source).
      */
@@ -668,8 +644,7 @@ class LegacyGpoShimsTest extends TestCase
         $this->assertNotFalse($src);
 
         // Pour chaque fonction fallback qui exec directement, vérifier que
-        // les variables sensibles passent par escapeshellarg (#7 — ajout de
-        // gpogetlink, gpodellink, read_gpo_sysvol, sysvol_acl_reset).
+        // les variables sensibles passent par escapeshellarg.
         // Note : update_gpo_sysvol n'exec pas directement — il délègue à
         // sysvol_put qui est déjà testée.
         $patterns = [
@@ -693,12 +668,8 @@ class LegacyGpoShimsTest extends TestCase
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════════════
-    //  Review 1bis-18g #3 — Ticket Kerberos expiré : log + retour false
-    // ═══════════════════════════════════════════════════════════════════════
-
     /**
-     * Review #3 — sysvol_put retourne false ET log un message explicite quand
+     * sysvol_put retourne false ET log un message explicite quand
      * smbclient remonte NT_STATUS_NO_LOGON_SERVERS (cas ticket Kerberos expiré).
      */
     public function test_sysvol_put_logs_error_on_kerberos_expired(): void
@@ -735,12 +706,8 @@ class LegacyGpoShimsTest extends TestCase
         );
     }
 
-    // ═══════════════════════════════════════════════════════════════════════
-    //  Review 1bis-18g #M9 — Escape LDAP injection dans le filtre
-    // ═══════════════════════════════════════════════════════════════════════
-
     /**
-     * Review #M9 — search_ad(type='gpo') avec un nom contenant des caractères
+     * search_ad(type='gpo') avec un nom contenant des caractères
      * LDAP spéciaux (`*`, `(`, `)`) doit les échapper via escape_ldap_name
      * avant de les intégrer au filtre. Pas d'injection LDAP possible.
      */
@@ -800,7 +767,7 @@ class LegacyGpoShimsTest extends TestCase
     }
 
     /**
-     * #5 — search_ad(type='subnet') construit un filtre qui insère $name à la
+     * search_ad(type='subnet') construit un filtre qui insère $name à la
      * fois comme filter value (cn=...) ET comme composante de DN
      * (siteobject=CN=...,...). Les deux contextes ont des règles d'escape
      * différentes. Avec une virgule dans $name, la partie DN doit être
@@ -842,7 +809,7 @@ class LegacyGpoShimsTest extends TestCase
     }
 
     /**
-     * Manqué #3 — Deux appels successifs à _shim_gpo_safe_tmppath() avec la
+     * Deux appels successifs à _shim_gpo_safe_tmppath() avec la
      * même GPO produisent des chemins DISTINCTS (suffix PID+uniqid). Évite la
      * race condition entre workers PHP concurrents qui écriraient le même
      * fichier SYSVOL en même temps.
@@ -863,12 +830,8 @@ class LegacyGpoShimsTest extends TestCase
         $this->assertStringStartsWith(sys_get_temp_dir() . '/sambaedu_sysvol_', $path2);
     }
 
-    // ═══════════════════════════════════════════════════════════════════════
-    //  AC #12 — Error logger propre en cas de fonctionnement normal
-    // ═══════════════════════════════════════════════════════════════════════
-
     /**
-     * AC #12 — search_ad(type='gpo') avec params valides et LDAP OK ne
+     * search_ad(type='gpo') avec params valides et LDAP OK ne
      * génère AUCUN log ERROR sur channel legacy.
      */
     public function test_search_ad_gpo_valid_call_does_not_log_error(): void
@@ -884,9 +847,7 @@ class LegacyGpoShimsTest extends TestCase
         $this->assertCount(0, $errors, 'Pas de log legacy attendu pour un appel valide');
     }
 
-    // ═══════════════════════════════════════════════════════════════════════
     //  Helpers internes
-    // ═══════════════════════════════════════════════════════════════════════
 
     /**
      * @return array{fn:string,args:array}|null

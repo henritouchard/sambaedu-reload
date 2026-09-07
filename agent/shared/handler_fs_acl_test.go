@@ -7,10 +7,8 @@ import (
 	"testing"
 )
 
-// Tests du handler `fs_acl` (Story 36.1, contrat §7.7) — fake FsAclOps en
+// Tests du handler `fs_acl` (contrat §7.7) — fake FsAclOps en
 // mémoire (NOUVEAU fake : le fakeRegistryOps est registre, jamais détourné).
-
-// --- Fake FsAclOps ------------------------------------------------------------
 
 type fakeFsAclOps struct {
 	sids  map[string]string        // nom (minuscule) → SID ; absent ⇒ erreur LSA
@@ -35,8 +33,8 @@ func newFakeFsAclOps() *fakeFsAclOps {
 
 func fsPathKey(p string) string { return strings.ToLower(p) }
 
-func (f *fakeFsAclOps) existPath(p string)       { f.paths[fsPathKey(p)] = true }
-func (f *fakeFsAclOps) setSid(name, sid string)  { f.sids[strings.ToLower(name)] = sid }
+func (f *fakeFsAclOps) existPath(p string)      { f.paths[fsPathKey(p)] = true }
+func (f *fakeFsAclOps) setSid(name, sid string) { f.sids[strings.ToLower(name)] = sid }
 func (f *fakeFsAclOps) seedAce(p string, a ExplicitAce) {
 	f.existPath(p)
 	f.aces[fsPathKey(p)] = append(f.aces[fsPathKey(p)], a)
@@ -115,8 +113,6 @@ type fakeErr string
 func (e fakeErr) Error() string { return string(e) }
 func errFake(s string) error    { return fakeErr(s) }
 
-// --- Helpers ------------------------------------------------------------------
-
 const pfPath = `C:\Program Files`
 
 func fsAclItem(path, trustee, aceType, rights, appliesTo, ensure string) StateItem {
@@ -145,8 +141,6 @@ func newFsAclHandler(t *testing.T, ops FsAclOps) *FsAclHandler {
 func denyListFolder(sid string) ExplicitAce {
 	return ExplicitAce{SID: sid, AceType: "deny", Mask: fileListDirectory, Flags: 0}
 }
-
-// --- (a) pose + relecture conforme + 2e Apply zéro op -------------------------
 
 func TestFsAclApplyThenIdempotent(t *testing.T) {
 	ops := newFakeFsAclOps()
@@ -181,8 +175,6 @@ func TestFsAclApplyThenIdempotent(t *testing.T) {
 		t.Fatalf("apply idempotent attendu : addCnt=%d removeCnt=%d", ops.addCnt, ops.removeCnt)
 	}
 }
-
-// --- (b) ACE supprimée à la main ⇒ re-drift STRICT à travers le moteur --------
 
 func TestFsAclThroughEngineStrictRedrift(t *testing.T) {
 	ops := newFakeFsAclOps()
@@ -223,8 +215,6 @@ func TestFsAclThroughEngineStrictRedrift(t *testing.T) {
 	}
 }
 
-// --- (c) changement de trustee : ancienne ACE retirée PUIS nouvelle posée -----
-
 func TestFsAclTrusteeChangeRemovesOldAceViaStore(t *testing.T) {
 	ops := newFakeFsAclOps()
 	ops.existPath(pfPath)
@@ -253,8 +243,6 @@ func TestFsAclTrusteeChangeRemovesOldAceViaStore(t *testing.T) {
 	}
 }
 
-// --- (d) changement de rights, MÊME identité : remplacement propre ------------
-
 func TestFsAclRightsChangeSameIdentityCleanReplacement(t *testing.T) {
 	ops := newFakeFsAclOps()
 	ops.existPath(pfPath)
@@ -281,8 +269,6 @@ func TestFsAclRightsChangeSameIdentityCleanReplacement(t *testing.T) {
 		t.Fatalf("exactement UNE ACE gérée attendue, obtenu %d", len(ops.aces[fsPathKey(pfPath)]))
 	}
 }
-
-// --- (e) ensure:absent retire ; déjà absente = compliant idempotent ----------
 
 func TestFsAclEnsureAbsentRemovesAndIsIdempotent(t *testing.T) {
 	ops := newFakeFsAclOps()
@@ -319,8 +305,6 @@ func TestFsAclEnsureAbsentRemovesAndIsIdempotent(t *testing.T) {
 	}
 }
 
-// --- (f) orphelin de store réconcilié -----------------------------------------
-
 func TestFsAclOrphanStoreEntryReconciled(t *testing.T) {
 	ops := newFakeFsAclOps()
 	ops.existPath(pfPath)
@@ -347,8 +331,6 @@ func TestFsAclOrphanStoreEntryReconciled(t *testing.T) {
 	}
 }
 
-// --- (g) store corrompu ⇒ warning + repart vide, sans crash -------------------
-
 func TestFsAclCorruptStoreRestartsEmpty(t *testing.T) {
 	ops := newFakeFsAclOps()
 	ops.existPath(pfPath)
@@ -368,8 +350,6 @@ func TestFsAclCorruptStoreRestartsEmpty(t *testing.T) {
 		t.Fatalf("l'ACE désirée aurait dû être posée malgré le store corrompu")
 	}
 }
-
-// --- (h) deny SID système ⇒ erreur d'item ISOLÉE (les autres convergent) ------
 
 func TestFsAclDenySystemSidIsIsolatedError(t *testing.T) {
 	ops := newFakeFsAclOps()
@@ -401,8 +381,6 @@ func TestFsAclDenySystemSidIsIsolatedError(t *testing.T) {
 		t.Fatalf("verdict error attendu pour le type fs_acl, obtenu %+v", report)
 	}
 }
-
-// --- (i) chemin inexistant ⇒ erreur d'item (jamais de création) ---------------
 
 func TestFsAclNonExistentPathIsItemError(t *testing.T) {
 	ops := newFakeFsAclOps() // pfPath NON déclaré existant
@@ -436,8 +414,6 @@ func TestFsAclAbsentOnNonExistentPathIsSatisfied(t *testing.T) {
 	}
 }
 
-// --- (j) trustee irrésoluble ⇒ erreur d'item ----------------------------------
-
 func TestFsAclUnresolvableTrusteeIsItemError(t *testing.T) {
 	ops := newFakeFsAclOps()
 	ops.existPath(pfPath)
@@ -457,8 +433,6 @@ func TestFsAclUnresolvableTrusteeIsItemError(t *testing.T) {
 		t.Fatalf("l'ACE Eleves aurait dû converger malgré le trustee irrésoluble")
 	}
 }
-
-// --- (k) payload invalide ⇒ error pour le type --------------------------------
 
 func TestFsAclInvalidPayloadIsError(t *testing.T) {
 	h := newFsAclHandler(t, newFakeFsAclOps())
@@ -488,8 +462,6 @@ func TestFsAclInvalidPayloadIsError(t *testing.T) {
 	}
 }
 
-// --- (l) ACE tierces jamais touchées ------------------------------------------
-
 func TestFsAclNeverTouchesThirdPartyAces(t *testing.T) {
 	ops := newFakeFsAclOps()
 	sid := "S-1-5-21-1-2-3-1001"
@@ -518,7 +490,7 @@ func TestFsAclNeverTouchesThirdPartyAces(t *testing.T) {
 	}
 }
 
-// --- (n) absent : retire l'ACE DU STORE, pas celle recalculée (corr. review #1)
+// Un item `absent` retire l'ACE DU STORE, pas celle recalculée.
 //
 // Le payload courant d'un item `absent` peut décrire un masque DIFFÉRENT de
 // l'ACE réellement posée (mémorisée au store) : le retrait DOIT viser l'ACE du
@@ -566,7 +538,7 @@ func TestFsAclAbsentRemovesStoredAceNotRecomputed(t *testing.T) {
 	}
 }
 
-// --- (o) refus agent Q2 : deny descendant sur racine protégée (corr. review #2a)
+// Refus agent : deny descendant sur racine protégée.
 //
 // Défense en profondeur INDÉPENDANTE du serveur : un `deny` à héritage
 // descendant sur une racine protégée est refusé (erreur d'item isolée, jamais
@@ -579,7 +551,7 @@ func TestFsAclDenyDescendantOnProtectedRootRefused(t *testing.T) {
 	ops.setSid("Eleves", sid)
 	h := newFsAclHandler(t, ops)
 
-	// Combo INTERDIT (Q2) : deny modify à héritage descendant sur Program Files,
+	// Combo INTERDIT : deny modify à héritage descendant sur Program Files,
 	// ISOLÉ avec un item SÛR qui, lui, doit converger (effort maximal).
 	safe := fsAclItem(pfPath, "Eleves", "deny", "list_folder", "folder_only", "present")
 	forbidden := fsAclItem(pfPath, "Domain Users", "deny", "modify", "folder_subfolders_files", "present")
@@ -612,7 +584,7 @@ func TestFsAclSafeDenyOnProtectedRootPasses(t *testing.T) {
 	sid := "S-1-5-21-1-2-3-1001"
 	ops.setSid("Eleves", sid)
 	h := newFsAclHandler(t, ops)
-	// deny list_folder folder_only sur Program Files = variante SÛRE (Q2) → PASSE.
+	// deny list_folder folder_only sur Program Files = variante SÛRE → PASSE.
 	items := []StateItem{fsAclItem(pfPath, "Eleves", "deny", "list_folder", "folder_only", "present")}
 
 	if err := h.Apply(items); err != nil {
@@ -626,8 +598,8 @@ func TestFsAclSafeDenyOnProtectedRootPasses(t *testing.T) {
 	}
 }
 
-// Un chemin en nom court 8.3 (PROGRA~1) désigne Program Files sans le matcher
-// littéralement : le deny descendant y est AUSSI refusé (anti-contournement Q2).
+// Un chemin en nom court (PROGRA~1) désigne Program Files sans le matcher
+// littéralement : le deny descendant y est AUSSI refusé (anti-contournement).
 func TestFsAclDenyDescendantOnShortName83Refused(t *testing.T) {
 	ops := newFakeFsAclOps()
 	shortPath := `C:\PROGRA~1`
@@ -643,8 +615,6 @@ func TestFsAclDenyDescendantOnShortName83Refused(t *testing.T) {
 		t.Fatalf("aucune pose attendue sur un chemin 8.3 refusé, obtenu %d", ops.addCnt)
 	}
 }
-
-// --- (m) mémo SID par passe (compteur du fake) --------------------------------
 
 func TestFsAclSidMemoizedPerPass(t *testing.T) {
 	ops := newFakeFsAclOps()

@@ -36,8 +36,8 @@ new #[Title('Gestion du Parc - SE4FS')] class extends Component {
     public ?int $groupFilter = null;
     // Filtre rapide « carte » — piloté par le clic sur les tuiles de
     // statistiques de l'onglet Postes. Mutuellement exclusif (« montre
-    // uniquement ce type »). Absorbe les anciens filtres migration (16.13bis)
-    // et conformité (24.7), désormais représentés par des cartes cliquables.
+    // uniquement ce type »). Absorbe les anciens filtres migration
+    // et conformité, désormais représentés par des cartes cliquables.
     // Valeurs admises : '' (tous), 'active', 'enrolled', 'compliant',
     // 'migrated', 'without_group', 'exceptions', 'silent'.
     #[Url]
@@ -63,7 +63,7 @@ new #[Title('Gestion du Parc - SE4FS')] class extends Component {
     public array $selectedMachines = [];
     public array $selectedGroups = [];
 
-    // Story 3.11 — Réinstallation OS de la sélection (multi-sélection inventaire).
+    // Réinstallation OS de la sélection (multi-sélection inventaire).
     public bool $reinstallModalOpen = false;
     public string $reinstallTarget = '';
     public string $reinstallWhen = 'now';
@@ -82,7 +82,7 @@ new #[Title('Gestion du Parc - SE4FS')] class extends Component {
     public Collection $availableGroups;
     public array $machineStats = [];
     public array $groupStats = [];
-    // Story 24.7 — compteurs de conformité agent (postes enrôlés du parc).
+    // Compteurs de conformité agent (postes enrôlés du parc).
     public array $conformityStats = [];
 
     // États
@@ -109,7 +109,7 @@ new #[Title('Gestion du Parc - SE4FS')] class extends Component {
     {
         try {
             $this->availableOs = $this->parcService->getAvailableOs()->toArray();
-            // Story 7.1 — Review #7 : scoper le dropdown "Filtrer par groupe"
+            // Scoper le dropdown "Filtrer par groupe"
             // au périmètre du user courant pour éviter la fuite des noms de salles.
             $this->availableGroups = $this->parcService->getRootGroupsForSelect($this->scopedUser());
         } catch (\Exception $e) {
@@ -142,8 +142,8 @@ new #[Title('Gestion du Parc - SE4FS')] class extends Component {
                 groupId: $this->groupFilter,
             );
             $this->groupStats = $this->parcService->getGroupStats();
-            // Story 24.7 — compteurs de conformité agent (périmètre = postes
-            // enrôlés du parc), en requêtes agrégées (zéro N+1, piège 11).
+            // Compteurs de conformité agent (périmètre = postes
+            // enrôlés du parc), en requêtes agrégées (zéro N+1).
             $this->conformityStats = app(ConformityService::class)->summary();
             $this->statsLoaded = true;
         } catch (\Exception $e) {
@@ -156,8 +156,8 @@ new #[Title('Gestion du Parc - SE4FS')] class extends Component {
     }
 
     /**
-     * Story 24.7 — worst-status de conformité par poste pour la PAGE courante
-     * (badge tableau) : UNE requête agrégée sur les ids paginés (piège 11),
+     * Worst-status de conformité par poste pour la PAGE courante
+     * (badge tableau) : UNE requête agrégée sur les ids paginés,
      * jamais une relation lazy par ligne. Retourne `[id => statut affichable]`
      * où le statut est l'enum, un dérivé (never_reported/silent) ou 'neutral'
      * (poste non enrôlé). La résolution silent/never-reported reproduit la
@@ -192,8 +192,7 @@ new #[Title('Gestion du Parc - SE4FS')] class extends Component {
     }
 
     /**
-     * Story 16.13bis — Correction Q2 / Opus-A : invalider le cache stats
-     * dès qu'un filtre machines change pour que le compteur "Postes migrés"
+     * Invalide le cache stats dès qu'un filtre machines change pour que le compteur "Postes migrés"
      * suive l'UI.
      */
     public function updatedOsFilter(): void
@@ -231,7 +230,7 @@ new #[Title('Gestion du Parc - SE4FS')] class extends Component {
     public function getMachinesProperty()
     {
         try {
-            // Story 7.1 : scope par user — les délégués ne voient que les machines
+            // Scope par user — les délégués ne voient que les machines
             // des WorkstationGroups sur lesquels ils ont `computer.view`.
             return $this->parcService->listMachines(
                 perPage: $this->machinesPerPage,
@@ -251,7 +250,7 @@ new #[Title('Gestion du Parc - SE4FS')] class extends Component {
     public function getGroupsProperty()
     {
         try {
-            // Story 7.1 : scope par user — les délégués ne voient que leurs
+            // Scope par user — les délégués ne voient que leurs
             // WorkstationGroups autorisés par délégation ou droit global.
             return $this->parcService->listGroups(
                 perPage: $this->groupsPerPage,
@@ -270,7 +269,7 @@ new #[Title('Gestion du Parc - SE4FS')] class extends Component {
     }
 
     /**
-     * Story 7.1 — Renvoie l'User Eloquent connecté pour le scoping des listings.
+     * Renvoie l'User Eloquent connecté pour le scoping des listings.
      *
      * Retour null si l'user courant n'est pas un `App\Models\User` (dans les
      * cas où un guard legacy injecte un Authenticatable non-Eloquent) : le
@@ -296,8 +295,8 @@ new #[Title('Gestion du Parc - SE4FS')] class extends Component {
         $this->cardFilter = '';
         $this->presenceFilter = '';
         $this->selectedMachines = [];
-        // Story 16.13bis — Correction Q2 / Opus-A : recharger les stats
-        // pour refléter le nouveau périmètre global après reset.
+        // Recharger les stats pour refléter le nouveau périmètre global
+        // après reset.
         $this->statsLoaded = false;
         $this->resetPage();
     }
@@ -329,7 +328,7 @@ new #[Title('Gestion du Parc - SE4FS')] class extends Component {
         }
 
         try {
-            // Story 4.11 (AC8) — une salle physique impose la règle 1-salle-max :
+            // Une salle physique impose la règle 1-salle-max :
             // chaque poste passe par le swap transactionnel du service (detach de
             // l'ancienne salle + attach), pas par un attach pivot brut.
             $targetGroup = WorkstationGroup::find($groupId);
@@ -346,7 +345,7 @@ new #[Title('Gestion du Parc - SE4FS')] class extends Component {
             $this->toastSuccess("{$count} machine(s) ajoutée(s) au groupe");
             $this->selectedMachines = [];
         } catch (\App\Exceptions\ControlHub\UpstreamLockCollisionException $e) {
-            // Story 30.5 — collision verrou/verrou prédite : message explicite.
+            // Collision verrou/verrou prédite : message explicite.
             $this->toastError($e->getMessage());
         } catch (\Exception $e) {
             Log::error('[Parc] Erreur ajout machines au groupe: ' . $e->getMessage());
@@ -408,7 +407,7 @@ new #[Title('Gestion du Parc - SE4FS')] class extends Component {
     }
 
     /* ================================================================
-     * Story 3.11 — Réinstallation OS de la sélection (fan-out inventaire).
+     * Réinstallation OS de la sélection (fan-out inventaire).
      * ================================================================ */
 
     public function getReinstallOsCatalogProperty(): array
@@ -531,7 +530,7 @@ new #[Title('Gestion du Parc - SE4FS')] class extends Component {
     }
 
     /**
-     * Action groupée — déclare l'environnement (nature des postes, Story 26.1)
+     * Action groupée — déclare l'environnement (nature des postes)
      * des groupes sélectionnés. Remplace l'ancien onglet « Environnement » de
      * parc-settings : la propriété s'édite désormais là où l'on gère les groupes.
      *
@@ -697,13 +696,13 @@ new #[Title('Gestion du Parc - SE4FS')] class extends Component {
     {{-- Modale réutilisable de création / édition de groupe (ici : mode création). --}}
     <livewire:pages::parc.groups._partials.group-form-modal />
 
-    {{-- Story 3.11 — Modale de réinstallation de la sélection (fan-out inventaire). --}}
+    {{-- Modale de réinstallation de la sélection (fan-out inventaire). --}}
     @can('computer.install')
         @include('pages.parc._partials.reinstall-modal', [
             'reinstallTitle' => 'Réinstaller la sélection',
             'confirmTitle' => 'Confirmer la réinstallation de la sélection',
             'confirmMessage' => 'Cette opération EFFACE le disque de TOUS les postes sélectionnés et réinstalle',
-            // Fix review #5 — compte réactif : nombre EXACT de postes sélectionnés,
+            // Compte réactif : nombre EXACT de postes sélectionnés,
             // lu côté Alpine au clic (les protégés sont skippés à l'armement et
             // rapportés dans le toast de retour).
             'confirmCountExpr' => '$wire.selectedMachines.length',

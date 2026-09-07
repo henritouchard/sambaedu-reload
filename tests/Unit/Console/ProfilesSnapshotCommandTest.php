@@ -14,12 +14,12 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 26.3 — Tests de la commande `profiles:snapshot` (AC #1, #7).
+ * Tests de la commande `profiles:snapshot`.
  *
  * Couvre :
  *   - persistance du snapshot (colonne profile_snapshot + SystemSetting orphans)
  *     quand le scan remonte des données ;
- *   - fail-soft : scan impossible (/home/profiles absent → scanProfileSizes null)
+ *  - fail-soft : scan impossible (home/profiles absent → scanProfileSizes null)
  *     → exit FAILURE, snapshot précédent conservé.
  *
  * Le service est stubbé (sous-classe anonyme) pour piloter le scan sans FS réel

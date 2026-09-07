@@ -9,17 +9,14 @@ use App\Services\ControlHub\OrderedApplicationProvisioner;
 use Illuminate\Console\Command;
 
 /**
- * Story 31.3 — Approvisionnement manuel des applications ordonnées par le contrat amont
+ * Approvisionnement manuel des applications ordonnées par le contrat amont
  * (controlHub).
  *
  * Point d'invocation EXPLICITE et IDEMPOTENT (reprise après incident, provisioning) hors
  * réception d'un contrat. Délègue à {@see OrderedApplicationProvisioner::provision()} et
  * affiche les compteurs.
  *
- * NFR3 — sans contrat amont actif : message standalone + exit 0, rien d'écrit.
- *
- * ⚠️ GARDE-FOU R3 : vocabulaire « amont » exclusivement, terme prohibé proscrit.
- * [Source: prd-contrat-manage-se5.md#R3]
+ * Sans contrat amont actif : message standalone + exit 0, rien d'écrit.
  */
 class ProvisionOrderedApplications extends Command
 {
@@ -45,7 +42,7 @@ class ProvisionOrderedApplications extends Command
 
     public function handle(OrderedApplicationProvisioner $provisioner): int
     {
-        // NFR3 — standalone : sans contrat amont actif, ne rien écrire.
+        // Standalone : sans contrat amont actif, ne rien écrire.
         if (ControlHubContract::active() === null) {
             $this->info('Aucun contrat amont actif — approvisionnement ignoré (comportement standalone, rien écrit).');
 

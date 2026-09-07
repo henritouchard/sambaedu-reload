@@ -5,7 +5,7 @@ import (
 	"regexp"
 )
 
-// Logique PURE du handler `wallpaper` (Story 24.6) — résolution du filename
+// Logique PURE du handler `wallpaper` — résolution du filename
 // attendu et décision `asset: null`, factorisée ici pour être testée sur
 // l'hôte. Le test/apply spécifique OS (registre HKCU, SystemParametersInfo)
 // vit dans agent/windows/handler_wallpaper_windows.go.

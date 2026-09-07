@@ -18,18 +18,18 @@ use Tests\TestCase;
 use Tests\Traits\CreatesPermissionSchema;
 
 /**
- * Story 29.6 — Tests de WorkstationGroupPolicy::customize (Gate scopé
+ * Tests de WorkstationGroupPolicy::customize (Gate scopé
  * `customize-workstationGroup` pour l'override de capacité par parc).
  *
- * Jumelle de WorkstationGroupPolicyWpkgTest (patron 29.1). Couvre :
- *  - AC #1 : délégué positif actif sur A autorisé sur A, refusé sur B ;
- *  - AC #2 : admin global `app.customize` autorisé partout (+ scope null) ;
- *  - AC #3 : exclusion négative active prévaut même sur le droit global ;
- *  - AC #4 : délégation expirée → refus ;
- *  - AC #5 : groupe logique (is_physical=false) → fallback global UNIQUEMENT ;
+ * Jumelle de WorkstationGroupPolicyWpkgTest. Couvre :
+ *  - délégué positif actif sur A autorisé sur A, refusé sur B ;
+ *  - admin global `app.customize` autorisé partout (+ scope null) ;
+ *  - exclusion négative active prévaut même sur le droit global ;
+ *  - délégation expirée → refus ;
+ *  - groupe logique (is_physical=false) → fallback global UNIQUEMENT ;
  *  - enregistrement du Gate `customize-workstationGroup` (RegistersGates).
  *
- * Piège SQLite (mémoire projet) : on teste des DÉCISIONS d'autorisation
+ * Piège SQLite : on teste des DÉCISIONS d'autorisation
  * (booléens), pas des bornes de colonnes ; l'expiration utilise une date
  * passée explicite (now()->subDay()), jamais une longueur.
  */
@@ -153,7 +153,7 @@ class WorkstationGroupPolicyCustomizeTest extends TestCase
     public function logical_group_falls_back_to_global_only(): void
     {
         // Groupe logique (is_physical=false) : canCheckDelegation() refuse la
-        // voie déléguée → seul le droit global compte (AC #5).
+        // voie déléguée → seul le droit global compte.
         $logical = $this->makeGroup('groupe_logique', physical: false);
 
         $admin = $this->makeUser('admin', ['app.customize']);

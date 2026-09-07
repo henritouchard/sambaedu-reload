@@ -25,12 +25,11 @@ use Tests\Feature\Oidc\Concerns\UsesOidcTestKeys;
 use Tests\TestCase;
 
 /**
- * Story 55.2 — **AC1, AC2 et AC4** : le contrat de claims v1 dans l'id_token.
+ * Le contrat de claims v1 dans l'id_token.
  *
- * ══════════════════════════════════════════════════════════════════════════
  *  CE QUE CE FICHIER PROTÈGE
  *
- *  Le contrat de claims est PUBLIC et GELÉ (NFR11) : après la première
+ *  Le contrat de claims est PUBLIC et GELÉ : après la première
  *  extension intégrée, un claim ne peut plus être retiré ni renommé. Une clé
  *  émise par erreur est donc une **dette permanente** — et une fuite de PII.
  *
@@ -42,14 +41,13 @@ use Tests\TestCase;
  *
  *  Les clés sont comparées TRIÉES : leur ORDRE dans le JWT n'est pas un
  *  contrat (aucun client OIDC n'en dépend), leur ENSEMBLE l'est.
- * ══════════════════════════════════════════════════════════════════════════
  *
  * Les tests assertent des VALEURS (le display_name attendu, le rôle attendu),
- * jamais la SOURCE du `sub` — patron 55.1 : l'arbitrage du sujet
+ * jamais la SOURCE du `sub` — patron : l'arbitrage du sujet
  * ({@see \App\Auth\Oidc\Support\OidcSubjectResolver}) doit pouvoir basculer
  * sans réécrire cette suite.
  *
- * ⚠️ Bypass du guard `sambaedu.auth` : patron 55.1 (`OidcAuthorizationFlowTest`).
+ * ⚠️ Bypass du guard `sambaedu.auth` : patron (`OidcAuthorizationFlowTest`).
  */
 class OidcIdTokenClaimsTest extends TestCase
 {
@@ -69,7 +67,7 @@ class OidcIdTokenClaimsTest extends TestCase
         parent::setUp();
         $this->useOidcTestKeys();
 
-        // Story 54.3 : `businessRoles()` consulte Spatie pour `super-admin`.
+        // `businessRoles` consulte Spatie pour `super-admin`.
         (new PermissionSeeder())->run();
 
         // Créer un `user_groups` déclenche un job de sync AD (Observer) —
@@ -90,7 +88,7 @@ class OidcIdTokenClaimsTest extends TestCase
         parent::tearDown();
     }
 
-    // ── Fixtures ──────────────────────────────────────────────────────────
+    // Fixtures
 
     private function makeUser(string $role = 'prof', string $login = 'prof.dupont', ?string $fullname = 'Professeur Dupont'): User
     {
@@ -109,7 +107,7 @@ class OidcIdTokenClaimsTest extends TestCase
     private function attachGroups(User $user, array $groups): void
     {
         foreach ($groups as $name => $type) {
-            // ⚠️ Post-fold 4.13 : NOM NU (`4B`), jamais `Classe_4B` — un
+            // ⚠️ Post-fold : NOM NU (`4B`), jamais `Classe_4B` — un
             // préfixe décrirait un état de la base qui n'existe plus.
             $group = UserGroup::query()->create(['name' => $name, 'type' => $type]);
             $user->userGroups()->attach($group->id);
@@ -199,7 +197,7 @@ class OidcIdTokenClaimsTest extends TestCase
         );
     }
 
-    // ── AC1 — le prof, claims complets et scope-gatés ─────────────────────
+    // — le prof, claims complets et scope-gatés
 
     #[Test]
     public function a_prof_gets_name_role_and_groups_and_nothing_else(): void
@@ -223,8 +221,8 @@ class OidcIdTokenClaimsTest extends TestCase
     #[Test]
     public function neither_name_nor_groups_nor_sub_ever_reach_the_oidc_journal(): void
     {
-        // AC1 — `name` et `groups` sont de la PII au même titre que le `sub`,
-        // que la doctrine 55.1 excluait déjà des logs.
+        // `name` et `groups` sont de la PII au même titre que le `sub`,
+        // que la doctrine excluait déjà des logs.
         $user = $this->makeUser('prof', 'prof.durand', 'Sylvie Durand');
         $this->attachGroups($user, ['6C' => 'classe']);
 
@@ -243,7 +241,7 @@ class OidcIdTokenClaimsTest extends TestCase
         self::assertStringNotContainsString('prof.durand', $journal, 'le `sub` ne se journalise pas (doctrine 55.1)');
     }
 
-    // ── AC2 — l'élève et la minimisation par scopes ───────────────────────
+    // — l'élève et la minimisation par scopes
 
     #[Test]
     public function an_eleve_gets_their_role_and_their_class(): void
@@ -263,7 +261,7 @@ class OidcIdTokenClaimsTest extends TestCase
     #[Test]
     public function the_openid_scope_alone_produces_no_business_claim_at_all(): void
     {
-        // NFR5 : un scope non demandé ne produit RIEN. C'est la minimisation,
+        // Un scope non demandé ne produit RIEN. C'est la minimisation,
         // et c'est vérifié par la liste exacte — pas par trois absences
         // choisies à la main.
         $user = $this->makeUser('prof');
@@ -331,7 +329,7 @@ class OidcIdTokenClaimsTest extends TestCase
         self::assertStringNotContainsString('super-admin', $serialized);
     }
 
-    // ── Le rôle : scalaire, profil prioritaire, absent si non résolu ───────
+    // Le rôle : scalaire, profil prioritaire, absent si non résolu
 
     #[Test]
     public function a_prof_delegated_super_admin_stays_prof_for_the_extension(): void
@@ -364,7 +362,7 @@ class OidcIdTokenClaimsTest extends TestCase
     #[Test]
     public function a_user_whose_business_role_is_unresolvable_gets_no_role_claim(): void
     {
-        // AC4 — `users.role = 'autre'` : jamais `"autre"` dans le claim, jamais
+        // `users.role = 'autre'` : jamais `"autre"` dans le claim, jamais
         // une valeur inventée. Le claim est ABSENT, et l'extension fail-closed
         // n'habilite pas.
         $user = $this->makeUser('autre', 'agent.polyvalent', 'Agent Polyvalent');
@@ -378,9 +376,9 @@ class OidcIdTokenClaimsTest extends TestCase
     #[Test]
     public function a_federated_identity_without_delegation_gets_no_role_claim(): void
     {
-        // AC4 / limite CONNUE et ASSUMÉE de `businessRoles()` (docblock 54.3) :
+        // Limite CONNUE et ASSUMÉE de `businessRoles` (docblock) :
         // une identité fédérée sans rôle Spatie `super-admin` n'a pas de rôle
-        // métier résoluble. Le raffinement appartient à 49.1/49.2, pas au SSO.
+        // métier résoluble. Le raffinement appartient aux rôles, pas au SSO.
         $user = User::query()->create([
             'login' => 'ext:tech-42',
             'fullname' => 'Technicien controlHub',
@@ -394,7 +392,7 @@ class OidcIdTokenClaimsTest extends TestCase
         $this->assertExactClaimKeys($claims, ['name']);
     }
 
-    // ── Les groupes : types, tri, déduplication, volumétrie ───────────────
+    // Les groupes : types, tri, déduplication, volumétrie
 
     #[Test]
     public function only_classe_and_equipe_group_types_are_published(): void
@@ -410,7 +408,7 @@ class OidcIdTokenClaimsTest extends TestCase
 
         $claims = $this->claimsFromFullFlow($user, 'openid profile groups');
 
-        // Minimisation NFR5 : `role`/`function`/`custom` sont des artefacts
+        // Minimisation : `role`/`function`/`custom` sont des artefacts
         // d'administration INTERNE — hors « groupes du contexte ».
         self::assertSame(['4B', 'TechnoCollege'], (array) $claims['groups']);
     }
@@ -458,7 +456,7 @@ class OidcIdTokenClaimsTest extends TestCase
         // contraintes SQL, pas sur le `unique()` du résolveur — qui n'est que
         // de la défense en profondeur et ne peut donc PAS être exercé sans
         // fabriquer en test un état que le schéma interdit (anti-patron
-        // « table hand-rollée pour faire taire une erreur », review 54.3).
+        // « table hand-rollée pour faire taire une erreur », review).
         //
         // Ce test verrouille les deux contraintes : le jour où l'une sauterait,
         // le chemin de déduplication deviendrait vivant — il vaut mieux
@@ -491,7 +489,7 @@ class OidcIdTokenClaimsTest extends TestCase
         self::assertSame(['4B'], (array) $claims['groups']);
     }
 
-    // ── AC4 — l'utilisateur disparu, et l'inécrasabilité des standards ────
+    // — l'utilisateur disparu, et l'inécrasabilité des standards
 
     #[Test]
     public function a_user_deleted_between_authorization_and_exchange_gets_invalid_grant(): void
@@ -531,7 +529,7 @@ class OidcIdTokenClaimsTest extends TestCase
     #[Test]
     public function a_user_deactivated_between_authorization_and_exchange_gets_invalid_grant(): void
     {
-        // Correctif review 55.2 (#1). `users.is_active = false` ne gardait RIEN
+        // `users.is_active = false` ne gardait RIEN
         // dans la chaîne OIDC : `SambaEduAuthGuard` valide l'état du compte côté
         // LDAP/AD, et le token endpoint est un appel serveur-à-serveur qui ne
         // traverse aucune session. Un compte désactivé pendant la fenêtre de
@@ -614,7 +612,7 @@ class OidcIdTokenClaimsTest extends TestCase
     #[Test]
     public function the_access_token_row_carries_the_user_id_used_by_userinfo(): void
     {
-        // Migration additive 55.2 : c'est cette clé — et non le `sub` — qui
+        // Migration additive : c'est cette clé — et non le `sub` — qui
         // permettra à `/userinfo` de résoudre l'utilisateur.
         $user = $this->makeUser('prof');
         $client = $this->makeClient();

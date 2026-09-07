@@ -19,15 +19,18 @@ use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 /**
- * Story 28.1 — Tests du modèle de persistance du contrat amont (controlHub).
+ * Tests du modèle de persistance du contrat amont (controlHub).
  *
  * Couverture :
- * - AC#1 / AC#2 : présence des 5 tables et colonnes attendues après migration ; rollback via RefreshDatabase.
- * - AC#3 : garde-fou R3 — aucun nom de table/colonne ne contient « central ».
- * - AC#4 : casts d'enum effectifs (lecture renvoie une instance d'enum, pas un string).
- * - AC#4 : relations hasMany/belongsTo chargent les enregistrements liés.
- * - AC#5 : contraintes d'unicité sur les clés naturelles (item, label, groupe imposé, app).
- * - AC#6 : NFR3 — aucune ligne par défaut dans les 5 tables.
+ * - présence des 5 tables et de leurs colonnes après migration ; rollback via
+ *   RefreshDatabase ;
+ * - aucun nom de table ni de colonne ne contient « central » ;
+ * - casts d'enum effectifs (la lecture rend une instance d'enum, pas une chaîne) ;
+ * - relations hasMany/belongsTo qui chargent les enregistrements liés ;
+ * - contraintes d'unicité sur les clés naturelles (item, label, groupe imposé,
+ *   app) ;
+ * - aucune ligne par défaut dans les 5 tables : une instance sans contrat amont
+ *   reste vierge.
  *
  * ⚠️ Tests sur HÔTE (php8.4 + pdo_sqlite) — JAMAIS sur la VM (sans pdo_sqlite).
  * ⚠️ Pas de test de longueur varchar (non appliquée en SQLite).
@@ -36,9 +39,7 @@ class ControlHubContractTest extends TestCase
 {
     use RefreshDatabase;
 
-    // ──────────────────────────────────────────────────────────────────────────
-    // AC#1 — Migration : présence des 5 tables
-    // ──────────────────────────────────────────────────────────────────────────
+    // Migration : présence des 5 tables
 
     public function test_migration_creates_controlhub_contracts_table(): void
     {
@@ -65,9 +66,7 @@ class ControlHubContractTest extends TestCase
         $this->assertTrue(Schema::hasTable('controlhub_contract_catalog_apps'));
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    // AC#1 — Colonnes attendues dans chaque table
-    // ──────────────────────────────────────────────────────────────────────────
+    // Colonnes attendues dans chaque table
 
     public function test_controlhub_contracts_has_expected_columns(): void
     {
@@ -120,9 +119,7 @@ class ControlHubContractTest extends TestCase
         }
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    // AC#3 — Garde-fou R3 : aucun mot « central » dans tables/colonnes
-    // ──────────────────────────────────────────────────────────────────────────
+    // Aucun mot « central » dans les noms de tables ou de colonnes
 
     public function test_r3_no_table_name_contains_central(): void
     {
@@ -165,9 +162,7 @@ class ControlHubContractTest extends TestCase
         }
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    // AC#4 — Casts d'enum effectifs
-    // ──────────────────────────────────────────────────────────────────────────
+    // Casts d'enum effectifs
 
     public function test_link_state_is_cast_to_enum(): void
     {
@@ -263,9 +258,7 @@ class ControlHubContractTest extends TestCase
         $this->assertSame(ControlHubLabelMode::Reserved, $loaded->mode);
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    // AC#4 — Relations hasMany / belongsTo
-    // ──────────────────────────────────────────────────────────────────────────
+    // Relations hasMany / belongsTo
 
     public function test_contract_has_many_items(): void
     {
@@ -367,15 +360,14 @@ class ControlHubContractTest extends TestCase
         $this->assertSame($contract->id, $loaded->contract->id);
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    // AC#5 — Contraintes d'unicité sur les clés naturelles (NFR4)
-    // ──────────────────────────────────────────────────────────────────────────
+    // Contraintes d'unicité sur les clés naturelles
 
     /**
-     * NFR4 — cas DOMINANT : deux items 'instance' identiques sur le MÊME contrat doivent
-     * collisionner. C'est le cas que la clé naturelle DOIT protéger (target_label='' NOT NULL).
-     * Avant le correctif #1 (target_label nullable), ce test échouait : NULL != NULL en PG/SQLite
-     * → aucune collision → trou d'idempotence sur le cas le plus courant. [Review 28.1 #1/#2]
+     * Cas DOMINANT : deux items 'instance' identiques sur le MÊME contrat doivent
+     * collisionner. C'est ce que la clé naturelle protège, et cela n'est vrai que
+     * parce que `target_label` est NOT NULL avec `''` pour défaut : nullable,
+     * NULL != NULL en PostgreSQL comme en SQLite, aucune collision ne serait
+     * détectée et l'idempotence tomberait sur le cas le plus courant.
      */
     public function test_item_natural_key_unique_constraint_instance(): void
     {
@@ -398,7 +390,7 @@ class ControlHubContractTest extends TestCase
         ControlHubContractItem::create($data); // doit lever une QueryException
     }
 
-    /** NFR4 — cas label : deux items ciblant le même label sur le même contrat collisionnent. */
+    /** Cas label : deux items ciblant le même label sur le même contrat collisionnent. */
     public function test_item_natural_key_unique_constraint_label(): void
     {
         $this->expectException(QueryException::class);
@@ -482,9 +474,7 @@ class ControlHubContractTest extends TestCase
         $this->assertDatabaseCount('controlhub_contract_items', 2);
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    // AC#6 — NFR3 : aucune ligne par défaut dans les 5 tables (standalone préservé)
-    // ──────────────────────────────────────────────────────────────────────────
+    // Aucune ligne par défaut dans les 5 tables : une instance sans contrat reste vierge
 
     public function test_nfr3_no_default_rows_in_any_table(): void
     {
@@ -495,9 +485,7 @@ class ControlHubContractTest extends TestCase
         $this->assertDatabaseCount('controlhub_contract_catalog_apps', 0);
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    // AC#4 — Cast received_at en datetime
-    // ──────────────────────────────────────────────────────────────────────────
+    // Cast received_at en datetime
 
     public function test_received_at_is_cast_to_datetime(): void
     {

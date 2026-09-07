@@ -5,9 +5,9 @@ use Livewire\Attributes\Title;
 use Livewire\Component;
 
 /**
- * Story 4.7 — page « défauts établissement » (wallpaper + lockscreen).
+ * Page « défauts établissement » (wallpaper + lockscreen).
  *
- * Story 27.17 (option a) : l'édition du DÉFAUT Broadcast est désormais
+ * L'édition du DÉFAUT Broadcast est désormais
  * consolidée dans /admin/settings/parc-defaults (onglets « Fond d'écran » et
  * « Écran de verrouillage »). Cette page ne contient plus d'éditeur propre —
  * elle REDIRIGE vers la surface consolidée pour ne pas dédoubler le point

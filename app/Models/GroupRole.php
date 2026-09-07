@@ -13,7 +13,7 @@ use Illuminate\Support\Str;
 use InvalidArgumentException;
 
 /**
- * Story 62.1 — UNE LIGNE DU CATALOGUE DE RÔLES : une clé immuable, un libellé
+ * UNE LIGNE DU CATALOGUE DE RÔLES : une clé immuable, un libellé
  * modifiable, un rang d'affichage.
  *
  * La clé est ce qui est STOCKÉ sur l'arête (`user_group_user.role`) et ce que les
@@ -27,8 +27,7 @@ use InvalidArgumentException;
  * déjà, et de toutes les recettes qui la visent. Renommer se fait par le LIBELLÉ ;
  * changer de vocabulaire se fait en créant un rôle et en migrant les arêtes.
  *
- * **Le renommage des trois valeurs historiques a été EXAMINÉ et ÉCARTÉ** (story
- * 60.2, décision reportée ici avec la classe qu'elle documentait) : le rôle
+ * **Le renommage des trois valeurs historiques a été EXAMINÉ et ÉCARTÉ** : le rôle
  * d'arête n'est PAS un niveau d'accès. Nos propres recettes donnent l'écriture à
  * des `member`, et « contributeur »/« lecteur » existent déjà sous le nom d'accès
  * (`ro|rw`), qui est l'autre côté du mappage. Confondre les deux ferait croire
@@ -55,7 +54,7 @@ class GroupRole extends Model
      * Longueur MAXIMALE d'une clé.
      *
      * Elle est écrite telle quelle dans `user_group_user.role`, un `string(20)`
-     * depuis la story 42.1. SQLite ne borne pas les varchar : sans cette garde, une
+     * depuis la. SQLite ne borne pas les varchar : sans cette garde, une
      * clé de 30 caractères passerait en test et lèverait un 22001 en production, à
      * l'écriture d'une arête.
      */
@@ -148,14 +147,14 @@ class GroupRole extends Model
     }
 
     /**
-     * Story 62.1 — les USAGES d'une clé de rôle, comptés à la demande.
+     * Les USAGES d'une clé de rôle, comptés à la demande.
      *
      *  - `edges`       : arêtes d'appartenance qui portent cette valeur ;
      *  - `templates`   : recettes de répertoire qui VISENT cette clé ;
      *  - `group_types` : types de groupes qui DÉCLARENT ce rôle.
      *
-     * **Story 62.3 — le dernier a changé de nature, et c'est un progrès.** En
-     * 62.1 il comptait les types OBSERVÉS sur les arêtes : une lecture d'usage
+     * **le dernier a changé de nature, et c'est un progrès.** En
+     * Auparavant il comptait les types OBSERVÉS sur les arêtes : une lecture d'usage
      * assumée comme transitoire, faute de pouvoir poser la vraie question. La
      * déclaration existe désormais ({@see \App\Models\GroupTypeRole}), donc la
      * colonne répond à « où ce rôle a-t-il un SENS ? » plutôt qu'à « où
@@ -188,7 +187,7 @@ class GroupRole extends Model
     }
 
     /**
-     * Story 62.3 — types de groupes qui DÉCLARENT ce rôle.
+     * Types de groupes qui DÉCLARENT ce rôle.
      *
      * L'index unique de `group_type_roles` garantit une ligne par paire ; le
      * `distinct` n'en est pas moins écrit, parce que c'est la question posée
@@ -216,8 +215,8 @@ class GroupRole extends Model
      *  - `nodes_spec[].edge_role` — le rôle d'arête qui peuple un nœud par membre.
      *
      * Les CLÉS LOCALES de `roles_spec` (`profs`, `eleves`, `equipe`, `classe`…)
-     * ne référencent PAS ce catalogue en 62.1 : elles restent locales à chaque
-     * recette (l'éditeur 62.6 les fera converger). Une homonymie est donc
+     * ne référencent PAS ce catalogue : elles restent locales à chaque
+     * recette (l'éditeur les fera converger). Une homonymie est donc
      * possible — un futur rôle `classe` face à la clé locale `classe` — et les
      * compter serait un faux positif qui bloquerait une suppression légitime.
      *
@@ -262,7 +261,7 @@ class GroupRole extends Model
     }
 
     /**
-     * Story 62.1 — le REFUS de suppression, nommé, ou `null` si la suppression
+     * Le REFUS de suppression, nommé, ou `null` si la suppression
      * est légitime.
      *
      * Deux motifs, deux messages, et JAMAIS de cascade : supprimer un rôle porté
@@ -286,7 +285,7 @@ class GroupRole extends Model
 
         $usage = $this->usage();
 
-        // Story 62.3 — motif DÉCLARATION, traité à part et en premier parce que
+        // Motif DÉCLARATION, traité à part et en premier parce que
         // c'est le seul dont la résolution est à portée de main de l'admin : il
         // suffit de décocher le rôle sur les types concernés, et le message dit
         // où aller. Les deux autres motifs, eux, demandent de toucher des arêtes

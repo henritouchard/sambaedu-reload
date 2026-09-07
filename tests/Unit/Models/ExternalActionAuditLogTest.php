@@ -10,7 +10,7 @@ use Tests\Concerns\IssuesFederatedJwt;
 use Tests\TestCase;
 
 /**
- * Story 20.4 — Unit : modèle d'audit dénormalisé `ExternalActionAuditLog`.
+ * Unit : modèle d'audit dénormalisé `ExternalActionAuditLog`.
  *
  * Couvre la fabrique `record()`, les scopes `scopeFederated`/`scopeForActor`
  * et la pose de `occurred_at` (D-6). Tests host SQLite uniquement.

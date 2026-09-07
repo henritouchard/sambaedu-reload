@@ -17,29 +17,29 @@ use Livewire\Attributes\Locked;
 use Livewire\Component;
 
 /**
- * Story 35.4 — Section « Capacités » de la page d'un GROUPE D'UTILISATEURS.
+ * Section « Capacités » de la page d'un GROUPE D'UTILISATEURS.
  *
  * Transposition fidèle de l'onglet « Options / Capacités » du parc
- * ({@see resources/views/pages/parc/groups/_partials/capabilities-tab.blade.php},
- * 27.12→29.8) à la maille UserGroup : le référent numérique arme une CAPACITÉ pour
+ * ({@see resources/views/pages/parc/groups/_partials/capabilities-tab.blade.php})
+ * à la maille UserGroup : le référent numérique arme une CAPACITÉ pour
  * un groupe d'utilisateurs (élèves, direction, vie scolaire) en POSANT un override
  * de VALEUR de capacité (pivot polymorphe `capability_assignments`, assignable =
  * UserGroup). La maille UserGroup existe déjà de bout en bout côté données/moteur
- * (`resolveOverrides()`/`mailleFor()`/`specificity()`) : cette story n'expose QUE le
+ * (`resolveOverrides()`/`mailleFor()`/`specificity()`) : cet écran n'expose QUE le
  * geste UI — StateCompiler, providers, agent et golden restent INCHANGÉS.
  *
  * DIFFÉRENCES ASSUMÉES avec le parc :
  *  - LISTING = TOUTES les capacités actives ASSIGNABLES (≥ 1 clé HKCU) avec, par
- *    groupe, la valeur d'override sinon « Suit le défaut » (exigence AC epic) — le
+ *    groupe, la valeur d'override sinon « Suit le défaut » — le
  *    parc ne liste QUE les overrides ;
- *  - FILTRE d'assignabilité (piège #6) : un override UserGroup ne mord qu'à travers
+ *  - FILTRE d'assignabilité : un override UserGroup ne mord qu'à travers
  *    le provider Session (ruche HKCU) — proposer une capacité machine-only (HKLM)
  *    poserait un override INERTE. On ne garde donc que les capacités dont la
  *    projection registry porte ≥ 1 clé `hive = HKCU` ;
  *  - GARDE de droit : gate INSTANCE-WIDE `customize-userGroup` ({@see App\Policies\GroupPolicy::customize()},
  *    droit global `app.customize`) — PAS de délégation par-UserGroup (le délégué
- *    par-salle est refusé, anti-piège 29.1) ;
- *  - Badges tri-état 29.4 = HORS scope (surface parc uniquement).
+ *  par-salle est refusé, anti-piège) ;
+ *  - Badges tri-état = HORS scope (surface parc uniquement).
  *
  * À conserver À L'IDENTIQUE du parc (leçons 29.x) : `#[Locked]` + garde
  * serveur-autoritatif (mount ET chaque mutation), re-validation serveur `is_active`
@@ -54,7 +54,7 @@ new class extends Component {
     /**
      * Groupe d'utilisateurs édité — passé par la page parente.
      *
-     * Story 29.6 (transposé) — `#[Locked]` : le périmètre est SERVEUR-AUTORITATIF.
+     * `#[Locked]` : le périmètre est SERVEUR-AUTORITATIF.
      * L'hydratation initiale via le paramètre du `mount` reste autorisée, mais toute
      * mutation côté client (`$set('groupId', …)` / payload falsifié) lève
      * `CannotUpdateLockedPropertyException`. Sans ce verrou, un rejeu re-ciblerait un
@@ -81,14 +81,15 @@ new class extends Component {
 
     public function mount(int $groupId): void
     {
-        // Story 29.6 (transposé) — assigner le périmètre AVANT le garde.
+        // Assigner le périmètre AVANT le garde.
         $this->groupId = $groupId;
         $this->guardCustomize();
     }
 
     /**
      * TOUTES les capacités actives ASSIGNABLES par groupe d'utilisateurs (filtre
-     * HKCU du piège #6), jointes aux overrides de CE groupe. Chaque ligne porte :
+     * HKCU, cf. `isAssignableByUserGroup()`), jointes aux overrides de CE groupe.
+     * Chaque ligne porte :
      * label/description/catégorie, `has_override` + `override_display` (libellé
      * d'option de la valeur effective), `default_display` (libellé d'option du
      * défaut), `has_warning`, `overrides_locked`, `is_upstream_locked`.
@@ -100,7 +101,7 @@ new class extends Component {
     {
         // Capacités actives + leurs projections registry/registry_list Windows
         // (eager-load) pour le filtre HKCU calculé en PHP (pas de JSON query
-        // SQLite-hostile). registry_list inclus (review 43.2 #1) : refreshHint()
+        // SQLite-hostile). registry_list inclus : refreshHint()
         // agrège les hints des DEUX mécanismes — sans lui, une bi-projection dont
         // le hint ne vivrait que côté registry_list afficherait une temporalité
         // divergente des deux autres surfaces.
@@ -111,10 +112,10 @@ new class extends Component {
                     ->whereIn('mechanism', [
                         CapabilityProjection::MECHANISM_REGISTRY,
                         CapabilityProjection::MECHANISM_REGISTRY_LIST,
-                        // Story 36.7 (AC4) — le mécanisme `app_profile` (redirection
+                        // Le mécanisme `app_profile` (redirection
                         // du profil applicatif, portée SESSION/maille User) est
                         // assignable par groupe d'utilisateurs : son provider résout
-                        // désormais les assignations UserGroup (sortie du socle 36.5).
+                        // désormais les assignations UserGroup (sortie du socle).
                         CapabilityProjection::MECHANISM_APP_PROFILE,
                     ]);
             }])
@@ -139,8 +140,8 @@ new class extends Component {
             $overrides[(int) $row->capability_id] = $row->value;
         }
 
-        // Stories 29.2/29.4 — statut amont pré-calculé UNE fois (court-circuit NFR3),
-        // resolver mémoïsé pré-instancié hors boucle (pas de N+1).
+        // Statut amont pré-calculé UNE fois, resolver mémoïsé pré-instancié
+        // hors boucle (pas de N+1).
         $lock = app(UpstreamLockResolver::class);
 
         return $capabilities->map(function (Capability $c) use ($overrides, $lock): array {
@@ -161,11 +162,11 @@ new class extends Component {
                 // Une capacité verrouillée amont ne peut être ni déviée ni éditée ici
                 // (l'override serait défait au compilé — `Upstream` rang -1 — ET refusé
                 // au serveur par `authorizeUpstream()`). En standalone, toujours false
-                // (court-circuit NFR3).
+                // sans contrat amont.
                 'is_upstream_locked' => $lock->isCapabilityLocked($c),
-                // Story 43.2 (D5/D6) — temporalité d'effet ; null = aucun badge.
+                // Temporalité d'effet ; null = aucun badge.
                 // Dérivé sur la relation `projections` DÉJÀ eager-loaded (mécanisme
-                // registry, filtre HKCU piège #6) — zéro requête ajoutée.
+                // registry, filtre HKCU) — zéro requête ajoutée.
                 'effect_timing' => $c->effectTiming(),
             ];
         })->values()->all();
@@ -175,8 +176,8 @@ new class extends Component {
     #[Computed]
     public function editingCapability(): ?Capability
     {
-        // Story 43.2 — `with('projections')` (filtre registry Windows, piège #6
-        // déjà appliqué par isAssignableByUserGroup côté eager-load) : la
+        // `with('projections')` (filtre registry Windows déjà appliqué par
+        // isAssignableByUserGroup côté eager-load) : la
         // modale affiche AUSSI le badge de temporalité d'effet sans requête
         // ajoutée.
         return $this->editingCapabilityId !== null
@@ -205,7 +206,7 @@ new class extends Component {
             ->where('overrides_locked', false)
             ->findOrFail($capabilityId);
 
-        // Review 35.4 #1 (piège #6) : l'assignabilité HKCU ne peut pas vivre
+        // L'assignabilité HKCU ne peut pas vivre
         // seulement dans le listing — un rejeu Livewire direct poserait un
         // override machine-only qui ne mordra JAMAIS (silencieusement inerte).
         if (! $this->isAssignableByUserGroup($capability)) {
@@ -263,7 +264,7 @@ new class extends Component {
     {
         $this->guardCustomize();
 
-        // Re-validation SERVEUR (piège #3) : `is_active`/`overrides_locked` ne peuvent
+        // Re-validation SERVEUR : `is_active`/`overrides_locked` ne peuvent
         // vivre seulement en front. On recharge la capacité filtrée `is_active` et on
         // dérive « nouvel override » de l'EXISTENCE EN BASE (pas du flag client) :
         // une capacité gelée DÉJÀ overridée reste éditable, mais aucune gelée ne peut
@@ -282,14 +283,14 @@ new class extends Component {
             return;
         }
 
-        // Review 35.4 #1 (piège #6) — defense-in-depth : même garde qu'openAdd,
+        // Defense-in-depth : même garde qu'openAdd,
         // un override UserGroup sur une capacité sans clé HKCU est inerte.
         if (! $this->isAssignableByUserGroup($capability)) {
             $this->toastError('Cette capacité ne peut pas être ciblée par groupe d\'utilisateurs (aucune clé de portée session).');
             return;
         }
 
-        // Story 29.2 (transposé) — verrou amont (defense-in-depth), refus SERVEUR même
+        // Verrou amont (defense-in-depth), refus SERVEUR même
         // si l'UI est contournée (rejeu Livewire).
         if (! $this->authorizeUpstream($capability)) {
             return;
@@ -315,7 +316,7 @@ new class extends Component {
 
         $group = UserGroup::query()->findOrFail($this->groupId);
 
-        // Story 29.5 (NFR5) — old_value lue AVANT la mutation (sinon perdue).
+        // Old_value lue AVANT la mutation (sinon perdue).
         $oldValue = DB::table('capability_assignments')
             ->where('assignable_type', UserGroup::class)
             ->where('assignable_id', $group->id)
@@ -323,17 +324,17 @@ new class extends Component {
             ->value('value');
 
         // Statut amont au moment de l'acte (un `locked` n'arrive jamais ici — refusé
-        // par authorizeUpstream). Resolver mémoïsé : court-circuit NFR3 préservé.
+        // par authorizeUpstream). Resolver mémoïsé, aucune requête sans contrat.
         $upstreamStatus = app(UpstreamLockResolver::class)->isCapabilityPermissive($capability)
             ? CapabilityOverrideAuditLog::UPSTREAM_PERMISSIVE
             : CapabilityOverrideAuditLog::UPSTREAM_LOCAL;
 
         [$actorId, $actorLogin] = $this->resolveActor();
 
-        // Story 29.5 (NFR5) — atomicité acte ↔ trace : mutation du pivot ET écriture
+        // Atomicité acte ↔ trace : mutation du pivot ET écriture
         // d'audit dans une MÊME transaction. `action` dérivée de l'EXISTENCE EN BASE.
         DB::transaction(function () use ($capability, $group, $value, $oldValue, $hasExistingOverride, $upstreamStatus, $actorId, $actorLogin): void {
-            // Story 29.7 — closure INSERT vs UPDATE : sur UPDATE, `created_at` du pivot
+            // Closure INSERT vs UPDATE : sur UPDATE, `created_at` du pivot
             // n'est PAS réécrit ; sur INSERT, il est posé à now().
             DB::table('capability_assignments')->updateOrInsert(
                 [
@@ -376,7 +377,7 @@ new class extends Component {
     {
         $this->guardCustomize();
 
-        // Story 29.2 (transposé) — bloquer AUSSI le retrait d'un item verrouillé amont
+        // Bloquer AUSSI le retrait d'un item verrouillé amont
         // (UX « refus explicite » cohérente ; le retrait serait de toute façon inerte).
         $capability = Capability::query()->find($capabilityId);
         if ($capability !== null && ! $this->authorizeUpstream($capability)) {
@@ -385,7 +386,7 @@ new class extends Component {
 
         $group = UserGroup::query()->find($this->groupId);
 
-        // Story 29.5 (NFR5) — pas de TRACE FANTÔME : si aucun override n'existe pour ce
+        // Pas de TRACE FANTÔME : si aucun override n'existe pour ce
         // périmètre (rejeu / appel direct), aucun acte → aucune trace. `first()`
         // distingue l'absence de ligne d'une ligne à `value` null (colonne nullable).
         $existing = DB::table('capability_assignments')
@@ -401,7 +402,7 @@ new class extends Component {
         // Ancienne valeur lue AVANT le delete.
         $oldValue = $existing->value;
 
-        // Statut amont (court-circuit NFR3 préservé). `null` capability → local.
+        // Statut amont (aucune requête sans contrat). `null` capability → local.
         $upstreamStatus = ($capability !== null
             && app(UpstreamLockResolver::class)->isCapabilityPermissive($capability))
             ? CapabilityOverrideAuditLog::UPSTREAM_PERMISSIVE
@@ -409,7 +410,7 @@ new class extends Component {
 
         [$actorId, $actorLogin] = $this->resolveActor();
 
-        // Story 29.5 (NFR5) — atomicité acte ↔ trace : delete + audit `delete`
+        // Atomicité acte ↔ trace : delete + audit `delete`
         // (new_value = null) dans une MÊME transaction.
         DB::transaction(function () use ($capability, $group, $capabilityId, $oldValue, $upstreamStatus, $actorId, $actorLogin): void {
             DB::table('capability_assignments')
@@ -437,10 +438,10 @@ new class extends Component {
         unset($this->capabilities);
     }
 
-    // ── Helpers ────────────────────────────────────────────────────────────
+    // Helpers
 
     /**
-     * Piège #6 — « assignable par groupe d'utilisateurs » = la projection registry
+     * « Assignable par groupe d'utilisateurs » = la projection registry
      * Windows de la capacité porte ≥ 1 clé `hive = HKCU` (insensible à la casse).
      * Un override UserGroup ne mord qu'à travers le provider Session (ruche HKCU) :
      * une capacité 100 % HKLM (machine-only) poserait un override INERTE. Calcul en
@@ -448,7 +449,7 @@ new class extends Component {
      */
     private function isAssignableByUserGroup(Capability $capability): bool
     {
-        // Story 36.7 (AC4) — le mécanisme `app_profile` est assignable par groupe
+        // Le mécanisme `app_profile` est assignable par groupe
         // d'utilisateurs SANS clé HKCU : sa portée est Session/maille User et son
         // provider ({@see \App\Services\Agent\Providers\AppProfileCapabilityProvider})
         // résout les assignations UserGroup (un override UserGroup MORD donc). Une
@@ -462,7 +463,7 @@ new class extends Component {
 
         // Seul le mécanisme registry définit l'assignabilité par groupe-user
         // (inchangé) — l'eager-load charge aussi registry_list pour le badge de
-        // temporalité, d'où le filtre explicite ici (review 43.2 #1).
+        // temporalité, d'où le filtre explicite ici.
         foreach ($capability->projections as $projection) {
             if ($projection->mechanism !== CapabilityProjection::MECHANISM_REGISTRY) {
                 continue;
@@ -485,7 +486,7 @@ new class extends Component {
     }
 
     /**
-     * Story 29.5 (NFR5) — acteur de l'audit : id (FK) + login DÉNORMALISÉ. Guard
+     * Acteur de l'audit : id (FK) + login DÉNORMALISÉ. Guard
      * `instanceof User` pour l'intégrité de la FK `actor_user_id`.
      *
      * @return array{0:int|null,1:string|null}
@@ -541,10 +542,10 @@ new class extends Component {
     }
 
     /**
-     * Story 35.4 — garde d'autorisation SERVEUR-AUTORITATIF. Gate INSTANCE-WIDE
+     * Garde d'autorisation SERVEUR-AUTORITATIF. Gate INSTANCE-WIDE
      * `customize-userGroup` ({@see App\Policies\GroupPolicy::customize()}) exigeant le
      * droit GLOBAL `app.customize`. PAS de délégation par-UserGroup dans le modèle :
-     * un délégué par-salle (droit scopé seulement) est REFUSÉ ici (anti-piège 29.1).
+     * un délégué par-salle (droit scopé seulement) est REFUSÉ ici (anti-piège).
      * Voir le docblock du gate pour le raisonnement « instance = établissement » et le
      * point d'extension unique.
      */
@@ -558,7 +559,7 @@ new class extends Component {
     }
 
     /**
-     * Story 29.2 (transposé) — garde de VERROU AMONT (defense-in-depth). `app.customize`
+     * Garde de VERROU AMONT (defense-in-depth). `app.customize`
      * est DÉJÀ vérifié par guardCustomize() ; ici le seul motif de refus du gate
      * `modify-capability` est le verrou amont. Refus = toast explicite + arrêt de la
      * mutation (retourne false).
@@ -622,7 +623,7 @@ new class extends Component {
                                             <i class="fa-solid fa-triangle-exclamation text-warning text-xs"
                                                 aria-label="Capacité sensible"></i>
                                         @endif
-                                        {{-- Story 43.2 (D5/D6) — badge de temporalité d'effet. --}}
+                                        {{-- Badge de temporalité d'effet. --}}
                                         @if ($capability['effect_timing'] !== null)
                                             <span class="badge badge-sm badge-outline gap-1"
                                                 data-testid="effect-timing-{{ $capability['id'] }}"
@@ -700,7 +701,7 @@ new class extends Component {
                 @if ($capability->description)
                     <p class="text-sm opacity-70 mb-2">{{ $capability->description }}</p>
                 @endif
-                {{-- Story 43.2 (D5/D6) — badge de temporalité d'effet. --}}
+                {{-- Badge de temporalité d'effet. --}}
                 @php($timing = $capability->effectTiming())
                 @if ($timing !== null)
                     <span class="badge badge-sm badge-outline gap-1 mb-2" title="{{ $timing['tooltip'] }}">
@@ -709,7 +710,7 @@ new class extends Component {
                 @endif
 
                 <label class="form-control w-full">
-                    {{-- UX forms (piège #11) : label AU-DESSUS, étoile sur l'obligatoire. --}}
+                    {{-- Label AU-DESSUS, étoile sur l'obligatoire. --}}
                     <span class="label-text mb-1">
                         Valeur pour ce groupe <span class="text-error" aria-hidden="true">*</span>
                     </span>

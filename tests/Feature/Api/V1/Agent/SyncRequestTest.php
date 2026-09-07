@@ -15,14 +15,14 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Tests Feature « forcer la synchro » — Story 24.7 (AC5, AC7).
+ * Tests Feature « forcer la synchro ».
  *
  * Routes RÉELLES `agent.v1.state` / `agent.v1.report` derrière la chaîne
  * complète (`auth.v1.secure-headers` + `throttle:60,1` + `agent.token`),
  * conventions `StateEndpointTest`/`ReportEndpointTest` (factories,
  * `TokenRotationService::issueFor()`).
  *
- * Matrice AC7 : demande pendante + `If-None-Match` concordant → 200 corps
+ * Matrice : demande pendante + `If-None-Match` concordant → 200 corps
  * complet, même ETag ; même requête SANS demande → 304 (non-régression) ;
  * demande pendante + contexte `?user=` → 200 forcé ; POST /report → demande
  * soldée (colonne null) ; report sans demande → no-op ; quarantaine → 403
@@ -92,7 +92,7 @@ final class SyncRequestTest extends TestCase
         $ws->save();
     }
 
-    // ── AC5 / AC7 — bypass 304 pendant une demande ───────────────────────
+    // — bypass 304 pendant une demande
 
     #[Test]
     public function pending_request_forces_200_full_body_on_matching_if_none_match(): void
@@ -107,11 +107,11 @@ final class SyncRequestTest extends TestCase
 
         $response->assertOk();
         self::assertNotSame('', $response->getContent(), 'corps complet re-servi');
-        // MÊME ETag (enveloppe brute inchangée, piège 3).
+        // MÊME ETag : l'enveloppe brute est inchangée.
         self::assertSame($etag, $response->headers->get('ETag'));
         // Zéro write au GET : la demande reste pendante (soldée au report
         // uniquement) — c'est ce qui garantit le bypass pour les fetchs
-        // `?user=` du même cycle (décision n° 1).
+        // `?user=` du même cycle.
         self::assertNotNull($ws->refresh()->agent_sync_requested_at);
     }
 
@@ -157,7 +157,7 @@ final class SyncRequestTest extends TestCase
         self::assertNotNull($ws->refresh()->agent_sync_requested_at);
     }
 
-    // ── AC5 / AC7 — solde au POST /report ────────────────────────────────
+    // — solde au POST /report
 
     #[Test]
     public function first_report_after_request_fulfills_it_and_nulls_the_column(): void
@@ -182,7 +182,7 @@ final class SyncRequestTest extends TestCase
         self::assertNull($ws->refresh()->agent_sync_requested_at);
     }
 
-    // ── AC5 / AC7 — quarantaine : 403 AVANT toute logique ────────────────
+    // — quarantaine : 403 AVANT toute logique
 
     #[Test]
     public function quarantined_state_call_returns_403_without_consuming_request(): void

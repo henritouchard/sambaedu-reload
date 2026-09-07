@@ -11,7 +11,7 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 6.1 — Réconciliation table SER `printers` ↔ état CUPS réel.
+ * Réconciliation table SER `printers` ↔ état CUPS réel.
  *
  * Exécutée :
  *  - quotidiennement à 03:30 par `app/Console/Kernel.php`
@@ -27,7 +27,7 @@ use Illuminate\Support\Facades\Log;
  *  3. SER contient des rows orphan présents dans CUPS → UPDATE orphan=false
  *     (réintroduction).
  *
- * Fix #12 : si CUPS est injoignable (`isHealthy()` échoue ou `CupsDaemonDownException`
+ * Garde de santé CUPS : si CUPS est injoignable (`isHealthy()` échoue ou `CupsDaemonDownException`
  * levée), la commande interrompt sans marquer les rows SER comme orphelins — évite
  * la perte de visibilité des imprimantes pour les délégués lors d'une interruption CUPS.
  *
@@ -64,7 +64,7 @@ class PrintersSyncCommand extends Command
     {
         $dryRun = (bool) $this->option('dry-run');
 
-        // Fix #12 : vérifier la santé CUPS avant d'interroger la liste.
+        // Vérifier la santé CUPS avant d'interroger la liste.
         if (!$cups->isHealthy()) {
             Log::error('printers:sync — daemon CUPS injoignable, synchronisation annulée', [
                 'dry_run' => $dryRun,

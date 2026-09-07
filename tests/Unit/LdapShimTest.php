@@ -113,7 +113,7 @@ class LdapShimTest extends TestCase
                 $table->foreignId('user_group_id');
                 // Colonne pivot lue par la relation User↔UserGroup (PP sur l'arête).
                 $table->boolean('is_head_teacher')->default(false);
-                // Story 42.1 — rôle sur l'arête, lu par withPivot('role').
+                // Rôle sur l'arête, lu par withPivot('role').
                 $table->string('role', 20)->default('member');
             });
         }
@@ -148,10 +148,10 @@ class LdapShimTest extends TestCase
         }
     }
 
-    // ─── Tests search_ad (type=user) ────────────────────────────────────────
+    // Tests search_ad (type=user)
 
     /**
-     * AC3 — search_ad(type=user) retourne les utilisateurs depuis Eloquent.
+     * Search_ad(type=user) retourne les utilisateurs depuis Eloquent.
      */
     public function test_search_ad_user_returns_users_from_eloquent(): void
     {
@@ -178,7 +178,7 @@ class LdapShimTest extends TestCase
     }
 
     /**
-     * AC3 — search_ad(type=user, name=*) retourne tous les utilisateurs.
+     * Search_ad(type=user, name=*) retourne tous les utilisateurs.
      */
     public function test_search_ad_user_wildcard_returns_all(): void
     {
@@ -191,7 +191,7 @@ class LdapShimTest extends TestCase
     }
 
     /**
-     * AC4 — Le format de retour est cohérent avec le format LDAP (tableau indexé + count).
+     * Le format de retour est cohérent avec le format LDAP (tableau indexé + count).
      */
     public function test_result_format_matches_ldap_format(): void
     {
@@ -216,10 +216,10 @@ class LdapShimTest extends TestCase
         $this->assertArrayHasKey('useraccountcontrol', $entry);
     }
 
-    // ─── Tests search_ad (type=group) ───────────────────────────────────────
+    // Tests search_ad (type=group)
 
     /**
-     * AC3 — search_ad(type=group) retourne les groupes depuis Eloquent.
+     * Search_ad(type=group) retourne les groupes depuis Eloquent.
      */
     public function test_search_ad_group_returns_groups(): void
     {
@@ -233,10 +233,10 @@ class LdapShimTest extends TestCase
         $this->assertArrayHasKey('member', $result[0]);
     }
 
-    // ─── Tests search_ad (type=machine) ─────────────────────────────────────
+    // Tests search_ad (type=machine)
 
     /**
-     * AC3 — search_ad(type=machine) retourne les workstations.
+     * Search_ad(type=machine) retourne les workstations.
      */
     public function test_search_ad_machine_returns_workstations(): void
     {
@@ -255,10 +255,10 @@ class LdapShimTest extends TestCase
         $this->assertEquals('192.168.1.100', $result[0]['ip']);
     }
 
-    // ─── Tests search_user / search_group / search_machine ──────────────────
+    // Tests search_user / search_group / search_machine
 
     /**
-     * AC3 — search_user est un alias de search_ad(type=user).
+     * Search_user est un alias de search_ad(type=user).
      */
     public function test_search_user_delegates_to_search_ad(): void
     {
@@ -271,7 +271,7 @@ class LdapShimTest extends TestCase
     }
 
     /**
-     * AC3 — search_machine avec $ip=true cherche par IP.
+     * Search_machine avec $ip=true cherche par IP.
      */
     public function test_search_machine_by_ip(): void
     {
@@ -283,10 +283,10 @@ class LdapShimTest extends TestCase
         $this->assertEquals('PC-01', $result['cn']);
     }
 
-    // ─── Tests list_* functions ──────────────────────────────────────────────
+    // Tests list_* functions
 
     /**
-     * AC3 — list_groups retourne les groupes d'un utilisateur.
+     * List_groups retourne les groupes d'un utilisateur.
      */
     public function test_list_groups_returns_user_groups(): void
     {
@@ -301,7 +301,7 @@ class LdapShimTest extends TestCase
     }
 
     /**
-     * AC3 — list_members_group retourne les membres d'un groupe.
+     * List_members_group retourne les membres d'un groupe.
      */
     public function test_list_members_group_returns_members(): void
     {
@@ -315,10 +315,10 @@ class LdapShimTest extends TestCase
         $this->assertEquals('prof1', $result[0]['cn']);
     }
 
-    // ─── Tests fonctions non shimmées → erreur explicite ────────────────────
+    // Tests fonctions non shimmées → erreur explicite
 
     /**
-     * AC5 — Une fonction non shimmée logge une erreur via ErrorLoggerService.
+     * Une fonction non shimmée logge une erreur via ErrorLoggerService.
      */
     public function test_unshimmed_function_logs_error(): void
     {
@@ -337,7 +337,7 @@ class LdapShimTest extends TestCase
     }
 
     /**
-     * AC5 — delete_ad non shimmée logge une erreur.
+     * Delete_ad non shimmée logge une erreur.
      */
     public function test_delete_ad_logs_error(): void
     {
@@ -350,7 +350,7 @@ class LdapShimTest extends TestCase
     }
 
     /**
-     * AC5 — search_ad avec type non supporté logge une erreur.
+     * Search_ad avec type non supporté logge une erreur.
      */
     public function test_search_ad_unsupported_type_logs_error(): void
     {
@@ -363,10 +363,10 @@ class LdapShimTest extends TestCase
         ]);
     }
 
-    // ─── Tests fonctions utilitaires DN ──────────────────────────────────────
+    // Tests fonctions utilitaires DN
 
     /**
-     * AC3 — ldap_dn2cn extrait le CN d'un DN.
+     * Ldap_dn2cn extrait le CN d'un DN.
      */
     public function test_ldap_dn2cn_extracts_cn(): void
     {
@@ -374,16 +374,13 @@ class LdapShimTest extends TestCase
     }
 
     /**
-     * AC3 — ldap_dn2ou extrait la première OU d'un DN.
+     * Ldap_dn2ou extrait la première OU d'un DN.
      */
     public function test_ldap_dn2ou_extracts_ou(): void
     {
         $this->assertEquals('people', ldap_dn2ou('CN=jdupont,OU=people,DC=ecole,DC=local'));
     }
 
-    /**
-     * AC3 — ldap_dn2parent retourne le DN parent.
-     */
     public function test_ldap_dn2parent_returns_parent(): void
     {
         $this->assertEquals(
@@ -392,19 +389,16 @@ class LdapShimTest extends TestCase
         );
     }
 
-    /**
-     * AC3 — ldap_dn2uai extrait l'UAI d'un DN.
-     */
     public function test_ldap_dn2uai_extracts_uai(): void
     {
         $this->assertEquals('0991229Y', ldap_dn2uai('CN=jdupont,OU=0991229Y,OU=people,DC=ecole,DC=local'));
         $this->assertEquals('', ldap_dn2uai('CN=jdupont,OU=people,DC=ecole,DC=local'));
     }
 
-    // ─── Tests get_config shim ──────────────────────────────────────────────
+    // Tests get_config shim
 
     /**
-     * AC3 — get_config retourne un config avec bind factice.
+     * Get_config retourne un config avec bind factice.
      */
     public function test_get_config_returns_config_with_fake_bind(): void
     {
@@ -415,10 +409,10 @@ class LdapShimTest extends TestCase
         $this->assertTrue($result['bind']->connected);
     }
 
-    // ─── Tests filter_* functions ───────────────────────────────────────────
+    // Tests filter_* functions
 
     /**
-     * AC3 — filter_group_classes retourne les groupes de type classe.
+     * Filter_group_classes retourne les groupes de type classe.
      */
     public function test_filter_group_classes_returns_classes(): void
     {
@@ -431,10 +425,10 @@ class LdapShimTest extends TestCase
         $this->assertEquals('3emeA', $result[0]['cn']);
     }
 
-    // ─── Tests comparaison functions ────────────────────────────────────────
+    // Tests comparaison functions
 
     /**
-     * AC3 — cmp_fullname compare correctement.
+     * Cmp_fullname compare correctement.
      */
     public function test_cmp_fullname_compares_correctly(): void
     {
@@ -446,10 +440,10 @@ class LdapShimTest extends TestCase
         $this->assertEquals(0, cmp_fullname($a, $a));
     }
 
-    // ─── Test useraccountcontrol ─────────────────────────────────────────────
+    // Test useraccountcontrol
 
     /**
-     * AC3 — Un utilisateur actif a useraccountcontrol=512, inactif=514.
+     * Un utilisateur actif a useraccountcontrol=512, inactif=514.
      */
     public function test_user_account_control_reflects_active_status(): void
     {
@@ -463,7 +457,7 @@ class LdapShimTest extends TestCase
         $this->assertEquals('514', $resultInactive[0]['useraccountcontrol']);
     }
 
-    // ─── Tests ad_url ──────────────────────────────────────────────────────
+    // Tests ad_url
 
     public function test_ad_url_dns_mode_returns_bare_fqdn(): void
     {

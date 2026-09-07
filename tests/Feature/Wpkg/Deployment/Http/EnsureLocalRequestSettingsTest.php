@@ -14,18 +14,17 @@ use Tests\Support\WpkgSchemaBootstrapper;
 use Tests\TestCase;
 
 /**
- * Story 15.6 / AC2.2 / AC2.3 / AC2.4 / AC6.3 — EnsureLocalRequest avec allowlist DB.
+ * EnsureLocalRequest avec allowlist DB.
  *
  * Vérifie que :
  *   - IP couverte par CIDR DB → autorisée (200/réponse normale)
  *   - IP hors allowlist DB + env vide → 403
- *   - 127.0.0.1/::1 toujours autorisés même allowlist DB vide (AC2.2)
- *   - Override s'applique identiquement sur winget_out ET linux_out (AC2.3)
- *   - Effet immédiat sans config:cache (AC2.4)
+ * - 127.0.0.1/::1 toujours autorisés même allowlist DB vide
+ * - Override s'applique identiquement sur winget_out ET linux_out
+ * - Effet immédiat sans config:cache
  *   - Non-régression : sans clé DB → comportement identique à l'existant
  */
 #[Group('wpkg-deploy')]
-#[Group('story-15-6')]
 class EnsureLocalRequestSettingsTest extends TestCase
 {
     use DatabaseTransactions;
@@ -74,7 +73,7 @@ class EnsureLocalRequestSettingsTest extends TestCase
     }
 
     /**
-     * AC2.2 — localhost 127.0.0.1 toujours autorisé même si allowlist DB vide.
+     * Localhost 127.0.0.1 toujours autorisé même si allowlist DB vide.
      */
     #[Test]
     public function localhost_ipv4_always_allowed_even_with_empty_db_allowlist(): void
@@ -89,7 +88,7 @@ class EnsureLocalRequestSettingsTest extends TestCase
     }
 
     /**
-     * AC2.2 — ::1 toujours autorisé même si allowlist DB vide.
+     * :1 toujours autorisé même si allowlist DB vide.
      */
     #[Test]
     public function localhost_ipv6_always_allowed_even_with_empty_db_allowlist(): void
@@ -103,7 +102,7 @@ class EnsureLocalRequestSettingsTest extends TestCase
     }
 
     /**
-     * AC2.2 — IP LAN dans CIDR DB → autorisée.
+     * IP LAN dans CIDR DB → autorisée.
      */
     #[Test]
     public function ip_covered_by_db_cidr_is_allowed_on_winget_out(): void
@@ -117,7 +116,7 @@ class EnsureLocalRequestSettingsTest extends TestCase
     }
 
     /**
-     * AC2.2 — IP hors allowlist DB et env vide → 403.
+     * IP hors allowlist DB et env vide → 403.
      */
     #[Test]
     public function ip_not_in_db_or_env_is_rejected_403_on_winget_out(): void
@@ -130,7 +129,7 @@ class EnsureLocalRequestSettingsTest extends TestCase
     }
 
     /**
-     * AC2.3 — Override s'applique aussi sur linux_out (même middleware).
+     * Override s'applique aussi sur linux_out (même middleware).
      */
     #[Test]
     public function db_cidr_applies_to_linux_out_route(): void
@@ -144,7 +143,7 @@ class EnsureLocalRequestSettingsTest extends TestCase
     }
 
     /**
-     * AC2.3 — IP hors allowlist DB → 403 sur linux_out aussi.
+     * IP hors allowlist DB → 403 sur linux_out aussi.
      */
     #[Test]
     public function ip_not_in_db_is_rejected_on_linux_out(): void
@@ -157,7 +156,7 @@ class EnsureLocalRequestSettingsTest extends TestCase
     }
 
     /**
-     * AC1.3 / Non-régression — Sans clé DB, env contrôle l'accès (env = IP autorisée → 200).
+     * Non-régression — Sans clé DB, env contrôle l'accès (env = IP autorisée → 200).
      */
     #[Test]
     public function no_db_key_falls_back_to_env_allowed_ips(): void
@@ -183,7 +182,7 @@ class EnsureLocalRequestSettingsTest extends TestCase
     }
 
     /**
-     * Correction post-review #3 — Fail-closed : DB polluée 0.0.0.0/0 → IP externe reste 403.
+     * Fail-closed : DB polluée 0.0.0.0/0 → IP externe reste 403.
      *
      * Même si un administrateur insère directement `0.0.0.0/0` en DB (hors UI qui le bloque),
      * allowedIps() doit l'écarter silencieusement → l'IP externe ne passe pas.
@@ -200,7 +199,7 @@ class EnsureLocalRequestSettingsTest extends TestCase
     }
 
     /**
-     * AC2.4 — Effet immédiat : modifier SystemSetting dans le même cycle → reflète immédiatement.
+     * Effet immédiat : modifier SystemSetting dans le même cycle → reflète immédiatement.
      * Test dans le même processus PHP, sans cache intermédiaire.
      */
     #[Test]

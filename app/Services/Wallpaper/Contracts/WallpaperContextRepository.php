@@ -9,7 +9,7 @@ use App\Dto\Wallpaper\WallpaperContext;
 /**
  * Contrat pour la source de contexte wallpaper (clé `apps.$id`).
  *
- * Story 4.7 — AC 3. L'implémentation par défaut lit APCu (posé par le legacy
+ * L'implémentation par défaut lit APCu (posé par le legacy
  * `applications.inc.php`). Une future implémentation `CacheWallpaperContextRepository`
  * prendra le relais quand `applications.php` sera porté en Laravel.
  */

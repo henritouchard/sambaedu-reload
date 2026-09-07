@@ -13,7 +13,7 @@ use Tests\TestCase;
  * Garde-fou : plus AUCUNE directive du vhost SER ne doit pointer dans l'arbre
  * legacy `/var/www/sambaedu`.
  *
- * Le cas constaté : jusqu'à la Story 38.1 le vhost SER portait
+ * Le cas constaté : jusqu'à la le vhost SER portait
  * `Alias /ipxe /var/www/sambaedu/ipxe`. Sur une instance dont le vhost date
  * d'avant, éteindre le legacy (`se4:unplug`, ou un simple `mv` de test) fait
  * disparaître la cible de l'Alias ET le bloc `<Directory>` qui portait le
@@ -24,7 +24,7 @@ use Tests\TestCase;
  * Plus aucun poste du parc ne démarre en PXE, en silence, et `se4:replug`
  * répare par accident (ce qui masque la cause).
  *
- * La 38.1 avait corrigé les templates et les a verrouillés
+ * La avait corrigé les templates et les a verrouillés
  * ({@see \Tests\Architecture\IpxeStaticAliasTest}) ; ce qui manquait, c'est le
  * cas de l'instance DÉJÀ DÉPLOYÉE, dont le vhost sur disque reste en arrière et
  * qu'aucun update ne réécrivait. D'où trois verrous :
@@ -41,7 +41,6 @@ use Tests\TestCase;
  * ({@see \Tests\Feature\Console\Se4ExtinctionCommandsTest}).
  */
 #[Group('ipxe')]
-#[Group('story-38-1')]
 class IpxeVhostLegacyAliasGuardTest extends TestCase
 {
     /**
@@ -77,7 +76,7 @@ class IpxeVhostLegacyAliasGuardTest extends TestCase
         return substr($script, $start, $end - $start);
     }
 
-    // ── T1 — les templates livrés ───────────────────────────────────────────
+    // T1 — les templates livrés
 
     #[Test]
     public function shipped_vhost_templates_never_point_into_the_legacy_tree(): void
@@ -97,7 +96,7 @@ class IpxeVhostLegacyAliasGuardTest extends TestCase
         }
     }
 
-    // ── T2 — la sentinelle update.sh ────────────────────────────────────────
+    // T2 — la sentinelle update.sh
 
     #[Test]
     public function update_sh_treats_a_residual_legacy_directive_as_an_incomplete_vhost(): void
@@ -111,7 +110,7 @@ class IpxeVhostLegacyAliasGuardTest extends TestCase
         );
 
         // La sentinelle doit peser dans le test de complétude de update_apache(),
-        // sinon un vhost pré-38.1 est déclaré « déjà configuré » et jamais réécrit.
+        // sinon un vhost antérieur est déclaré « déjà configuré » et jamais réécrit.
         self::assertStringContainsString(
             '&& [[ -z "$LEGACY_DIRECTIVES" ]]; then',
             $update,
@@ -132,7 +131,7 @@ class IpxeVhostLegacyAliasGuardTest extends TestCase
         );
     }
 
-    // ── T3 — la détection bash réelle ───────────────────────────────────────
+    // T3 — la détection bash réelle
 
     /**
      * Exécute la VRAIE fonction de update.sh (extraite à la volée) sur un vhost

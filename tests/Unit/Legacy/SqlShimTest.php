@@ -19,7 +19,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Tests\TestCase;
 
 /**
- * Tests du shim SQL MySQL→Eloquent (story 1bis.3).
+ * Tests du shim SQL MySQL→Eloquent (.3).
  *
  * Vérifie que chaque fonction shimmée retourne les données
  * dans le format exact attendu par le code legacy.
@@ -60,7 +60,6 @@ class SqlShimTest extends TestCase
 
     private function createTables(): void
     {
-        // workstations
         if (!Schema::hasTable('workstations')) {
             Schema::create('workstations', function (Blueprint $table) {
                 $table->id();
@@ -81,7 +80,6 @@ class SqlShimTest extends TestCase
             });
         }
 
-        // workstation_groups
         if (!Schema::hasTable('workstation_groups')) {
             Schema::create('workstation_groups', function (Blueprint $table) {
                 $table->id();
@@ -101,7 +99,6 @@ class SqlShimTest extends TestCase
             });
         }
 
-        // workstation_group_workstation
         if (!Schema::hasTable('workstation_group_workstation')) {
             Schema::create('workstation_group_workstation', function (Blueprint $table) {
                 $table->id();
@@ -111,7 +108,6 @@ class SqlShimTest extends TestCase
             });
         }
 
-        // applications
         if (!Schema::hasTable('applications')) {
             Schema::create('applications', function (Blueprint $table) {
                 $table->id();
@@ -146,7 +142,6 @@ class SqlShimTest extends TestCase
             });
         }
 
-        // depots
         if (!Schema::hasTable('depots')) {
             Schema::create('depots', function (Blueprint $table) {
                 $table->id();
@@ -159,7 +154,6 @@ class SqlShimTest extends TestCase
             });
         }
 
-        // depot_applications
         if (!Schema::hasTable('depot_applications')) {
             Schema::create('depot_applications', function (Blueprint $table) {
                 $table->id();
@@ -182,7 +176,6 @@ class SqlShimTest extends TestCase
             });
         }
 
-        // app_profiles
         if (!Schema::hasTable('app_profiles')) {
             Schema::create('app_profiles', function (Blueprint $table) {
                 $table->id();
@@ -195,7 +188,6 @@ class SqlShimTest extends TestCase
             });
         }
 
-        // app_profile_application
         if (!Schema::hasTable('app_profile_application')) {
             Schema::create('app_profile_application', function (Blueprint $table) {
                 $table->id();
@@ -205,7 +197,6 @@ class SqlShimTest extends TestCase
             });
         }
 
-        // app_profile_workstation_group
         if (!Schema::hasTable('app_profile_workstation_group')) {
             Schema::create('app_profile_workstation_group', function (Blueprint $table) {
                 $table->id();
@@ -215,7 +206,6 @@ class SqlShimTest extends TestCase
             });
         }
 
-        // workstation_application_status
         if (!Schema::hasTable('workstation_application_status')) {
             Schema::create('workstation_application_status', function (Blueprint $table) {
                 $table->id();
@@ -229,7 +219,6 @@ class SqlShimTest extends TestCase
             });
         }
 
-        // application_dependencies
         if (!Schema::hasTable('application_dependencies')) {
             Schema::create('application_dependencies', function (Blueprint $table) {
                 $table->id();
@@ -239,7 +228,6 @@ class SqlShimTest extends TestCase
             });
         }
 
-        // installation_logs
         if (!Schema::hasTable('installation_logs')) {
             Schema::create('installation_logs', function (Blueprint $table) {
                 $table->id();
@@ -251,7 +239,6 @@ class SqlShimTest extends TestCase
             });
         }
 
-        // error_logs
         if (!Schema::hasTable('error_logs')) {
             Schema::create('error_logs', function (Blueprint $table) {
                 $table->id();
@@ -262,7 +249,7 @@ class SqlShimTest extends TestCase
         }
     }
 
-    // ─── Helpers ─────────────────────────────────────────────────────────────
+    // Helpers
 
     private function createWorkstation(array $attrs = []): Workstation
     {
@@ -311,9 +298,7 @@ class SqlShimTest extends TestCase
         ], $attrs));
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
     // TESTS — Connexion (no-ops)
-    // ═══════════════════════════════════════════════════════════════════════════
 
     public function test_connexion_db_wpkg_returns_object(): void
     {
@@ -328,9 +313,7 @@ class SqlShimTest extends TestCase
         $this->assertTrue(true); // No exception
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
     // TESTS — Lecture postes
-    // ═══════════════════════════════════════════════════════════════════════════
 
     public function test_info_postes_returns_correct_format(): void
     {
@@ -399,9 +382,7 @@ class SqlShimTest extends TestCase
         $this->assertEmpty($result);
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
     // TESTS — Lecture parcs
-    // ═══════════════════════════════════════════════════════════════════════════
 
     public function test_info_parcs_returns_correct_format(): void
     {
@@ -451,9 +432,7 @@ class SqlShimTest extends TestCase
         $this->assertEquals('Internet', $entry['categorie_app']);
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
     // TESTS — Lecture applications
-    // ═══════════════════════════════════════════════════════════════════════════
 
     public function test_liste_applications_returns_md5_keyed(): void
     {
@@ -485,9 +464,7 @@ class SqlShimTest extends TestCase
         $this->assertEquals($internetBefore + 2, (int) $result['internet']['nb_app']);
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
     // TESTS — Lecture dépôts
-    // ═══════════════════════════════════════════════════════════════════════════
 
     public function test_info_depot_returns_active_depots(): void
     {
@@ -542,9 +519,7 @@ class SqlShimTest extends TestCase
         $this->assertContains($depot->id, $ids);
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
     // TESTS — Mise en forme
-    // ═══════════════════════════════════════════════════════════════════════════
 
     public function test_mise_en_forme_personnalisee_returns_defaults(): void
     {
@@ -570,9 +545,7 @@ class SqlShimTest extends TestCase
         $this->assertArrayHasKey('default', $entry);
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
     // TESTS — Écriture postes
-    // ═══════════════════════════════════════════════════════════════════════════
 
     public function test_insert_poste_info_wpkg_creates_workstation(): void
     {
@@ -653,9 +626,7 @@ class SqlShimTest extends TestCase
         $this->assertEquals(0, WorkstationApplicationStatus::where('workstation_id', $ws->id)->count());
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
     // TESTS — Écriture rapports
-    // ═══════════════════════════════════════════════════════════════════════════
 
     public function test_insert_info_app_poste_creates_report(): void
     {
@@ -688,9 +659,7 @@ class SqlShimTest extends TestCase
         $this->assertEquals(0, WorkstationApplicationStatus::where('workstation_id', $ws->id)->count());
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
     // TESTS — Écriture applications
-    // ═══════════════════════════════════════════════════════════════════════════
 
     public function test_insert_applications_creates_app(): void
     {
@@ -723,9 +692,7 @@ class SqlShimTest extends TestCase
         $this->assertEquals('120.0', $app->version);
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
     // TESTS — Dépendances
-    // ═══════════════════════════════════════════════════════════════════════════
 
     public function test_insert_and_delete_dependances(): void
     {
@@ -744,9 +711,7 @@ class SqlShimTest extends TestCase
         $this->assertEquals(0, DB::table('application_dependencies')->count());
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
     // TESTS — Écriture parcs
-    // ═══════════════════════════════════════════════════════════════════════════
 
     public function test_insert_parc_creates_group(): void
     {
@@ -803,9 +768,7 @@ class SqlShimTest extends TestCase
         $this->assertFalse($group->workstations()->where('workstation_id', $ws->id)->exists());
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
     // TESTS — Dépôts écriture
-    // ═══════════════════════════════════════════════════════════════════════════
 
     public function test_update_hash_depot_updates_hash(): void
     {
@@ -870,9 +833,7 @@ class SqlShimTest extends TestCase
         $this->assertEquals('New Depot App Updated', $app->name);
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
     // TESTS — Maintenance
-    // ═══════════════════════════════════════════════════════════════════════════
 
     public function test_maintenance_poste_protection(): void
     {
@@ -915,9 +876,7 @@ class SqlShimTest extends TestCase
         $this->assertEquals('miaou', $ws->report_sha);
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
     // TESTS — Structure / utilitaires
-    // ═══════════════════════════════════════════════════════════════════════════
 
     public function test_test_parent_returns_1(): void
     {
@@ -930,9 +889,7 @@ class SqlShimTest extends TestCase
         $this->assertTrue(true); // No exception
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
     // TESTS — Erreur pour fonctions non shimmées
-    // ═══════════════════════════════════════════════════════════════════════════
 
     public function test_not_implemented_logs_error(): void
     {
@@ -945,9 +902,7 @@ class SqlShimTest extends TestCase
         $this->assertEquals([], $result);
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
     // TESTS — Rapport poste complet
-    // ═══════════════════════════════════════════════════════════════════════════
 
     public function test_info_poste_rapport_returns_md5_keyed(): void
     {
@@ -973,9 +928,7 @@ class SqlShimTest extends TestCase
         $this->assertEquals('installed', $entry['statut_poste_app']);
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
     // TESTS — set_entite_apps sync
-    // ═══════════════════════════════════════════════════════════════════════════
 
     public function test_set_entite_apps_syncs_parc_applications(): void
     {
@@ -993,9 +946,7 @@ class SqlShimTest extends TestCase
         $this->assertEquals(2, $profile->applications()->count());
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
     // TESTS — info_sha_postes
-    // ═══════════════════════════════════════════════════════════════════════════
 
     public function test_info_sha_postes_returns_sha_by_path(): void
     {
@@ -1007,18 +958,14 @@ class SqlShimTest extends TestCase
         $this->assertEquals('sha256test', $result['/var/rapport/test.xml']);
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
     // TESTS — Guard double chargement
-    // ═══════════════════════════════════════════════════════════════════════════
 
     public function test_shim_defines_guard_constants(): void
     {
         $this->assertTrue(defined('SQL_SHIM_LOADED'));
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
     // TESTS — info_postes_parcs
-    // ═══════════════════════════════════════════════════════════════════════════
 
     public function test_info_postes_parcs_returns_indexed_by_workstation(): void
     {
@@ -1035,9 +982,7 @@ class SqlShimTest extends TestCase
         $this->assertEquals($ws->id, $entry['id_poste']);
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
     // TESTS — info_poste_statut
-    // ═══════════════════════════════════════════════════════════════════════════
 
     public function test_info_poste_statut_all_ok(): void
     {
@@ -1105,9 +1050,7 @@ class SqlShimTest extends TestCase
         $this->assertEquals(2, $result['Status']);
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
     // TESTS — info_poste_appli_full / info_parc_appli_full
-    // ═══════════════════════════════════════════════════════════════════════════
 
     public function test_info_poste_appli_full_returns_apps_with_deps(): void
     {
@@ -1179,9 +1122,7 @@ class SqlShimTest extends TestCase
         $this->assertCount(1, $result[$dep->id]['depends']);
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
     // TESTS — info_application_postes / info_application_rapport
-    // ═══════════════════════════════════════════════════════════════════════════
 
     public function test_info_application_postes_returns_workstations(): void
     {
@@ -1227,9 +1168,7 @@ class SqlShimTest extends TestCase
         $this->assertEquals(0, $entry['reboot_poste_app']);
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
     // TESTS — insert_journal_app
-    // ═══════════════════════════════════════════════════════════════════════════
 
     public function test_insert_journal_app_creates_log(): void
     {
@@ -1249,9 +1188,7 @@ class SqlShimTest extends TestCase
         $this->assertEquals('admin - 2026-03-26', $log->message);
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
     // TESTS — truncate_table_profiles
-    // ═══════════════════════════════════════════════════════════════════════════
 
     public function test_truncate_table_profiles_clears_all_pivots(): void
     {
@@ -1270,9 +1207,7 @@ class SqlShimTest extends TestCase
         $this->assertEquals(0, DB::table('workstation_group_workstation')->count());
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
     // TESTS — set_appli_entites
-    // ═══════════════════════════════════════════════════════════════════════════
 
     public function test_set_appli_entites_removes_from_unlisted_groups(): void
     {
@@ -1294,9 +1229,7 @@ class SqlShimTest extends TestCase
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
     // TESTS — maintenance_liste_poste
-    // ═══════════════════════════════════════════════════════════════════════════
 
     public function test_maintenance_liste_poste_filters_by_flag(): void
     {
@@ -1322,9 +1255,7 @@ class SqlShimTest extends TestCase
         $this->assertNotContains('no-uuid', $names);
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
     // TESTS — maintenance_poste_suppression
-    // ═══════════════════════════════════════════════════════════════════════════
 
     public function test_maintenance_poste_suppression_marks_for_deletion(): void
     {
@@ -1356,9 +1287,7 @@ class SqlShimTest extends TestCase
         $this->assertEquals(0, $result);
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
     // TESTS — info_appli_version_depot
-    // ═══════════════════════════════════════════════════════════════════════════
 
     public function test_info_appli_version_depot_returns_depot_app_info(): void
     {
@@ -1389,9 +1318,7 @@ class SqlShimTest extends TestCase
         $this->assertEmpty($result);
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
     // TESTS — update_sha_xml_journal (path traversal protection)
-    // ═══════════════════════════════════════════════════════════════════════════
 
     public function test_update_sha_xml_journal_rejects_path_traversal(): void
     {

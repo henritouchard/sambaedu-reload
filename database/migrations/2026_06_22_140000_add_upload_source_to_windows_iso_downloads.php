@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\Schema;
  * - `source` : 'url' (téléchargement curl serveur depuis Microsoft) ou
  *   'upload' (fichier déposé par l'admin via uploader chunké). Défaut 'url'
  *   pour préserver la sémantique des rows existantes (toutes issues du flux
- *   URL livré en story 3.6).
+ * URL livré en).
  * - `source_url` devient nullable : un dépôt manuel n'a pas d'URL source.
  */
 return new class extends Migration

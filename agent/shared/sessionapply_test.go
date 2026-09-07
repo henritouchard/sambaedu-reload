@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// Tests de la passe SYSTEM PAR-SESSION (Story 35.7, AC3/AC4) : partition par
+// Tests de la passe SYSTEM PAR-SESSION : partition par
 // exécutant (SplitSystemWriterItems), décorateur d'ops un-SID (sessionHiveOps)
 // et orchestration convergeSessionSystem — fake RegistryOps RÉUTILISÉ
 // (handler_registry_test.go), jamais dupliqué.
@@ -61,8 +61,6 @@ func newSessionApplyAgent(t *testing.T, ops RegistryOps, caches map[string]strin
 	return agent
 }
 
-// --- Partition D4 (SplitSystemWriterItems) -----------------------------------
-
 func TestSplitSystemWriterItemsPartitionsByExecutor(t *testing.T) {
 	state, err := ParseState([]byte(sessionEnvelope(itemFlagWriter, itemCompanionPlain, itemUnknownWriter, itemListWriter)))
 	if err != nil {
@@ -73,7 +71,7 @@ func TestSplitSystemWriterItemsPartitionsByExecutor(t *testing.T) {
 	companion, system := SplitSystemWriterItems(items)
 
 	// Compagnon : UNIQUEMENT l'item sans champ writer (présence = skip,
-	// valeur inconnue incluse — forward-compat, piège n°5).
+	// valeur inconnue incluse — forward-compat).
 	if len(companion) != 1 || companion[0].Hash != "plain-h" {
 		t.Fatalf("compagnon : seul l'item non marqué attendu, got %+v", companion)
 	}
@@ -98,8 +96,6 @@ func TestSplitSystemWriterItemsNonStringWriterSkippedByBoth(t *testing.T) {
 	}
 }
 
-// --- Décorateur D5 (sessionHiveOps) ------------------------------------------
-
 func TestSessionHiveOpsTranslatesHkcuToTargetSidOnly(t *testing.T) {
 	fake := newFakeRegistryOps()
 	ops := &sessionHiveOps{ops: fake, sid: applySidA}
@@ -121,15 +117,13 @@ func TestSessionHiveOpsTranslatesHkcuToTargetSidOnly(t *testing.T) {
 }
 
 func TestSessionHiveOpsUserHivesIsAHardError(t *testing.T) {
-	// D5 : UserHives = erreur FRANCHE — le fan-out multi-ruches 35.3 n'est
+	// UserHives = erreur FRANCHE — le fan-out multi-ruches n'est
 	// jamais le chemin par-session (items HKCU par construction).
 	ops := &sessionHiveOps{ops: newFakeRegistryOps(), sid: applySidA}
 	if _, err := ops.UserHives(); err == nil {
 		t.Fatal("UserHives en contexte par-session : erreur franche attendue")
 	}
 }
-
-// --- Ciblage UN-SID (AC4 — distinction 35.3 prouvée) --------------------------
 
 func TestSessionApplyTargetsOnlyTheSidOfEachContract(t *testing.T) {
 	// 2 sessions aux contrats DIFFÉRENTS ⇒ chaque ruche ne reçoit QUE ses
@@ -163,8 +157,6 @@ func TestSessionApplyTargetsOnlyTheSidOfEachContract(t *testing.T) {
 		t.Fatalf("2 verdicts attendus (un par session), got %+v", agent.machineReportItems)
 	}
 }
-
-// --- STRICT re-drift à travers le moteur + applied-state per-SID (AC4) --------
 
 func TestSessionApplyStrictRedriftThroughEngine(t *testing.T) {
 	// Iso TestRegistryAbsentThroughEngineStrictRedrift, mais À TRAVERS la
@@ -212,8 +204,6 @@ func TestSessionApplyStrictRedriftThroughEngine(t *testing.T) {
 	}
 }
 
-// --- ensure:absent + réconciliation registry_list dans la ruche ciblée (AC4) --
-
 func TestSessionApplyEnsureAbsentAndListReconciliationInTargetHive(t *testing.T) {
 	ops := newFakeRegistryOps()
 	// État réel de la ruche ciblée : flag présent (à supprimer), conteneur
@@ -235,7 +225,7 @@ func TestSessionApplyEnsureAbsentAndListReconciliationInTargetHive(t *testing.T)
 	if _, ok := ops.values[flagID]; ok {
 		t.Fatalf("flag DisallowRun : suppression attendue (ensure:absent), values=%v", ops.values)
 	}
-	// Conteneur réconcilié (D3/35.2) : canon "1"=cmd.exe, surnuméraire
+	// Conteneur réconcilié : canon "1"=cmd.exe, surnuméraire
 	// purgée, voisine non numérique INTOUCHÉE.
 	if got := ops.values[keyID("HKU", container, "1")]; got.Str != "cmd.exe" {
 		t.Fatalf("entrée canon 1 : cmd.exe attendu, got %+v", got)
@@ -252,12 +242,10 @@ func TestSessionApplyEnsureAbsentAndListReconciliationInTargetHive(t *testing.T)
 	}
 }
 
-// --- Race logoff : session déloguée = no-op sans orpheline (piège n°4) --------
-
 func TestSessionApplyLoggedOffSessionMaterializesNothing(t *testing.T) {
 	// La session est déloguée ENTRE l'énumération (activeSIDs) et l'écriture :
 	// la ruche HKU\<SID> est démontée — la sonde race-logoff de Write
-	// (héritée de l'impl Windows, review 35.3 #1) rend un no-op nil, JAMAIS
+	// (héritée de l'impl Windows) rend un no-op nil, JAMAIS
 	// de clé orpheline matérialisée sous HKEY_USERS.
 	ops := newFakeRegistryOps()
 	ops.unmountedHku[strings.ToLower(applySidA)] = true
@@ -280,8 +268,6 @@ func TestSessionApplyLoggedOffSessionMaterializesNothing(t *testing.T) {
 		t.Fatalf("no-op silencieux attendu (pas d'error), got %+v", agent.machineReportItems)
 	}
 }
-
-// --- Isolation par session (AC4) ----------------------------------------------
 
 func TestSessionApplyErrorInOneSessionDoesNotBlockTheOthers(t *testing.T) {
 	ops := newFakeRegistryOps()
@@ -306,8 +292,6 @@ func TestSessionApplyErrorInOneSessionDoesNotBlockTheOthers(t *testing.T) {
 		t.Fatalf("1 error (A) + 1 drift (B) attendus, got %+v", agent.machineReportItems)
 	}
 }
-
-// --- Quarantaine / ops nil / cache absent / aucun item marqué ------------------
 
 func TestSessionApplyQuarantineSkipsThePass(t *testing.T) {
 	ops := newFakeRegistryOps()
@@ -366,8 +350,6 @@ func TestSessionApplyWithoutMarkedItemsIsANoop(t *testing.T) {
 		t.Fatal("aucun applied-state per-SID ne doit être créé sans item marqué")
 	}
 }
-
-// --- Fusion des verdicts par type au rapport (piège n°9) -----------------------
 
 func TestSessionApplyVerdictsMergeByTypeWithMachineItems(t *testing.T) {
 	// Le type `registry` peut arriver de TROIS chemins (machine HKLM, passe

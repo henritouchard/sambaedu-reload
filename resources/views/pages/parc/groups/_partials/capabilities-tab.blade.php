@@ -17,9 +17,9 @@ use Livewire\Attributes\Locked;
 use Livewire\Component;
 
 /**
- * Story 27.12 — Onglet « Options / Capacités » de la page d'un WorkstationGroup.
+ * Onglet « Options / Capacités » de la page d'un WorkstationGroup.
  *
- * Rewrite capability-first de l'onglet « Registre » (27.3ter) : l'admin manipule
+ * Rewrite capability-first de l'onglet « Registre » : l'admin manipule
  * une CAPACITÉ (intention métier — « Afficher les extensions », « Bureau à
  * distance »…), jamais une clé de registre (mécanisme caché par la projection).
  *
@@ -45,7 +45,7 @@ new class extends Component {
     /**
      * WorkstationGroup (parc/salle) édité — passé par la page parente.
      *
-     * Story 29.6 — `#[Locked]` : le périmètre est SERVEUR-AUTORITATIF. L'hydratation
+     * `#[Locked]` : le périmètre est SERVEUR-AUTORITATIF. L'hydratation
      * initiale via le paramètre du `mount` reste autorisée, mais toute mutation
      * côté client (`$set('groupId', …)` / payload falsifié) lève
      * `CannotUpdateLockedPropertyException`. Sans ce verrou, `guardCustomize()`
@@ -71,7 +71,7 @@ new class extends Component {
 
     public function mount(int $groupId): void
     {
-        // Story 29.6 — assigner le périmètre AVANT le garde : `guardCustomize()`
+        // Assigner le périmètre AVANT le garde : `guardCustomize`
         // résout désormais le WorkstationGroup côté serveur depuis `$this->groupId`
         // pour évaluer le gate SCOPÉ. Sans cet ordre, le garde verrait `groupId`
         // non initialisé → résolution `find(null)` → fallback global → scope cassé.
@@ -105,8 +105,8 @@ new class extends Component {
             ->get()
             ->keyBy('id');
 
-        // Stories 29.2/29.4 — pré-calcul du statut amont une seule fois (set
-        // mémoïsé ; court-circuit NFR3 sans contrat) pour éviter le N+1.
+        // Pré-calcul du statut amont une seule fois (set mémoïsé ;
+        // court-circuité en l'absence de contrat) pour éviter le N+1.
         $lock = app(UpstreamLockResolver::class);
         $label = $this->parcLabel;
 
@@ -117,7 +117,7 @@ new class extends Component {
             }
 
             $effective = $row->value ?? (string) $capability->default_value;
-            // Story 29.4 — statut tri-état : 'locked'|'permissive'|'local'.
+            // Statut tri-état : 'locked'|'permissive'|'local'.
             // `is_upstream_locked` dérivé du statut (évite un double appel).
             $upstreamStatus = $lock->capabilityUpstreamStatus($capability, $label);
 
@@ -132,7 +132,7 @@ new class extends Component {
                 'has_warning' => $capability->hasWarning(),
                 'is_upstream_locked' => $upstreamStatus === 'locked',
                 'upstream_status' => $upstreamStatus,
-                // Story 43.2 (D5/D6) — temporalité d'effet ; null = aucun badge.
+                // Temporalité d'effet ; null = aucun badge.
                 'effect_timing' => $capability->effectTiming(),
             ];
         })->filter()->sortBy('label')->values()->all();
@@ -154,7 +154,7 @@ new class extends Component {
             ->map(fn ($id): int => (int) $id)
             ->all();
 
-        // Stories 29.2/29.4 — statut amont pré-calculé une fois (court-circuit NFR3).
+        // Statut amont pré-calculé une fois.
         $lock = app(UpstreamLockResolver::class);
         $label = $this->parcLabel;
 
@@ -167,12 +167,12 @@ new class extends Component {
             ->get()
             // Une capacité VERROUILLÉE amont n'est PAS proposée à l'ajout (le geste
             // d'override serait défait au compilé ET refusé au serveur). Une capacité
-            // PERMISSIVE reste proposée : son override par WG mord au compilé (29.3).
+            // PERMISSIVE reste proposée : son override par WG mord au compilé.
             ->reject(fn (Capability $c): bool => $lock->isCapabilityLocked($c, $label))
-            // Story 36.7 (AC4) — le mécanisme `app_profile` suit l'UTILISATEUR
+            // Le mécanisme `app_profile` suit l'UTILISATEUR
             // (maille User, résolu par assignation UserGroup), jamais le poste : un
             // override par PARC serait INERTE (anti-pattern « override qui ne mord
-            // pas », leçon review 35.4 #1). Il s'assigne sur les pages GROUPES
+            // pas »). Il s'assigne sur les pages GROUPES
             // D'UTILISATEURS, pas ici.
             ->reject(fn (Capability $c): bool => $this->isAppProfileOnly($c))
             ->map(fn (Capability $c): array => [
@@ -181,11 +181,11 @@ new class extends Component {
                 'description' => (string) ($c->description ?? ''),
                 'category' => (string) ($c->category ?? ''),
                 'default_display' => $c->optionLabel((string) $c->default_value),
-                // Story 29.4 — statut amont dans le picker (badge « Imposé permissif »).
-                // #4 : `locked` déjà rejeté par reject() ci-dessus → les survivants sont
+                // Statut amont dans le picker (badge « Imposé permissif »).
+                // `locked` déjà rejeté par reject() ci-dessus → les survivants sont
                 // soit permissifs soit locaux. Évite le double appel à isCapabilityLocked().
                 'upstream_status' => $lock->isCapabilityPermissive($c, $label) ? 'permissive' : 'local',
-                // Story 43.2 (D5/D6) — temporalité d'effet dans le picker.
+                // Temporalité d'effet dans le picker.
                 'effect_timing' => $c->effectTiming(),
             ])
             ->values()
@@ -208,10 +208,10 @@ new class extends Component {
     }
 
     /**
-     * Story 29.4 (#3) — Un contrat amont actif est-il présent ? Aucune requête
+     * Un contrat amont actif est-il présent ? Aucune requête
      * supplémentaire (singleton mémoïsé — réutilise `ensureResolved()`). Permet
      * de gater l'affichage des badges tri-état : en standalone (aucun contrat),
-     * AUCUN badge n'est rendu → UI byte-identique à 27.12 (NFR3).
+     * AUCUN badge n'est rendu → UI byte-identique.
      */
     #[Computed]
     public function hasUpstreamContract(): bool
@@ -223,7 +223,7 @@ new class extends Component {
     #[Computed]
     public function editingCapability(): ?Capability
     {
-        // Story 43.2 — `with('projections')` : la modale affiche AUSSI le
+        // `with('projections')` : la modale affiche AUSSI le
         // badge de temporalité d'effet (effectTiming()) sans requête ajoutée.
         return $this->editingCapabilityId !== null
             ? Capability::query()->with('projections')->find($this->editingCapabilityId)
@@ -244,7 +244,7 @@ new class extends Component {
             return;
         }
 
-        // Story 36.7 (defense-in-depth, leçon 35.4 #1) : `app_profile` suit
+        // `app_profile` suit
         // l'utilisateur, pas la machine — la maille poste/parc est IGNORÉE par
         // AppProfileCapabilityProvider::isEnabledForUser(). Le refus ne peut donc
         // PAS vivre seulement dans addableCapabilities() (listing) : un rejeu
@@ -322,7 +322,7 @@ new class extends Component {
             return;
         }
 
-        // Story 29.2 — verrou amont (defense-in-depth) : refus SERVEUR même si
+        // Verrou amont (defense-in-depth) : refus SERVEUR même si
         // l'UI est contournée (propriété publique hydratée / rejeu Livewire).
         if (! $this->authorizeUpstream($capability)) {
             return;
@@ -339,7 +339,7 @@ new class extends Component {
             return;
         }
 
-        // Story 36.7 (defense-in-depth, leçon 35.4 #1) : `app_profile` n'est pas
+        // `app_profile` n'est pas
         // ciblable par parc (maille poste ignorée par le provider) — refus SERVEUR
         // même si openAdd() est contourné par rejeu Livewire.
         if ($this->isAppProfileOnly($capability)) {
@@ -356,7 +356,7 @@ new class extends Component {
 
         $parc = WorkstationGroup::query()->findOrFail($this->groupId);
 
-        // Story 29.5 (NFR5) — old_value lue AVANT la mutation (sinon perdue).
+        // Old_value lue AVANT la mutation (sinon perdue).
         $oldValue = DB::table('capability_assignments')
             ->where('assignable_type', WorkstationGroup::class)
             ->where('assignable_id', $parc->id)
@@ -365,20 +365,20 @@ new class extends Component {
 
         // Statut amont au moment de l'acte : un `locked` n'arrive jamais ici (refusé
         // par authorizeUpstream ci-dessus) → permissif imposé OU purement local. La
-        // résolution réutilise le resolver mémoïsé (court-circuit NFR3 préservé :
-        // sans contrat actif, aucune requête `controlhub_contract_items`).
+        // résolution réutilise le resolver mémoïsé : sans contrat actif, aucune
+        // requête `controlhub_contract_items` n'est émise.
         $upstreamStatus = app(UpstreamLockResolver::class)->isCapabilityPermissive($capability, $this->parcLabel)
             ? CapabilityOverrideAuditLog::UPSTREAM_PERMISSIVE
             : CapabilityOverrideAuditLog::UPSTREAM_LOCAL;
 
         [$actorId, $actorLogin] = $this->resolveActor();
 
-        // Story 29.5 (NFR5, AC#6) — atomicité acte ↔ trace : la mutation du pivot ET
+        // Atomicité acte ↔ trace : la mutation du pivot ET
         // l'écriture d'audit dans une MÊME transaction (si l'audit échoue, l'override
         // n'est pas confirmé). L'`action` est dérivée de l'EXISTENCE EN BASE
         // (`$hasExistingOverride`), jamais du flag client `isEditing`.
         DB::transaction(function () use ($capability, $parc, $value, $oldValue, $hasExistingOverride, $upstreamStatus, $actorId, $actorLogin): void {
-            // Story 29.7 — closure pour différencier INSERT vs UPDATE :
+            // Closure pour différencier INSERT vs UPDATE :
             // sur UPDATE d'un override existant, `created_at` n'est PAS réécrit
             // (préservation de l'horodatage de création d'origine du pivot) ;
             // sur INSERT (premier override), `created_at` est posé à now().
@@ -430,7 +430,7 @@ new class extends Component {
     {
         $this->guardCustomize();
 
-        // Story 29.2 — bloquer AUSSI le retrait d'un item verrouillé amont : pour
+        // Bloquer AUSSI le retrait d'un item verrouillé amont : pour
         // une UX « refus explicite » cohérente, le refnum ne « touche » pas un item
         // verrouillé (le retrait serait de toute façon inerte, l'amont gagne au
         // compilé). Même message que add/edit.
@@ -441,7 +441,7 @@ new class extends Component {
 
         $parc = WorkstationGroup::query()->find($this->groupId);
 
-        // Story 29.5 (NFR5, review #4) — pas de TRACE FANTÔME : si aucun override
+        // Pas de TRACE FANTÔME : si aucun override
         // n'existe pour ce périmètre (rejeu / appel Livewire direct), il n'y a aucun
         // acte à poser, donc aucun événement d'audit à consigner (« une trace fantôme
         // sans acte serait trompeuse » — Dev Notes). `first()` distingue l'absence de
@@ -459,7 +459,7 @@ new class extends Component {
         // Ancienne valeur lue AVANT le delete.
         $oldValue = $existing->value;
 
-        // Statut amont (court-circuit NFR3 préservé). `null` capability → local.
+        // Statut amont (résolution court-circuitée sans contrat). `null` capability → local.
         $upstreamStatus = ($capability !== null
             && app(UpstreamLockResolver::class)->isCapabilityPermissive($capability, $this->parcLabel))
             ? CapabilityOverrideAuditLog::UPSTREAM_PERMISSIVE
@@ -467,7 +467,7 @@ new class extends Component {
 
         [$actorId, $actorLogin] = $this->resolveActor();
 
-        // Story 29.5 (NFR5, AC#4/#6) — atomicité acte ↔ trace : delete + audit
+        // Atomicité acte ↔ trace : delete + audit
         // `delete` (new_value = null) dans une MÊME transaction. capability_id est
         // null-safe (FK nullOnDelete) pour le cas où la capacité aurait disparu.
         DB::transaction(function () use ($capability, $parc, $capabilityId, $oldValue, $upstreamStatus, $actorId, $actorLogin): void {
@@ -496,10 +496,10 @@ new class extends Component {
         unset($this->overrides, $this->addableCapabilities);
     }
 
-    // ── Helpers ────────────────────────────────────────────────────────────
+    // Helpers
 
     /**
-     * Story 36.7 (AC4) — la capacité porte-t-elle EXCLUSIVEMENT un mécanisme
+     * La capacité porte-t-elle EXCLUSIVEMENT un mécanisme
      * `app_profile` (aucune projection registry/machine) ? Une telle capacité
      * suit l'UTILISATEUR (maille User, résolue par assignation UserGroup) : un
      * override par PARC (WorkstationGroup) serait inerte → on ne la propose PAS
@@ -520,7 +520,7 @@ new class extends Component {
     }
 
     /**
-     * Story 29.5 (NFR5) — acteur de l'audit : id (FK) + login DÉNORMALISÉ.
+     * Acteur de l'audit : id (FK) + login DÉNORMALISÉ.
      *
      * En production `Auth::user()` est toujours un {@see User} (refnum AD-local) :
      * on persiste son id (FK `nullOnDelete`) et son login. Le guard `instanceof
@@ -581,7 +581,7 @@ new class extends Component {
     }
 
     /**
-     * Story 29.6 — garde d'autorisation SCOPÉ par parc (defense-in-depth).
+     * Garde d'autorisation SCOPÉ par parc (defense-in-depth).
      *
      * Le périmètre est résolu CÔTÉ SERVEUR depuis `$this->groupId` (figé par
      * `#[Locked]`), jamais depuis un flag/argument client. Le gate scopé
@@ -604,12 +604,12 @@ new class extends Component {
     }
 
     /**
-     * Story 29.2 — garde de VERROU AMONT (defense-in-depth). `app.customize` est
+     * Garde de VERROU AMONT (defense-in-depth). `app.customize` est
      * DÉJÀ vérifié par guardCustomize() en amont de chaque mutation ; ici le seul
      * motif de refus du gate `modify-capability` est donc le verrou amont
      * (item `locked`/`instance`/`registry` matchant une clé de la capacité). Le
      * refus se traduit par un toast explicite (pas un échec silencieux) et
-     * l'arrêt de la mutation (retourne false). [AC #1, #5, #6]
+     * l'arrêt de la mutation (retourne false).
      */
     private function authorizeUpstream(Capability $capability): bool
     {
@@ -618,7 +618,7 @@ new class extends Component {
 
             return true;
         } catch (AuthorizationException) {
-            // Story 29.8 — depuis le retrait du plancher de droit dans
+            // Depuis le retrait du plancher de droit dans
             // `CapabilityPolicy::modify`, ce gate ne refuse PLUS que pour VERROU
             // AMONT : le droit est filtré EN AMONT par `guardCustomize()` (scopé
             // `customize-workstationGroup`) qui aborte 403 avant d'atteindre ce
@@ -686,7 +686,7 @@ new class extends Component {
                                             <i class="fa-solid fa-triangle-exclamation text-warning text-xs"
                                                 aria-label="Capacité sensible"></i>
                                         @endif
-                                        {{-- Story 43.2 (D5/D6) — badge de temporalité d'effet. --}}
+                                        {{-- Badge de temporalité d'effet. --}}
                                         @if ($override['effect_timing'] !== null)
                                             <span class="badge badge-sm badge-outline gap-1"
                                                 data-testid="effect-timing-{{ $override['id'] }}"
@@ -695,10 +695,10 @@ new class extends Component {
                                                 {{ $override['effect_timing']['label'] }}
                                             </span>
                                         @endif
-                                        {{-- Story 29.4 — tri-état : verrouillé > permissif > local (AC #1-4).
-                                             Libellés centrés sur l'ACTION possible (décision 2026-06-27).
-                                             #3 : badges gatés sur hasUpstreamContract() — en standalone,
-                                             AUCUN badge n'est rendu (UI byte-identique à 27.12, NFR3). --}}
+                                        {{-- Tri-état : verrouillé > permissif > local.
+                                             Libellés centrés sur l'ACTION possible.
+                                             Badges gatés sur hasUpstreamContract() : en standalone,
+                                             AUCUN badge n'est rendu. --}}
                                         @if ($this->hasUpstreamContract)
                                             @if ($override['is_upstream_locked'])
                                                 <span class="badge badge-sm badge-neutral gap-1"
@@ -729,7 +729,7 @@ new class extends Component {
                                 <td class="font-medium">{{ $override['override_display'] }}</td>
                                 <td class="text-xs opacity-60">{{ $override['default_display'] }}</td>
                                 <td class="text-right whitespace-nowrap">
-                                    {{-- Story 29.4 — tri-état : locked masque les boutons (29.2) ;
+                                    {{-- Tri-état : locked masque les boutons ;
                                          permissif les garde actifs + explication FR8 (AC #2) ;
                                          local = contrôles standards. --}}
                                     @if ($override['is_upstream_locked'])
@@ -792,8 +792,8 @@ new class extends Component {
                                     <span class="block text-xs opacity-50">Défaut : {{ $capability['default_display'] }}</span>
                                 </span>
                                 <span class="flex items-center gap-1 shrink-0">
-                                    {{-- Story 29.4 — badge permissif dans le picker (AC #2, FR8).
-                                         #3 : gaté sur hasUpstreamContract() (zéro badge en standalone). --}}
+                                    {{-- Badge permissif dans le picker, gaté sur
+                                         hasUpstreamContract() : zéro badge en standalone. --}}
                                     @if ($this->hasUpstreamContract && $capability['upstream_status'] === 'permissive')
                                         <span class="badge badge-sm badge-info gap-1"
                                             data-testid="picker-permissive-{{ $capability['id'] }}"
@@ -801,7 +801,7 @@ new class extends Component {
                                             <i class="fa-solid fa-pen text-xs"></i> Modifiable
                                         </span>
                                     @endif
-                                    {{-- Story 43.2 (D5/D6) — badge de temporalité d'effet dans le picker. --}}
+                                    {{-- Badge de temporalité d'effet dans le picker. --}}
                                     @if ($capability['effect_timing'] !== null)
                                         <span class="badge badge-sm badge-outline gap-1"
                                             data-testid="picker-effect-timing-{{ $capability['id'] }}"
@@ -826,7 +826,7 @@ new class extends Component {
                 @if ($capability->description)
                     <p class="text-sm opacity-70 mb-2">{{ $capability->description }}</p>
                 @endif
-                {{-- Story 43.2 (D5/D6) — badge de temporalité d'effet. --}}
+                {{-- Badge de temporalité d'effet. --}}
                 @php($timing = $capability->effectTiming())
                 @if ($timing !== null)
                     <span class="badge badge-sm badge-outline gap-1 mb-2" title="{{ $timing['tooltip'] }}">

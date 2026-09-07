@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration {
     /**
-     * Story 20.1 — D-6.
+     * D-6.
      *
      * Trace la consommation d'un jeton fédéré (`jti` à usage unique). Couche
      * de persistance derrière le cache APCu du

@@ -71,7 +71,7 @@ new #[Title('Détails de l\'application - SE4FS')] class extends Component {
 
     /**
      * AppKind correspondant à cette application (null si non personnalisable
-     * via le système 4.8). Match sur `app_id` normalisé (`firefox`, `thunderbird`).
+     * via le système). Match sur `app_id` normalisé (`firefox`, `thunderbird`).
      */
     public function getCustomizableKindProperty(): ?AppKind
     {
@@ -361,7 +361,7 @@ new #[Title('Détails de l\'application - SE4FS')] class extends Component {
         {{-- Modale log d'installation WPKG (partagée) --}}
         <livewire:components::organisms.install-log-modal />
 
-        {{-- Modale personnalisation applicative (story 4.8) — activée uniquement si l'app est personnalisable --}}
+        {{-- Modale personnalisation applicative — activée uniquement si l'app est personnalisable --}}
         @if ($customizableKind)
             <livewire:components::organisms.app-customize-modal :key="'app-customize-modal-app-'.$applicationId" />
         @endif

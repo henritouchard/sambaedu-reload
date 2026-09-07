@@ -17,20 +17,20 @@ use Illuminate\Support\Facades\Event;
 use Tests\TestCase;
 
 /**
- * Story 28.2 — Ingestion idempotente du contrat amont (controlHub).
+ * Ingestion idempotente du contrat amont (controlHub).
  *
- * Couverture des AC #1 à #7 :
- * - #1 1re réception : persistance + lien actif + received_at + enfants exacts.
- * - #2 réception identique : no-op (mutated=false, comptes & timestamps inchangés, aucun event).
- * - #3 réception modifiée : upsert + prune, aucune violation d'unicité, event émis 1×.
- * - #4 normalisation null→'' de target_label (test RÉVÉLATEUR du finding 28.1 #1) + idempotence.
- * - #5 singleton : au plus un contrat actif par instance.
- * - #6 enum hors domaine / incohérence cible : rejet + aucune écriture partielle (rollback).
- * - #7c R3 : aucun identifiant livré ne contient « central ».
+ * Couverture :
+ * - 1re réception : persistance + lien actif + received_at + enfants exacts.
+ * - réception identique : no-op (mutated=false, comptes & timestamps inchangés, aucun event).
+ * - réception modifiée : upsert + prune, aucune violation d'unicité, event émis 1×.
+ * - normalisation null→'' de target_label + idempotence.
+ * - singleton : au plus un contrat actif par instance.
+ * - enum hors domaine / incohérence cible : rejet + aucune écriture partielle (rollback).
+ * - règle de nommage : aucun identifiant livré ne contient « central ».
  *
  * ⚠️ Tests sur HÔTE (php8.4 + pdo_sqlite) — JAMAIS sur la VM (sans pdo_sqlite).
  * ⚠️ Idempotence mesurée par comptage de lignes + `mutated` + dispatch d'event
- *    (PAS par contrainte de chaîne / NULL — pièges SQLite, findings 28.1 #1/#2).
+ *  (PAS par contrainte de chaîne / NULL : SQLite n'applique ni varchar ni enum).
  */
 class ControlHubContractIngestionTest extends TestCase
 {
@@ -68,10 +68,6 @@ class ControlHubContractIngestionTest extends TestCase
         ], $overrides);
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    // AC #1 — Première réception
-    // ──────────────────────────────────────────────────────────────────────────
-
     public function test_first_reception_persists_contract_and_activates_link(): void
     {
         $result = $this->service()->ingest($this->payload());
@@ -90,9 +86,7 @@ class ControlHubContractIngestionTest extends TestCase
         $this->assertNotNull($contract->received_at);
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    // AC #2 — Réception identique = no-op (aucune écriture, aucun event)
-    // ──────────────────────────────────────────────────────────────────────────
+    // Réception identique = no-op (aucune écriture, aucun event)
 
     public function test_identical_reception_is_noop(): void
     {
@@ -126,9 +120,7 @@ class ControlHubContractIngestionTest extends TestCase
         Carbon::setTestNow();
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    // AC #3 — Réception modifiée : upsert + prune, event émis 1×
-    // ──────────────────────────────────────────────────────────────────────────
+    // Réception modifiée : upsert + prune, event émis 1×
 
     public function test_changed_reception_reconciles_and_emits_event(): void
     {
@@ -191,9 +183,7 @@ class ControlHubContractIngestionTest extends TestCase
         $this->assertSame(1, $result->catalogApps['deleted']);   // 'libreoffice'
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    // AC #4 — Normalisation null→'' + idempotence (test RÉVÉLATEUR finding 28.1 #1)
-    // ──────────────────────────────────────────────────────────────────────────
+    // Normalisation null→'' + idempotence
 
     public function test_target_label_null_is_normalized_and_idempotent(): void
     {
@@ -233,9 +223,7 @@ class ControlHubContractIngestionTest extends TestCase
         $this->assertDatabaseCount('controlhub_contract_items', 3);
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    // AC #5 — Singleton : au plus un contrat actif
-    // ──────────────────────────────────────────────────────────────────────────
+    // Singleton : au plus un contrat actif
 
     public function test_singleton_active_contract(): void
     {
@@ -263,9 +251,7 @@ class ControlHubContractIngestionTest extends TestCase
         $this->assertDatabaseCount('controlhub_contracts', 1);
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    // AC #6 — Validation + rollback total
-    // ──────────────────────────────────────────────────────────────────────────
+    // Validation + rollback total
 
     public function test_invalid_enum_rejected_and_no_partial_write(): void
     {
@@ -353,9 +339,7 @@ class ControlHubContractIngestionTest extends TestCase
         $this->assertDatabaseCount('controlhub_contract_catalog_apps', 0);
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    // Story 31.3 (AC #5) — référence de source par-app sur le catalogue (« Option B »)
-    // ──────────────────────────────────────────────────────────────────────────
+    // Référence de source par-app sur le catalogue (« Option B »)
 
     public function test_catalog_app_source_reference_is_persisted(): void
     {
@@ -394,14 +378,14 @@ class ControlHubContractIngestionTest extends TestCase
         $second = $this->service()->ingest($payload);
 
         // La clé naturelle (controlhub_contract_id, app_key) est INCHANGÉE : ré-réception
-        // identique = no-op (NFR4), aucune création/mise à jour sur ces colonnes.
+        // identique = no-op, aucune création/mise à jour sur ces colonnes.
         $this->assertFalse($second->mutated);
         $this->assertDatabaseCount('controlhub_contract_catalog_apps', 1);
     }
 
     public function test_catalog_app_without_source_reference_is_accepted_and_nulled(): void
     {
-        // Rétrocompatibilité du payload (NFR3) : champs source optionnels ⇒ contrat accepté.
+        // Rétrocompatibilité du payload : champs source optionnels ⇒ contrat accepté.
         $this->service()->ingest($this->payload([
             'catalog_apps' => [
                 ['app_key' => 'firefox', 'display_name' => 'Firefox'],
@@ -430,9 +414,7 @@ class ControlHubContractIngestionTest extends TestCase
         ]);
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    // AC #7c — Garde-fou R3 : aucun identifiant livré ne contient « central »
-    // ──────────────────────────────────────────────────────────────────────────
+    // Règle de nommage : aucun identifiant livré ne contient « central »
 
     public function test_r3_no_central_identifier(): void
     {

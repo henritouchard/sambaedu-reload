@@ -9,22 +9,20 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 57.4 / AR12 — **LES ANCIENNES URL BBB NE MÈNENT PLUS NULLE PART.**
+ * AR12 — **LES ANCIENNES URL BBB NE MÈNENT PLUS NULLE PART.**
  *
- * ══════════════════════════════════════════════════════════════════════════
  *  CE QUE CE FICHIER FERME, ET QUE LA SEULE SUPPRESSION LAISSAIT OUVERT
  *
  *  Supprimer `legacy/modules/bbb/` ne suffisait pas : le catchall, ne trouvant
  *  plus de module local, serait simplement passé à l'étape suivante — le proxy
  *  vers le système de fichiers SE4 (`/var/www/sambaedu/bbb/…`). Sur toute
- *  instance où l'extinction de l'Epic 38 n'a pas encore été jouée, l'interface
+ *  instance où l'extinction n'a pas encore été jouée, l'interface
  *  legacy d'origine serait donc REVENUE, avec ses mots de passe en champs
  *  cachés et sa vérification TLS désactivée.
  *
  *  « L'accès à la visioconférence passe exclusivement par la tuile » interdit
  *  ce chemin. D'où deux entrées dans `blocked_legacy_routes`, évaluées à
  *  l'étape 2 du catchall, AVANT toute résolution legacy.
- * ══════════════════════════════════════════════════════════════════════════
  *
  * ⚠️ Ce test lit la configuration RÉELLE (`config/sambaedu.php`). Il ne pose
  * aucune route bloquée de son cru : ce qu'il vérifie est précisément que la

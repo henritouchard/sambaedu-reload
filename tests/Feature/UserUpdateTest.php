@@ -26,7 +26,7 @@ use Tests\Traits\MocksAdminUser;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * Tests d'intégration pour la modification d'utilisateur (Story 2.2)
+ * Tests d'intégration pour la modification d'utilisateur
  *
  * Vérifie le double-write SQL après update LDAP.
  */
@@ -101,10 +101,6 @@ class UserUpdateTest extends TestCase
         Mockery::close();
         parent::tearDown();
     }
-
-    // =========================================================================
-    // E2E: updatePersonalInfo — double-write SQL
-    // =========================================================================
 
     #[Test]
     public function updatePersonalInfo_persists_to_sql_after_ldap(): void
@@ -219,10 +215,6 @@ class UserUpdateTest extends TestCase
             ->withArgs(fn ($msg) => str_contains($msg, 'double-write SQL'))
             ->once();
     }
-
-    // =========================================================================
-    // E2E: Validation — messages d'erreur
-    // =========================================================================
 
     #[Test]
     public function validatePersonalInfo_returns_user_friendly_errors(): void

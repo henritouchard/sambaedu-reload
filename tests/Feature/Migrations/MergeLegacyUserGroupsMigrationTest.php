@@ -13,7 +13,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 4.14 — Tests de la MIGRATION DE DONNÉES (fusion des lignes héritées).
+ * Tests de la MIGRATION DE DONNÉES (fusion des lignes héritées).
  *
  * On teste la logique de fusion via l'action invocable
  * {@see MergeLegacyUserGroups} (la migration appelle exactement cette action
@@ -48,7 +48,7 @@ class MergeLegacyUserGroupsMigrationTest extends TestCase
     #[Test]
     public function it_merges_three_legacy_rows_into_one_bare_row(): void
     {
-        // AC2 — Classe_3A={alice}, Equipe_3A={bob}, PP_3A={bob} → 1 ligne `3A`
+        // Classe_3A={alice}, Equipe_3A={bob}, PP_3A={bob} → 1 ligne `3A`
         // type classe, membres {alice,bob} (union dédupliquée), 3 lignes
         // disparues, aucun membre perdu.
         $alice = $this->mkUser('alice');
@@ -81,7 +81,7 @@ class MergeLegacyUserGroupsMigrationTest extends TestCase
     #[Test]
     public function it_keeps_canonical_classe_guid_after_merge(): void
     {
-        // AC3 — survivante = Classe_ → porte ses ad_guid/ad_dn.
+        // Survivante = Classe_ → porte ses ad_guid/ad_dn.
         $this->mkGroup('Equipe_3A', 'equipe', 'guid-equipe', 'CN=Equipe_3A');
         $this->mkGroup('Classe_3A', 'classe', 'guid-classe', 'CN=Classe_3A');
         $this->mkGroup('PP_3A', 'equipe', 'guid-pp', 'CN=PP_3A');
@@ -96,7 +96,7 @@ class MergeLegacyUserGroupsMigrationTest extends TestCase
     #[Test]
     public function it_falls_back_to_equipe_guid_when_classe_absent(): void
     {
-        // AC3 — Classe_ absent → fallback déterministe Equipe_ (prime sur PP_).
+        // Classe_ absent → fallback déterministe Equipe_ (prime sur PP_).
         $this->mkGroup('PP_3A', 'equipe', 'guid-pp', 'CN=PP_3A');
         $this->mkGroup('Equipe_3A', 'equipe', 'guid-equipe', 'CN=Equipe_3A');
 
@@ -111,7 +111,7 @@ class MergeLegacyUserGroupsMigrationTest extends TestCase
     #[Test]
     public function it_flags_head_teacher_from_pp_row(): void
     {
-        // AC4 — après fusion, (3A,bob).is_head_teacher=true (bob ∈ PP_3A),
+        // Après fusion, (3A,bob).is_head_teacher=true (bob ∈ PP_3A),
         // (3A,alice)=false.
         $alice = $this->mkUser('alice');
         $bob = $this->mkUser('bob');
@@ -132,7 +132,7 @@ class MergeLegacyUserGroupsMigrationTest extends TestCase
     #[Test]
     public function it_flags_multiple_head_teachers_from_pp_row(): void
     {
-        // AC4 (multi-PP) — PP_3A={bob,carol} → les deux true.
+        // PP_3A={bob,carol} → les deux true.
         $alice = $this->mkUser('alice');
         $bob = $this->mkUser('bob');
         $carol = $this->mkUser('carol');
@@ -155,7 +155,7 @@ class MergeLegacyUserGroupsMigrationTest extends TestCase
     #[Test]
     public function it_is_idempotent_on_repeated_runs(): void
     {
-        // AC5 — un 2e run = no-op (plus de ligne préfixée).
+        // Un 2e run = no-op (plus de ligne préfixée).
         $alice = $this->mkUser('alice');
         $bob = $this->mkUser('bob');
 
@@ -181,7 +181,7 @@ class MergeLegacyUserGroupsMigrationTest extends TestCase
     #[Test]
     public function it_is_noop_on_already_folded_base(): void
     {
-        // AC5 — base déjà foldée par 4.13 (seulement la ligne nue, pas de
+        // Base déjà foldée par (seulement la ligne nue, pas de
         // préfixées) → no-op.
         $alice = $this->mkUser('alice');
         $bare = $this->mkGroup('3A', 'classe', 'g1', 'CN=Classe_3A');
@@ -198,9 +198,9 @@ class MergeLegacyUserGroupsMigrationTest extends TestCase
     #[Test]
     public function it_merges_into_preexisting_bare_row_without_unique_collision(): void
     {
-        // AC6 — ligne nue `3A` (membres {alice}) + reliquat PP_3A (membres {bob}).
+        // Ligne nue `3A` (membres {alice}) + reliquat PP_3A (membres {bob}).
         // Après fusion : UNE ligne `3A`, membres {alice,bob}, (3A,bob)=true,
-        // (3A,alice)=false. La ligne nue est la survivante (D1) — pas de violation
+        // (3A,alice)=false. La ligne nue est la survivante — pas de violation
         // UNIQUE sur `name`.
         $alice = $this->mkUser('alice');
         $bob = $this->mkUser('bob');
@@ -217,7 +217,7 @@ class MergeLegacyUserGroupsMigrationTest extends TestCase
         $this->assertSame(['3A'], $rows);
 
         $survivor = DB::table('user_groups')->where('name', '3A')->first();
-        // La survivante est la ligne nue préexistante (D1).
+        // La survivante est la ligne nue préexistante.
         $this->assertSame((int) $bare, (int) $survivor->id);
 
         $members = DB::table('user_group_user')
@@ -232,7 +232,7 @@ class MergeLegacyUserGroupsMigrationTest extends TestCase
     #[Test]
     public function it_renames_orphan_equipe_without_merging_with_cours(): void
     {
-        // AC7 — Cours_Maths5A (type cours) + Equipe_Maths5A (type equipe, pas de
+        // Cours_Maths5A (type cours) + Equipe_Maths5A (type equipe, pas de
         // Classe_/PP_, pas de ligne nue Maths5A). Après migration : Cours_Maths5A
         // inchangée (CN, type cours) ; Equipe_Maths5A renommée `Maths5A` type
         // equipe SANS fusion avec le cours. Aucun flag PP.
@@ -254,7 +254,7 @@ class MergeLegacyUserGroupsMigrationTest extends TestCase
     #[Test]
     public function it_renames_orphan_equipe_idempotently(): void
     {
-        // AC5/AC7 — un Equipe_ orphelin renommé reste stable (déjà nu au 2e run).
+        // Un Equipe_ orphelin renommé reste stable (déjà nu au 2e run).
         $this->mkGroup('Equipe_Solo5A', 'equipe', 'g-eq', 'CN=Equipe_Solo5A');
 
         (new MergeLegacyUserGroups())();
@@ -268,7 +268,7 @@ class MergeLegacyUserGroupsMigrationTest extends TestCase
     #[Test]
     public function it_flags_member_present_on_survivor_and_in_pp(): void
     {
-        // Review #4 — alice est DÉJÀ sur la ligne nue survivante ET dans PP_3A.
+        // alice est DÉJÀ sur la ligne nue survivante ET dans PP_3A.
         // Le report (insertOrIgnore) l'ignore (déjà présente), mais le marquage
         // PP doit quand même poser is_head_teacher=true sur la survivante.
         $alice = $this->mkUser('alice');
@@ -288,7 +288,7 @@ class MergeLegacyUserGroupsMigrationTest extends TestCase
     #[Test]
     public function it_flags_head_teacher_when_pp_row_is_lonely(): void
     {
-        // Review #2 — un PP_3A ISOLÉ (sans Classe_/Equipe_/nue) : renommé en 3A
+        // Un PP_3A ISOLÉ (sans Classe_/Equipe_/nue) : renommé en 3A
         // type classe ET ses membres flaggés is_head_teacher=true.
         $bob = $this->mkUser('bob');
         $pp = $this->mkGroup('PP_3A', 'equipe', 'g-pp', 'CN=PP_3A');
@@ -306,7 +306,7 @@ class MergeLegacyUserGroupsMigrationTest extends TestCase
     #[Test]
     public function it_skips_and_reports_collision(): void
     {
-        // Review #7 — une ligne nue homonyme NON regroupée (type cours, hors
+        // Une ligne nue homonyme NON regroupée (type cours, hors
         // périmètre de fold) occupe déjà `3A` → la ligne préfixée isolée
         // Classe_3A ne peut pas être renommée : on laisse en l'état ET on trace.
         $this->mkGroup('3A', 'cours', 'g-cours', 'CN=3A');       // non regroupée (type cours)
@@ -324,7 +324,7 @@ class MergeLegacyUserGroupsMigrationTest extends TestCase
     #[Test]
     public function it_real_migration_adds_column_retrofills_false_and_down_drops_it(): void
     {
-        // Review #3 (AC1) — exerce la MIGRATION RÉELLE : up() ajoute la colonne
+        // Exerce la MIGRATION RÉELLE : up ajoute la colonne
         // (rétro-remplie false sur les arêtes existantes) ; down() la retire.
         $zoe = $this->mkUser('zoe');
         $g = $this->mkGroup('9Z', 'classe', 'g-9z', 'CN=9Z');
@@ -349,14 +349,10 @@ class MergeLegacyUserGroupsMigrationTest extends TestCase
         $this->assertFalse(Schema::hasColumn('user_group_user', 'is_head_teacher'), 'down() retire la colonne');
     }
 
-    // ==================================================================
-    // Story 42.1 — miroir `role` ⇔ `is_head_teacher` (garde hasColumn)
-    // ==================================================================
-
     #[Test]
     public function it_mirrors_role_owner_on_head_teachers_after_merge(): void
     {
-        // 42.1 AC6 — fusion Classe_/Equipe_/PP_ : le PP (bob) hérite `owner`,
+        // fusion Classe_/Equipe_/PP_ : le PP (bob) hérite `owner`,
         // les autres membres `manager` (prof) / `member` (élève), miroir du flag.
         $alice = $this->mkUserWithRole('alice', 'eleve');
         $bob = $this->mkUserWithRole('bob', 'prof');
@@ -387,7 +383,7 @@ class MergeLegacyUserGroupsMigrationTest extends TestCase
     #[Test]
     public function it_mirrors_role_owner_on_lonely_pp_row(): void
     {
-        // 42.1 AC6 — un PP_ isolé renommé : ses membres passent owner (miroir).
+        // un PP_ isolé renommé : ses membres passent owner (miroir).
         $bob = $this->mkUserWithRole('bob', 'prof');
         $pp = $this->mkGroup('PP_3A', 'equipe', 'g-pp', 'CN=PP_3A');
         $this->link($pp, $bob);
@@ -402,9 +398,9 @@ class MergeLegacyUserGroupsMigrationTest extends TestCase
     #[Test]
     public function it_leaves_role_untouched_when_column_absent(): void
     {
-        // 42.1 AC6/T7.4 — sur un schéma SANS colonne `role` (base pré-42.1),
+        // Sur un schéma SANS colonne `role` (base antérieure),
         // la garde Schema::hasColumn court-circuite toute écriture de `role` :
-        // comportement 4.14 strictement intact, aucune exception.
+        // comportement strictement intact, aucune exception.
         Schema::table('user_group_user', static function (Blueprint $table): void {
             $table->dropColumn('role');
         });
@@ -420,13 +416,9 @@ class MergeLegacyUserGroupsMigrationTest extends TestCase
         (new MergeLegacyUserGroups())();
 
         $survivor = (int) DB::table('user_groups')->where('name', '3A')->value('id');
-        // Comportement 4.14 préservé : le flag est bien posé.
+        // Comportement préservé : le flag est bien posé.
         $this->assertTrue($this->flag($survivor, $bob));
     }
-
-    // ------------------------------------------------------------------
-    // Helpers
-    // ------------------------------------------------------------------
 
     private function flag(int $groupId, int $userId): bool
     {
@@ -496,7 +488,7 @@ class MergeLegacyUserGroupsMigrationTest extends TestCase
                 $table->unsignedBigInteger('user_group_id');
                 $table->unsignedBigInteger('user_id');
                 $table->boolean('is_head_teacher')->default(false);
-                // Story 42.1 — colonne d'arête `role` (parité migration).
+                // Colonne d'arête `role` (parité migration).
                 $table->string('role', 20)->default('member');
                 $table->primary(['user_group_id', 'user_id']);
             });

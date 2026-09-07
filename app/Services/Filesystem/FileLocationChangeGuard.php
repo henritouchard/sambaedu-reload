@@ -10,14 +10,14 @@ use App\Models\User;
 use App\Models\UserGroup;
 
 /**
- * Story 63.3 — CHANGER L'EMPLACEMENT D'UN ESPACE QUI PORTE DES DONNÉES EST
+ * CHANGER L'EMPLACEMENT D'UN ESPACE QUI PORTE DES DONNÉES EST
  * REFUSÉ, ET LE REFUS NOMME LE CHANTIER QUI LE LÈVERA.
  *
  * La doctrine est déjà écrite pour les répertoires gérés
  * (`\App\Services\Filesystem\Backend\FileBackendSelection`, cité en FQCN) :
  * *« Le choix se fait À LA CRÉATION, jamais après […] La migration d'un partage
  * d'un backend à l'autre […] est un chantier à part entière »*. Les deux espaces
- * de l'instance héritent de la même règle : tant que **Epic 64 — la bascule
+ * de l'instance héritent de la même règle : tant que **la bascule
  * d'autorité** n'a pas livré le déménagement des données, déplacer un espace
  * peuplé serait promettre un mouvement que personne n'exécute.
  *
@@ -27,7 +27,6 @@ use App\Models\UserGroup;
  * reprend les valeurs persistées plutôt que d'afficher un état que la base ne
  * porte pas.
  *
- * ---------------------------------------------------------------------------
  * **COMMENT SE CONSTATE « DES DONNÉES EXISTENT » — L'ARBITRAGE, ET SON COÛT.**
  *
  * Deux constats d'existence en base, et rien d'autre. Ni parcours du stockage
@@ -65,7 +64,6 @@ use App\Models\UserGroup;
  * fichier). L'écran porte donc, à côté du bouton d'enregistrement, la phrase
  * qui dit que le choix se fige dès qu'un compte existe : sur une reprise
  * d'existant, la fenêtre où le choix reste libre se referme au premier import.
- * ---------------------------------------------------------------------------
  *
  * **ELLE NE PORTE QUE SUR LES DEUX EMPLACEMENTS.** Changer le cloud actif, une
  * adresse, un identifiant, un secret, la vérification du certificat ou le
@@ -84,7 +82,7 @@ use App\Models\UserGroup;
 final class FileLocationChangeGuard
 {
     /** Le nom du chantier qui lèvera ce refus — cité, jamais sous-entendu. */
-    public const CHANTIER = 'Epic 64 — la bascule d\'autorité';
+    public const CHANTIER = 'la bascule d\'autorité';
 
     /**
      * Le motif du refus, ou `null` si la soumission passe.

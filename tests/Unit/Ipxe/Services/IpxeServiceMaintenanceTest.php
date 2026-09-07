@@ -14,7 +14,7 @@ use Tests\TestCase;
 use Tests\Support\IpxeAuthTestHelper;
 
 /**
- * Story 3.2 — AC3.2 / T4.5.
+ * T4.5.
  *
  * Tests unitaires de {@see IpxeService::handleMaintenance()}.
  */
@@ -118,10 +118,9 @@ class IpxeServiceMaintenanceTest extends TestCase
     #[Test]
     public function it_returns_text_plain_in_all_paths(): void
     {
-        // Fix review #6 — assertions complètes des 3 headers de sécurité
-        // (D10) iso `IpxeServiceAdminTest`. L'ancien test ne validait que
-        // `Content-Type`, laissant un risque de régression silencieuse si
-        // quelqu'un ajoutait un chemin alternatif sans passer par respond().
+        // Les 3 en-têtes de sécurité sont assertés, pas seulement
+        // `Content-Type` : un chemin de réponse alternatif qui ne passerait pas
+        // par `respond()` doit faire tomber ce test.
         $response = $this->service->handleMaintenance($this->makeRequest());
 
         self::assertStringContainsString(

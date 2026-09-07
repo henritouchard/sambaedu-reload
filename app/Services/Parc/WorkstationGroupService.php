@@ -37,8 +37,8 @@ use Illuminate\Support\Str;
 class WorkstationGroupService
 {
     /**
-     * Parc réservé SE4 (nom codé en dur — jamais configurable). Story 38.7 /
-     * AC10 : exclu de l'import logique (ni WorkstationGroup ni AppProfile), ses
+     * Parc réservé SE4 (nom codé en dur — jamais configurable). /
+     * exclu de l'import logique (ni WorkstationGroup ni AppProfile), ses
      * applications sont promues en défaut d'établissement à l'étape 7.
      */
     private const ALL_WORKSTATIONS_PARC = '_TousLesPostes';
@@ -67,24 +67,20 @@ class WorkstationGroupService
         private WorkstationGroupRepository $repository,
         private WorkstationService $workstationService,
         private RemoteAccessService $remoteAccessService,
-        // Story 30.5 — garde prédictive verrou/verrou au rattachement. Nullable +
+        // Garde prédictive verrou/verrou au rattachement. Nullable +
         // résolu paresseusement (préserve les instanciations directes à 3 args).
         private ?UpstreamLockCollisionDetector $lockCollisionDetector = null,
-        // Story 38.7 — lecteur legacy MUTUALISÉ avec l'étape 7 (AppProfileAdImporter)
-        // pour l'import sélectif (AC9.1). Nullable + résolu paresseusement, même
+        // Lecteur legacy MUTUALISÉ avec l'étape 7 (AppProfileAdImporter)
+        // Pour l'import sélectif. Nullable + résolu paresseusement, même
         // patron que $lockCollisionDetector (préserve les instanciations existantes).
         private ?LegacyParcApplicationReader $legacyParcReader = null,
     ) {
     }
 
-    // ========================================
-    // MACHINES
-    // ========================================
-
     /**
      * Liste les machines avec filtres et pagination.
      *
-     * Story 7.1 — paramètre optionnel `$scopeFor` :
+     * Paramètre optionnel `$scopeFor` :
      *  - `null` (défaut) : comportement historique, aucune restriction de périmètre.
      *  - `User` fourni :
      *      · si l'user a le droit global `computer.view` via Spatie → pas de
@@ -159,7 +155,7 @@ class WorkstationGroupService
     /**
      * Récupère les statistiques des machines.
      *
-     * Story 16.13bis — Correction Q2 / Opus-A (2026-05-20) : `$os`, `$groupId`
+     * `$os`, `$groupId`
      * et `$migrationFilter` permettent de **scoper** le compteur "Postes
      * migrés" + le total aux mêmes filtres que ceux appliqués au listing
      * Livewire (cohérence UX). Les autres compteurs (active, without_group,
@@ -191,10 +187,10 @@ class WorkstationGroupService
             $osCounts[$osName] = Workstation::where('os', $osName)->count();
         }
 
-        // Story 16.13bis — compteur X/Y postes migrés scoped aux filtres actifs.
+        // Compteur X/Y postes migrés scoped aux filtres actifs.
         // Si aucun filtre actif → comptage global (parité legacy).
         // Best-effort try/catch si la table `workstations_migration_status`
-        // n'existe pas (cas tests non-16.11).
+        // n'existe pas (cas de certains tests).
         $migrated = 0;
         $scopedTotal = $total;
         try {
@@ -239,7 +235,7 @@ class WorkstationGroupService
     }
 
     /**
-     * Story 16.13bis — Correction Q2 / Opus-A : construit une query Workstation
+     * Construit une query Workstation
      * avec les filtres OS + groupe actifs (sans migrationFilter — appliqué
      * séparément). Utilisé par `getMachineStats()` pour scoper le compteur.
      */
@@ -338,7 +334,7 @@ class WorkstationGroupService
     /**
      * Exécute une action de puissance sur une sélection de machines
      *
-     * Note story 4-3 : pour les actions power (`wake|shutdown|shutdown-force|restart`)
+     * Note-3 : pour les actions power (`wake|shutdown|shutdown-force|restart`)
      * le dispatch transite désormais par `DispatchMachinePowerActionJob` (1 task par
      * machine), retourne immédiatement le contrat typé avec `results[i].task_id`
      * pour permettre au composant Livewire appelant de poller l'état. L'action
@@ -371,14 +367,14 @@ class WorkstationGroupService
     /**
      * Exécute une action de puissance sur des machines appartenant à un groupe
      *
-     * Story 4-3 : refonte du pipeline en async par machine pour les actions
+     * -3 : refonte du pipeline en async par machine pour les actions
      * power. Pour chaque machine éligible (présente dans le groupe + pas de
      * task active), on crée une ligne `machine_power_action_tasks` et on
      * dispatche un `DispatchMachinePowerActionJob`. Les machines déjà en
      * action (status ∈ ACTIVE_STATUSES) sont filtrées et comptées comme
      * `failed_count` avec `code=409, reason='already-running'`.
      *
-     * Story 4-4 (crons planifiés) : ajout du paramètre optionnel
+     * -4 (crons planifiés) : ajout du paramètre optionnel
      * `$initiatedBy` pour permettre au scheduler cron de tracer l'origine
      * des tasks (`'schedule:<id>'`) et les distinguer des actions manuelles
      * (`'user:<id>'`). Backward-compat : si null, fallback sur auth()->user()->name
@@ -389,8 +385,7 @@ class WorkstationGroupService
      *   - `results[i].task_id` (int, présent pour les actions power dispatchées)
      *   - `results[i].reason` (string, présent pour les échecs structurés)
      *
-     * `action=remote` conserve le flux synchrone via `executeRemoteAccessAction`
-     * (D5 story 4-3).
+     * `action=remote` conserve le flux synchrone via `executeRemoteAccessAction`.
      *
      * @param array<int|string> $machineIds
      * @return array{action: string, requested_count: int, success_count: int, failed_count: int, results: array<int, array{machine: string, success: bool, code: int}>}
@@ -403,14 +398,10 @@ class WorkstationGroupService
         return $this->executeMachineActionOnCollection($machines, $action, $normalizedIds, $initiatedBy);
     }
 
-    // ========================================
-    // GROUPES DE MACHINES
-    // ========================================
-
     /**
      * Liste les groupes avec filtres et pagination.
      *
-     * Story 7.1 — paramètre optionnel `$scopeFor` : même sémantique que
+     * Paramètre optionnel `$scopeFor` : même sémantique que
      * `listMachines()`. Si l'user délégué n'a pas le droit global
      * `computer.view`, on contraint la liste aux WorkstationGroups sur
      * lesquels il a une délégation positive active non-négateée.
@@ -670,7 +661,7 @@ class WorkstationGroupService
     /**
      * Récupère les groupes racine pour les sélecteurs.
      *
-     * Story 7.1 — Review #7 : paramètre optionnel `$scopeFor` pour filtrer
+     * Paramètre optionnel `$scopeFor` pour filtrer
      * le dropdown "Filtrer par groupe" aux seuls groupes autorisés.
      *  - `null` (défaut) : comportement historique, toutes les racines.
      *  - `User` fourni :
@@ -682,7 +673,7 @@ class WorkstationGroupService
      * Contrairement à `listGroups`/`listMachines`, on filtre sur `id`
      * directement (les racines autorisées peuvent figurer dans la liste
      * déléguée — on n'essaye pas de remonter au root d'un sous-groupe délégué
-     * car la hiérarchie logique n'est pas cible de délégation en 7.1).
+     * car la hiérarchie logique n'est pas cible de délégation).
      */
     public function getRootGroupsForSelect(?User $scopeFor = null): Collection
     {
@@ -756,19 +747,19 @@ class WorkstationGroupService
             return $this->executeRemoteAccessAction($machines);
         }
 
-        // Story 4-3 : pipeline async par machine. Chaque machine résolue crée
+        // Pipeline async par machine. Chaque machine résolue crée
         // une MachinePowerActionTask + un DispatchMachinePowerActionJob. Les
-        // machines déjà en action (idempotence D4) sont skippées et remontées
+        // machines déjà en action (idempotence) sont skippées et remontées
         // en failed_count avec code=409.
         return $this->dispatchAsyncActionForMachines($machines, $action, $requestedIds, $initiatedBy);
     }
 
     /**
-     * Dispatch async d'une action power sur une collection de machines (story 4-3).
+     * Dispatch async d'une action power sur une collection de machines.
      *
      * - Crée une `MachinePowerActionTask` + dispatche un `DispatchMachinePowerActionJob`
      *   pour chaque machine éligible.
-     * - Filtre en amont les machines qui ont déjà une task active (idempotence D4)
+     * - Filtre en amont les machines qui ont déjà une task active (idempotence)
      *   via un unique SELECT sur `machine_power_action_tasks` pour éviter les N+1.
      * - Comptabilise les machines non résolues (ID demandé mais absent de la
      *   collection — par ex. machine supprimée, ou pas dans le groupe) en
@@ -791,7 +782,7 @@ class WorkstationGroupService
             ->all();
 
         // Un seul SELECT pour repérer les machines déjà en action active
-        // (AC7 idempotence). whereIn sur la liste résolue, pluck les
+        // ( idempotence). whereIn sur la liste résolue, pluck les
         // workstation_id. Si la liste est vide on saute le SELECT.
         $alreadyRunningIds = [];
         if (!empty($resolvedIds)) {
@@ -805,7 +796,7 @@ class WorkstationGroupService
                 ->all();
         }
 
-        // Story 4-4 : si $initiatedByOverride est fourni (ex. 'schedule:<id>'
+        // -4 : si $initiatedByOverride est fourni (ex. 'schedule:<id>'
         // par le scheduler cron), il prime sur la résolution auth() pour que
         // l'audit trail distingue actions manuelles vs cron.
         $initiatedBy = $initiatedByOverride
@@ -954,16 +945,12 @@ class WorkstationGroupService
         ];
     }
 
-    // ========================================
-    // GESTION DES RELATIONS
-    // ========================================
-
     /**
      * Ajoute une machine à un groupe
      */
     public function addMachineToGroup(int $machineId, int $groupId): void
     {
-        // Story 30.5 — garde prédictive verrou/verrou AVANT l'écriture du pivot.
+        // Garde prédictive verrou/verrou AVANT l'écriture du pivot.
         // Surface ADDITIVE : post = pre ∪ label(groupe cible).
         $this->guardUpstreamLockCollision([$machineId], [$groupId], $this->additivePostLabels());
 
@@ -993,12 +980,12 @@ class WorkstationGroupService
      */
     public function setMachineGroups(int $machineId, array $groupIds): void
     {
-        // Story 30.5 — garde prédictive verrou/verrou AVANT l'écriture du pivot.
+        // Garde prédictive verrou/verrou AVANT l'écriture du pivot.
         // Surface de REMPLACEMENT : `groups()->sync()` remplace TOUTES les
         // appartenances du poste (la relation `groups()` n'est pas filtrée), donc
-        // l'état final ne porte QUE les labels des groupes ciblés (fix #1 : les
+        // l'état final ne porte QUE les labels des groupes ciblés : les
         // appartenances actuelles hors cibles sont supprimées, leurs labels ne
-        // doivent pas compter). `post = labels(groupIds)`.
+        // doivent donc pas compter. `post = labels(groupIds)`.
         $targetGroupIds = array_map('intval', $groupIds);
         $this->guardUpstreamLockCollision(
             [$machineId],
@@ -1019,10 +1006,10 @@ class WorkstationGroupService
      */
     public function setGroupMachines(int $groupId, array $machineIds): void
     {
-        // Story 30.5 — garde prédictive verrou/verrou AVANT l'écriture du pivot.
+        // Garde prédictive verrou/verrou AVANT l'écriture du pivot.
         // Surface ADDITIVE par poste : chaque poste ciblé gagne le label de G ; un
         // poste DÉJÀ membre (label déjà dans `pre`) ne « gagne » rien — le modèle
-        // `gained = post \ pre` l'exclut donc (fix #2). Les postes retirés de G
+        // `gained = post \ pre` l'exclut donc. Les postes retirés de G
         // (absents de `machineIds`) ne sont pas dans le périmètre.
         $this->guardUpstreamLockCollision(
             array_map('intval', $machineIds),
@@ -1043,7 +1030,7 @@ class WorkstationGroupService
      */
     public function bulkAddMachinesToGroup(array $machineIds, int $groupId): int
     {
-        // Story 30.5 — garde prédictive verrou/verrou AVANT l'écriture du pivot.
+        // Garde prédictive verrou/verrou AVANT l'écriture du pivot.
         // Surface ADDITIVE. M2 (acté) : fail-closed — si UN poste du lot
         // collisionne, l'opération est refusée EN ENTIER (la prévention échoue
         // fermé), avant toute écriture pivot.
@@ -1109,9 +1096,9 @@ class WorkstationGroupService
     }
 
     /**
-     * Story 30.5 — garde prédictive verrou/verrou à l'ASSIGNATION d'appartenance
-     * (FR13), en MODÈLE générique pré-set / post-set par poste (post-review
-     * 30-5.md). Helper UNIQUE appelé par tous les points qui modifient
+     * Garde prédictive verrou/verrou à l'ASSIGNATION d'appartenance,
+     * en MODÈLE générique pré-set / post-set par poste.
+     * Helper UNIQUE appelé par tous les points qui modifient
      * l'appartenance (AJOUT, REMPLACEMENT `sync()`, SWAP de salle) — jamais par
      * les retraits purs (retirer une appartenance ne peut pas CRÉER de collision).
      *
@@ -1119,26 +1106,26 @@ class WorkstationGroupService
      * moins un poste, une collision insoluble : dans son ÉTAT FINAL d'appartenance,
      * deux items amont `locked` imposant des valeurs contradictoires sur la même
      * `exclusiveKey`, dont AU MOINS un côté provient d'un label GAGNÉ par l'op
-     * (`gained = post \ pre`, filtre AC #8). Le calcul de `post(ws)` est confié à
+     * (`gained = post \ pre`). Le calcul de `post(ws)` est confié à
      * `$postLabelsOf` (propre à chaque surface : additif, remplacement, swap) —
      * `pre(ws)` = TOUS les labels actuellement portés (le détecteur compare post à
      * pre, donc les appartenances retirées par l'op n'y figurent plus et ne
-     * produisent pas de collision fantôme — fix #1/M1).
+     * produisent pas de collision fantôme).
      *
-     * **Bornage strict / NFR3** : court-circuit EN TÊTE, AVANT tout eager-load de
+     * **Bornage strict** : court-circuit EN TÊTE, AVANT tout eager-load de
      * population — (1) aucun item label `locked` (ou pas de contrat actif) ⇒
      * `return` immédiat sans requête parc ; (2) aucun groupe nouvellement rattaché
      * ne porte de label ⇒ `return` (rien ne peut être introduit). Le hot-path parc
      * standalone reste byte-équivalent.
      *
-     * **M2 (acté, fail-closed)** : un lot (`bulkAddMachinesToGroup`) dont UN SEUL
+     * **Fail-closed sur les lots** : un lot (`bulkAddMachinesToGroup`) dont UN SEUL
      * poste collisionne est refusé EN ENTIER. La prévention échoue fermé — choix
      * volontaire, cohérent avec une garde prédictive (mieux vaut refuser tout le
      * lot que laisser passer un poste insoluble).
      *
      * @param  list<int>  $machineIds
      * @param  list<int>  $introducedLabelGroupIds  groupes nouvellement rattachés
-     *                    par l'op (leurs labels sont les seuls candidats au GAIN —
+     *  par l'op (leurs labels sont les seuls candidats au GAIN
      *                    sert au court-circuit (2) ET de garde-fou de pertinence).
      * @param  callable(int $machineId, list<string> $preLabels, list<string> $introducedLabels): list<string>  $postLabelsOf
      *
@@ -1154,7 +1141,7 @@ class WorkstationGroupService
 
         $detector = $this->lockCollisionDetector ?? app(UpstreamLockCollisionDetector::class);
 
-        // Court-circuit NFR3 EN TÊTE : aucun item label locked ⇒ zéro requête parc.
+        // Court-circuit EN TÊTE : aucun item label locked ⇒ zéro requête parc.
         if (! $detector->hasLockedLabelItems()) {
             return;
         }
@@ -1210,7 +1197,7 @@ class WorkstationGroupService
 
     /**
      * Labels (controlhub_label) portés par les salles PHYSIQUES courantes d'un
-     * poste (≤ 1 en pratique). Une requête, après court-circuit NFR3 — utilisé par
+     * poste (≤ 1 en pratique). Une requête, après le court-circuit — utilisé par
      * la closure `post` du SWAP de salle (`assignMachineToPhysicalRoom`).
      *
      * @return list<string>
@@ -1230,10 +1217,6 @@ class WorkstationGroupService
         ));
     }
 
-    // ========================================
-    // GESTION DES SALLES PHYSIQUES
-    // ========================================
-
     /**
      * Récupère les salles physiques disponibles
      */
@@ -1245,20 +1228,20 @@ class WorkstationGroupService
     /**
      * Assigne une machine à une salle physique (ou la détache de toute salle).
      *
-     * Story 4.11 — point d'écriture UNIQUE de l'appartenance « salle » (D2).
+     * Point d'écriture UNIQUE de l'appartenance « salle ».
      * L'appartenance vit dans le pivot global `workstation_group_workstation` ;
-     * l'invariant « 1 salle max par poste » (D3, app-only) est garanti ici par
+     * l'invariant « 1 salle max par poste », tenu applicativement, est garanti ici par
      * un swap transactionnel : detach de TOUTE salle physique courante + attach
      * de la cible, dans la même transaction (impossible d'observer 0 ou 2
      * salles depuis une autre connexion).
      *
      * `$roomId === null` → simple detach de la (des) salle(s) courante(s).
      *
-     * Propagation OU AD (gap comblé par 4.11) : si la salle change réellement,
+     * Propagation OU AD : si la salle change réellement,
      * `WorkstationMembershipAdSyncJob::move` est dispatché après commit.
-     * `$dispatchAdSync = false` la désactive — cas import AD (post-review 4.11
-     * #3) : les données VIENNENT d'AD, l'OU y est déjà la bonne, un move
-     * serait un no-op par poste importé.
+     * `$dispatchAdSync = false` la désactive — cas de l'import AD, où les
+     * données VIENNENT d'AD : l'OU y est déjà la bonne, un move serait un no-op
+     * par poste importé.
      *
      * @throws \InvalidArgumentException machine/salle introuvable ou non physique
      */
@@ -1278,7 +1261,7 @@ class WorkstationGroupService
                 throw new \InvalidArgumentException("Le groupe '{$room->name}' n'est pas une salle physique");
             }
 
-            // Story 30.5 — garde prédictive verrou/verrou : la salle physique est
+            // Garde prédictive verrou/verrou : la salle physique est
             // rarement labellisée, mais si la cible porte un label le rattachement
             // peut introduire une collision. Le helper court-circuite sinon.
             // Surface de SWAP : la/les salle(s) physique(s) COURANTE(S) sont
@@ -1297,7 +1280,7 @@ class WorkstationGroupService
 
         // Capture AVANT la transaction. En cas de swaps concurrents du même
         // poste, $oldRoomId peut être rassis et inhiber le dispatch move
-        // ci-dessous — risque accepté (review 4.11 #2) : n'affecte que la
+        // ci-dessous — risque accepté : n'affecte que la
         // propagation OU AD (job idempotent, tries=3), jamais l'intégrité du
         // pivot, et le scénario est quasi inexistant en pratique.
         $oldRoomId = $machine->physicalRoom?->id;
@@ -1334,7 +1317,7 @@ class WorkstationGroupService
     /**
      * Vérifie si une machine nécessite une confirmation pour être déplacée.
      *
-     * Story 4.11 — lecture de la salle courante via le pivot (`physicalRoom`).
+     * Lecture de la salle courante via le pivot (`physicalRoom`).
      */
     public function checkPhysicalRoomConflict(int $machineId, int $targetGroupId): ?array
     {
@@ -1391,14 +1374,6 @@ class WorkstationGroupService
             'message' => 'Machine déplacée avec succès',
         ];
     }
-
-    // ========================================
-    // VALIDATION
-    // ========================================
-
-    // ========================================
-    // IMPORT DEPUIS L'AD (MIGRATION INITIALE)
-    // ========================================
 
     /**
      * Importe les groupes de postes depuis l'Active Directory vers la base de données SQL.
@@ -1549,8 +1524,8 @@ class WorkstationGroupService
                 }
 
                 // Troisième passe : lier workstation <-> salle physique via le
-                // swap du service (post-review 4.11 #3) — point d'écriture
-                // unique D2, invariant 1-salle-max. L'ancien attach pivot brut
+                // swap du service — point d'écriture unique, invariant
+                // 1-salle-max. L'ancien attach pivot brut
                 // gardé par `wherePivot('physical', true)` était aveugle aux
                 // lignes posées par le swap (colonne morte non écrite) : le
                 // re-attach violait `wg_ws_unique` et rollbackait tout l'import.
@@ -1628,12 +1603,12 @@ class WorkstationGroupService
         ];
 
         try {
-            // Story 38.7 / AC9.3 — ne créer un groupe logique QUE si le parc legacy
+            // Ne créer un groupe logique QUE si le parc legacy
             // homonyme porte au moins une application (le parc SE4 n'est qu'un
             // support d'assignation WPKG ; sans application il n'apporte que sa
             // composition de machines, qui n'a jamais servi). Lecture legacy
             // mutualisée avec l'étape 7 (LegacyParcApplicationReader). Source
-            // indisponible ⇒ aucune création, avertissement explicite (AC9.2).
+            // indisponible ⇒ aucune création, avertissement explicite.
             $legacyReader = $this->legacyParcReader ??= app(LegacyParcApplicationReader::class);
             $legacy = $legacyReader->read($log);
             $legacyAvailable = $legacy !== null;
@@ -1679,7 +1654,7 @@ class WorkstationGroupService
                             continue;
                         }
 
-                        // AC10 — `_TousLesPostes` n'est pas un parc : ni WorkstationGroup
+                        // `_TousLesPostes` n'est pas un parc : ni WorkstationGroup
                         // logique, ni AppProfile. Son socle applicatif est promu en
                         // défaut d'établissement à l'étape 7 (couche Broadcast).
                         if ($name === self::ALL_WORKSTATIONS_PARC) {
@@ -1729,7 +1704,7 @@ class WorkstationGroupService
                                 $stats['skipped']++;
                             }
                         } else {
-                            // AC9.3 — création conditionnée à la présence d'au moins une
+                            // Création conditionnée à la présence d'au moins une
                             // application legacy. Le critère est l'application, pas la
                             // composition : un CN peuplé mais sans app est sauté et
                             // listé nominativement AVEC son nombre de machines, pour
@@ -1808,8 +1783,8 @@ class WorkstationGroupService
                                     ->exists();
                                     
                                 if (!$existingLink) {
-                                    // Post-review 4.11 #N1 — la colonne pivot
-                                    // `physical` est morte, on ne l'écrit plus.
+                                    // La colonne pivot `physical` est morte :
+                                    // on ne l'écrit plus.
                                     $workstation->groups()->attach($sqlGroup->id);
                                     $stats['workstation_links']++;
                                 }
@@ -1842,7 +1817,7 @@ class WorkstationGroupService
 
     /**
      * Compte les membres (`member`) d'un groupe AD `OU=Parcs`. Sert au rapport
-     * des CN logiques sautés faute d'application legacy (AC9.3) — l'admin voit
+     * des CN logiques sautés faute d'application legacy — l'admin voit
      * le nombre de machines qu'il perdrait s'il s'agissait d'un regroupement
      * délibéré.
      */
@@ -1930,10 +1905,6 @@ class WorkstationGroupService
         }
         return null;
     }
-
-    // ========================================
-    // VALIDATION
-    // ========================================
 
     /**
      * Valide les données d'un groupe

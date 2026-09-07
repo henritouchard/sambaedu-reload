@@ -10,8 +10,6 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 16.11 — Q2 (correction post-review Opus-B + Opus-D, 2026-05-18).
- *
  * Helper injectable qui insère une row `workstation_migration_attempts` avec
  * `status='failed'` chaque fois qu'un middleware ou controller rejette une
  * tentative de migration auto-bootstrap.

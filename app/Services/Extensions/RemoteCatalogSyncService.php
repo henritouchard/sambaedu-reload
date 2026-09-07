@@ -18,16 +18,15 @@ use Illuminate\Support\Str;
 use Throwable;
 
 /**
- * Story 56.1 (FR2, NFR2, NFR7) — Synchronisation d'une source DISTANTE :
+ * Synchronisation d'une source DISTANTE :
  * récupération bornée, **vérification de signature avant tout usage**, puis
  * chargement du catalogue vérifié dans le registre.
  *
- * ══════════════════════════════════════════════════════════════════════════
- *  FORMAT DE CATALOGUE DISTANT v1 — CONTRAT PUBLIC (NFR11)
+ *  FORMAT DE CATALOGUE DISTANT v1 — CONTRAT PUBLIC
  *
  *  Un dépôt de source, c'est trois fichiers STATIQUES sous une URL de base
  *  (hébergeable sur GitHub Pages, un raw GitLab, un simple Apache — donc
- *  miroir-able hors ligne, AR9) :
+ *  miroir-able hors ligne) :
  *
  *      <url>/index.json        le catalogue : méta de source + manifests v1 EMBARQUÉS
  *      <url>/index.json.sig    base64( sodium_crypto_sign_detached(octets exacts d'index.json, sk) )
@@ -48,18 +47,15 @@ use Throwable;
  *  vérifications et les moyens de se tromper.
  *
  *  `index_version` est STRICT (=1), avec les mêmes règles de normalisation que
- *  `manifest_version` : un `"1.0"` ou un `"v1"` n'est pas la version 1. La
- *  Story 56.2 ajoutera un bloc `install` par manifest — ADDITIF, jamais une
- *  rupture.
- * ══════════════════════════════════════════════════════════════════════════
+ *  `manifest_version` : un `"1.0"` ou un `"v1"` n'est pas la version 1. Toute
+ *  évolution du format se fait par AJOUT, jamais par rupture.
  *
- * ══════════════════════════════════════════════════════════════════════════
- *  ORDRE INVIOLABLE (le cœur de sécurité de cette story)
+ *  ORDRE INVIOLABLE — le cœur de sécurité de ce service
  *
  *      octets bruts téléchargés
  *        → bornes de TAILLE
- *          → CatalogSignatureVerifier::verify() sur les octets VERBATIM
- *            → alors SEULEMENT json_decode()
+ *  → CatalogSignatureVerifier::verify() sur les octets VERBATIM
+ *  → alors SEULEMENT json_decode()
  *              → index_version
  *                → manifests
  *
@@ -69,10 +65,8 @@ use Throwable;
  *  faire fuir du contenu non authentifié dans les journaux. Un test verrouille
  *  l'ordre : un index à la fois MAL SIGNÉ et MALFORMÉ ne produit aucune erreur
  *  de parsing — la preuve que le parseur n'a jamais été atteint.
- * ══════════════════════════════════════════════════════════════════════════
  *
- * ══════════════════════════════════════════════════════════════════════════
- *  FAIL-CLOSED ET DÉGRADATION (NFR2 / NFR7)
+ *  FAIL-CLOSED ET DÉGRADATION
  *
  *  - Réseau, DNS, timeout, 5xx, **3xx** ⇒ `unreachable`. Les redirections ne
  *    sont pas suivies (`allow_redirects => false`) : un dépôt ne peut donc
@@ -82,24 +76,22 @@ use Throwable;
  *    inconnue, `extensions` mal formé ⇒ `error`. Les `available` de la source
  *    sont masquées de la bibliothèque, les `integrated` conservées.
  *  - **Sur AUCUN de ces chemins d'échec il n'y a d'écriture d'extension ni de
- *    prune.** C'est l'invariant #5 de 54.1 appliqué au réseau : on ne prune que
- *    ce qu'on a réellement OBSERVÉ, et un catalogue non vérifié n'est pas une
+ *    prune.** On ne prune que ce qu'on a réellement OBSERVÉ, et un catalogue
+ *    non vérifié n'est pas une
  *    observation. Ce projet a déjà vécu un catalogue effacé par une synchro
  *    ratée ; la règle n'est pas négociable.
- * ══════════════════════════════════════════════════════════════════════════
  *
  * **`last_error` ne contient JAMAIS l'URL** ni un message d'exception brut :
  * Guzzle suffixe l'URI complète à ses messages, et une URL de dépôt GitLab peut
- * porter `?private_token=…` (piège documenté par la review 39.4 #E11
- * d'`ArtifactPullService`). La colonne reçoit une CATÉGORIE stable et courte,
+ * porter `?private_token=…`. La colonne reçoit une CATÉGORIE stable et courte,
  * destinée à l'admin ; le détail complet reste dans le journal serveur.
  *
- * **Moteur UNIQUE (AR1)** : le bouton « Actualiser » de la page des sources et
+ * **Moteur UNIQUE** : le bouton « Actualiser » de la page des sources et
  * la commande `ext:sources:sync` (manuelle ou planifiée) passent tous par ce
  * service. Il n'existe pas de second chemin de synchro.
  *
  * ⚠️ Vocabulaire : « amont » / `Upstream`, jamais « central ». Aucun lien avec
- * la sync amont controlHub (isolement NFR14).
+ * la synchronisation amont controlHub.
  */
 class RemoteCatalogSyncService
 {
@@ -150,7 +142,7 @@ class RemoteCatalogSyncService
         try {
             return $this->doSync($source, $actor);
         } catch (Throwable $e) {
-            // Filet de sécurité NFR7 : quoi qu'il arrive dans le moteur, une
+            // Filet de sécurité : quoi qu'il arrive dans le moteur, une
             // synchro ratée ne doit jamais faire tomber la page qui l'a
             // déclenchée ni la commande planifiée. On dégrade en `error`.
             Log::error('[Extensions] Synchro distante interrompue par une erreur interne', [
@@ -237,7 +229,7 @@ class RemoteCatalogSyncService
             throw ExtensionSourceException::publicKeyUnavailable();
         }
 
-        // Lecture bornée à la source, comme l'index (review 56.1 #2) : une
+        // Lecture bornée à la source, comme l'index : une
         // « clé publique » de 2 Go doit coûter un morceau de 8 Kio, pas 2 Go
         // de RAM.
         try {
@@ -263,10 +255,6 @@ class RemoteCatalogSyncService
         return $key;
     }
 
-    // =====================================================================
-    // Moteur
-    // =====================================================================
-
     /**
      * @return array{source: string, status: string, loaded: int, created: int, updated: int, skipped: int, pruned: int, error: string}
      */
@@ -274,7 +262,7 @@ class RemoteCatalogSyncService
     {
         $base = $source->baseUrl();
 
-        // ── 1. En-têtes — le corps n'est PAS bufferisé (`stream`) ─────────
+        // 1. En-têtes — le corps n'est PAS bufferisé (`stream`)
         try {
             $indexResponse = $this->client(stream: true)->get($base.'/'.self::INDEX_FILE);
             $signatureResponse = $this->client(stream: true)->get($base.'/'.self::SIGNATURE_FILE);
@@ -294,11 +282,10 @@ class RemoteCatalogSyncService
             return $this->markUnreachable($source, $this->httpCategory(self::SIGNATURE_FILE, $signatureResponse));
         }
 
-        // ── 2. Lecture BORNÉE, à la source ────────────────────────────────
-        // Ni une signature ni un hash ne bornent une taille (leçon 39.4 #3) —
-        // mais une borne vérifiée APRÈS `->body()` ne borne rien non plus : à
-        // cet instant le corps est DÉJÀ intégralement en mémoire PHP (review
-        // 56.1 #2). Un dépôt hostile — ou dont l'IP a été détournée après le
+        // 2. Lecture BORNÉE, à la source
+        // Ni une signature ni un hash ne bornent une taille,
+        // et une borne vérifiée APRÈS `->body()` ne borne rien non plus : à
+        // cet instant le corps est DÉJÀ intégralement en mémoire PHP. Un dépôt hostile — ou dont l'IP a été détournée après le
         // pin — répondrait 2 Go sur `index.json` et ferait tomber la synchro
         // planifiée (`syncAll()` boucle sur toutes les sources) avant même
         // d'atteindre le refus. On lit donc par morceaux et on coupe net.
@@ -323,7 +310,7 @@ class RemoteCatalogSyncService
             return $this->markError($source, 'catalogue refusé : index.json vide', $actor);
         }
 
-        // ── 3. SIGNATURE, avant tout décodage ─────────────────────────────
+        // 3. SIGNATURE, avant tout décodage
         // La clé utilisée est EXCLUSIVEMENT celle pinnée en base : elle n'est
         // jamais re-téléchargée, jamais renégociée. Un dépôt qui change de clé
         // passe ici en erreur — la rotation légitime est un retrait + ré-ajout
@@ -332,19 +319,19 @@ class RemoteCatalogSyncService
             return $this->markError($source, 'catalogue refusé : signature Ed25519 invalide pour la clé pinnée de la source', $actor);
         }
 
-        // ── 4. Alors seulement : décodage ─────────────────────────────────
+        // 4. Alors seulement : décodage
         $decoded = json_decode($indexBytes, true);
         if (! is_array($decoded) || array_is_list($decoded)) {
             return $this->markError($source, 'catalogue refusé : index.json n\'est pas un objet JSON', $actor);
         }
 
-        // ── 5. Version d'index STRICTE ────────────────────────────────────
+        // 5. Version d'index STRICTE
         $indexVersion = $this->normalizeIndexVersion($decoded['index_version'] ?? null);
         if ($indexVersion === null) {
             return $this->markError($source, 'catalogue refusé : version d\'index non supportée par cette instance', $actor);
         }
 
-        // ── 6. Liste des manifests ────────────────────────────────────────
+        // 6. Liste des manifests
         $entries = $decoded['extensions'] ?? null;
         if (! is_array($entries) || ! array_is_list($entries)) {
             return $this->markError($source, 'catalogue refusé : « extensions » doit être une liste JSON', $actor);
@@ -357,7 +344,7 @@ class RemoteCatalogSyncService
             $manifests[self::INDEX_FILE.'#'.$position] = $entry;
         }
 
-        // ── 7. Chargement (invariants 54.1 #1-#4) ─────────────────────────
+        // 7. Chargement dans le registre
         $stats = $this->catalog->syncManifestsForSource($source, $manifests);
 
         $this->markOk($source);
@@ -375,7 +362,7 @@ class RemoteCatalogSyncService
     }
 
     /**
-     * Client HTTP BORNÉ, commun aux quatre téléchargements de cette story.
+     * Client HTTP BORNÉ, commun aux quatre téléchargements.
      *
      * `allow_redirects => false` : toute 3xx est traitée comme une
      * indisponibilité. C'est plus simple ET plus sûr qu'une liste blanche
@@ -391,10 +378,10 @@ class RemoteCatalogSyncService
      * d'erreur courte le sont), et rien n'est interprété sans signature valide
      * contre la clé PINNÉE. Le résidu assumé est un sondage de topologie par
      * code HTTP/latence, à la portée d'un compte qui administre déjà le
-     * serveur (review 56.1 #4).
+     * serveur.
      *
      * @param  bool  $stream  ne pas bufferiser le corps : les octets ne sont
-     *                        lus qu'à travers {@see self::readBounded()}, qui
+     *  lus qu'à travers {@see self::readBounded()}, qui
      *                        coupe dès la borne franchie.
      */
     private function client(bool $stream = false): \Illuminate\Http\Client\PendingRequest
@@ -460,7 +447,7 @@ class RemoteCatalogSyncService
      * `index_version` : un entier, ou une chaîne strictement numérique. Rien
      * d'autre — mêmes règles que `manifest_version`
      * ({@see ExtensionManifestValidator::assertSupportedVersion()}) : un
-     * « 1.0 » ou un « v1 » n'est PAS la version 1, et le laisser passer serait
+     * « » ou un « v1 » n'est PAS la version 1, et le laisser passer serait
      * le repli tolérant que le contrat refuse.
      */
     private function normalizeIndexVersion(mixed $declared): ?int
@@ -485,10 +472,6 @@ class RemoteCatalogSyncService
         return 'dépôt injoignable (HTTP '.$response->status().' sur '.$file.')';
     }
 
-    // =====================================================================
-    // Transitions d'état de la source (aucune écriture d'extension ici)
-    // =====================================================================
-
     /** Succès : catalogue vérifié et chargé. */
     private function markOk(ExtensionSource $source): void
     {
@@ -499,7 +482,7 @@ class RemoteCatalogSyncService
     }
 
     /**
-     * Dépôt injoignable (NFR7) : le dernier catalogue vérifié reste en place,
+     * Dépôt injoignable : le dernier catalogue vérifié reste en place,
      * les tuiles intégrées restent servies, RIEN n'est pruné ni écrit.
      *
      * Pas d'audit : un incident réseau transitoire n'est pas un acte. Le statut
@@ -526,14 +509,14 @@ class RemoteCatalogSyncService
     }
 
     /**
-     * Catalogue REFUSÉ (NFR2) : signature ou contenu invalide. Fail-closed —
+     * Catalogue REFUSÉ : signature ou contenu invalide. Fail-closed —
      * les `available` de la source disparaissent de la bibliothèque, les
      * `integrated` sont conservées et signalées, RIEN n'est pruné ni écrit.
      *
      * L'audit `source_sync_failed` n'est consigné qu'à la **transition** vers
      * l'état d'erreur : un re-échec quotidien de la synchro planifiée
      * n'empilerait sinon des lignes identiques et noierait les vraies
-     * transitions (même discipline que le no-op de 54.2).
+     * transitions (même discipline que le no-op).
      *
      * @return array{source: string, status: string, loaded: int, created: int, updated: int, skipped: int, pruned: int, error: string}
      */

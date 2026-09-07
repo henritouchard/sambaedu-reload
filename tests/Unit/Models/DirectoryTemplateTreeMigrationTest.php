@@ -12,7 +12,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 60.1 — la migration est ADDITIVE, NULLABLE et RÉVERSIBLE.
+ * La migration est ADDITIVE, NULLABLE et RÉVERSIBLE.
  *
  * La preuve d'iso-comportement tient en une phrase : après migration, les quatre
  * recettes livrées n'ont ni motif de chemin ni nœud. Elles se matérialisent donc
@@ -34,8 +34,8 @@ class DirectoryTemplateTreeMigrationTest extends TestCase
 
         $this->assertSame(5, DirectoryTemplate::count());
 
-        // Story 60.5 — la 5ᵉ recette porte un arbre, c'est sa raison d'être. Les
-        // QUATRE recettes plates de 34.3 restent, elles, sans arbre : leur
+        // La 5ᵉ recette porte un arbre, c'est sa raison d'être. Les
+        // QUATRE recettes plates restent, elles, sans arbre : leur
         // matérialisation n'a pas changé d'un octet.
         $flat = DirectoryTemplate::where('key', '!=', DirectoryTemplate::KEY_CLASSE_SE4)->get();
         $this->assertCount(4, $flat);

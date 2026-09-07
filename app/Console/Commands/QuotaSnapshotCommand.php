@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
 
 /**
- * Story 5.1b — Snapshot quotidien des quotas XFS.
+ * Snapshot quotidien des quotas XFS.
  *
  * Parcourt les partitions XFS supportées (`/home` et `/var/sambaedu` par défaut)
  * et exécute une seule commande `sudo xfs_quota -x -c 'report -a -N' {partition}`
@@ -24,7 +24,7 @@ use Illuminate\Support\Facades\Process;
  * utilisées avant 5.1b. Le listing `/users` lit désormais directement la colonne
  * JSON — zéro shellout par ligne rendue.
  *
- * Fail-soft (décisions produit D2, D3) :
+ * Fail-soft :
  * - Si une partition est non-XFS / xfs_quota échoue → log `Log::error` et
  *   passage à la partition suivante. Le snapshot existant est conservé.
  * - Si un user est en BDD mais absent du rapport XFS → log `Log::info` et
@@ -32,7 +32,7 @@ use Illuminate\Support\Facades\Process;
  * - Exit code `FAILURE` uniquement si TOUTES les partitions échouent.
  *
  * Les logs conservent le préfixe `QuotaService:` pour ne pas casser les greps
- * opérateurs historiques (décision SM 5.1a).
+ * opérateurs historiques (décision SM).
  *
  * Planifiée dans `Console\Kernel::schedule()` à 03h00 quotidiennement.
  */
@@ -93,7 +93,7 @@ class QuotaSnapshotCommand extends Command
             $perPartitionParsed[$partition] = $parsed;
         }
 
-        // Decision D3 : exit code FAILURE uniquement si toutes les partitions
+        // Exit code FAILURE uniquement si toutes les partitions
         // ont échoué ; sinon on considère la run partielle acceptable.
         if ($partitionErrors === count($partitions)) {
             $this->error('QuotaSnapshot: toutes les partitions ont échoué, aucun snapshot mis à jour.');
@@ -120,7 +120,7 @@ class QuotaSnapshotCommand extends Command
     }
 
     /**
-     * Deuxième passe (décision D2) : les users BDD qui ont déjà un snapshot
+     * Deuxième passe : les users BDD qui ont déjà un snapshot
      * mais qui n'apparaissent dans AUCUN des rapports XFS cette run. On logge
      * pour audit (home archivé, compte déactivé…). Le snapshot n'est PAS
      * effacé — il reflète simplement le dernier état connu.
@@ -284,9 +284,9 @@ class QuotaSnapshotCommand extends Command
     /**
      * Met à jour `users.quota_snapshot` pour chaque user mentionné dans au
      * moins un rapport partition. Les users BDD absents sont loggés et leur
-     * ancien snapshot est conservé (décision D2).
+     * ancien snapshot est conservé.
      *
-     * Post code review 5.1b : un user absent d'un rapport partition-spécifique
+     * Post code review : un user absent d'un rapport partition-spécifique
      * (ex: `/home` contient alice mais `/var/sambaedu` renvoie vide) voit son
      * snapshot pour cette partition PRÉSERVÉ — pas effacé. Un rapport vide
      * (succès pipeline, 0 ligne) ne doit jamais supprimer silencieusement
@@ -333,7 +333,7 @@ class QuotaSnapshotCommand extends Command
                 if ($raw === null) {
                     // User absent pour cette partition. On PRÉSERVE la clé
                     // existante — un rapport vide / user non listé ne doit
-                    // PAS effacer le snapshot (cohérent D2 : conservation).
+                    // PAS effacer le snapshot : la conservation prime.
                     continue;
                 }
 
@@ -348,7 +348,8 @@ class QuotaSnapshotCommand extends Command
 
         // Users présents dans le rapport XFS mais PAS en BDD : probablement
         // des comptes système non-synchronisés — on les logge séparément
-        // pour audit (vs D2 qui traite les users BDD absents du rapport).
+        // pour audit (le cas symétrique — un user BDD absent du rapport — est
+        // traité par la deuxième passe ci-dessus).
         $missingFromDb = array_diff($allLogins, array_keys($foundLogins));
         foreach ($missingFromDb as $login) {
             Log::info('QuotaService: login XFS sans correspondance BDD', [
@@ -380,7 +381,8 @@ class QuotaSnapshotCommand extends Command
 
     /**
      * Construit le sous-document snapshot pour une partition donnée.
-     * D5 : bruts (kb) + pré-convertis (mb) + percent pré-calculé.
+     * Contient les valeurs brutes (kb), les valeurs pré-converties (mb) et le
+     * pourcentage pré-calculé.
      *
      * @param  array{used_kb:int,soft_kb:int,hard_kb:int,is_over_soft:bool,grace_days:?int}  $raw
      * @return array<string, mixed>

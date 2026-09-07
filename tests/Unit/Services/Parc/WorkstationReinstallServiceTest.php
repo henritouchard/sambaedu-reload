@@ -14,7 +14,7 @@ use Illuminate\Support\Facades\Queue;
 use Tests\TestCase;
 
 /**
- * Story 3.11 — Tests unit du service de réinstallation (AC2/3/7/8/11/12).
+ * Tests unit du service de réinstallation (3/7/8/11/12).
  */
 class WorkstationReinstallServiceTest extends TestCase
 {
@@ -65,7 +65,7 @@ class WorkstationReinstallServiceTest extends TestCase
     }
 
     /**
-     * Fix review #4 — l'échéance TTL est ancrée sur `max(now, scheduled_at)` :
+     * L'échéance TTL est ancrée sur `max(now, scheduled_at)` :
      * une planification à J+1 ne doit pas expirer avant son heure.
      */
     public function test_scheduled_arm_anchors_expiry_on_scheduled_at(): void
@@ -83,7 +83,7 @@ class WorkstationReinstallServiceTest extends TestCase
     }
 
     /**
-     * Fix review #4 — même ancrage pour le fan-out `armForMachines`.
+     * Même ancrage pour le fan-out `armForMachines`.
      */
     public function test_scheduled_fan_out_anchors_expiry_on_scheduled_at(): void
     {

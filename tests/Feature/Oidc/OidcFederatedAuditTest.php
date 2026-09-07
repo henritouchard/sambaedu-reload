@@ -22,10 +22,8 @@ use Tests\Concerns\IssuesFederatedJwt;
 use Tests\TestCase;
 
 /**
- * Story 55.1 — correctif de review #1 : l'imputabilité d'une émission d'identité
- * OIDC pour un acteur FÉDÉRÉ.
+ * L'imputabilité d'une émission d'identité OIDC pour un acteur FÉDÉRÉ.
  *
- * ══════════════════════════════════════════════════════════════════════════
  *  POURQUOI CE FICHIER EXISTE
  *
  *  `/oidc/authorize` est déclarée avec `federated.audit`, et le commentaire de
@@ -39,7 +37,7 @@ use Tests\TestCase;
  *  affichée n'existe pas.
  *
  *  Et rien d'autre ne la rattrape : les logs du channel `oidc` omettent
- *  VOLONTAIREMENT le `sub` (NFR3), et `oidc_authorization_codes` — seule table
+ *  VOLONTAIREMENT le `sub`, et `oidc_authorization_codes` — seule table
  *  portant `user_login` — est purgée au fil de l'eau (`code_purge_after`).
  *  Passé ce délai, plus rien ne dit qui a obtenu un token, pour quelle
  *  extension, ni quand.
@@ -47,7 +45,6 @@ use Tests\TestCase;
  *  ⚠️ Ce test lit la config RÉELLE de l'application (aucun `config([...])` de
  *  complaisance) : c'est le seul moyen qu'il tombe si quelqu'un retire
  *  `oidc.authorize` de l'allowlist.
- * ══════════════════════════════════════════════════════════════════════════
  *
  * Le middleware est exercé directement (même parti-pris que
  * {@see \Tests\Feature\Auth\Federated\ExternalActionAuditTest}) : déterministe
@@ -175,7 +172,7 @@ class OidcFederatedAuditTest extends TestCase
     public function a_non_federated_actor_never_touches_this_journal(): void
     {
         // Le journal reste réservé aux acteurs externes : un utilisateur AD
-        // local qui fait du SSO n'y écrit rien (invariant Story 20.4, AC2).
+        // local qui fait du SSO n'y écrit rien (invariant).
         $user = new User();
         $user->login = 'prof.dupont';
         $user->role = 'autre';

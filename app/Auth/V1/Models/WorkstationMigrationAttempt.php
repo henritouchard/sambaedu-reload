@@ -12,7 +12,6 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 
 /**
- * Story 16.11 — AC6.2.
  *
  * Modèle Eloquent pour la table `workstation_migration_attempts`.
  *

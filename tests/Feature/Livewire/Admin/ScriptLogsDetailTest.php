@@ -16,7 +16,7 @@ use Tests\Concerns\IssuesWorkstationJwt;
 use Tests\TestCase;
 
 /**
- * Story 16.12 — AC5.1 / AC5.2 (≥4 cas).
+ * (≥4 cas).
  */
 class ScriptLogsDetailTest extends TestCase
 {
@@ -63,8 +63,8 @@ class ScriptLogsDetailTest extends TestCase
             'stderr_excerpt' => 'Hello stderr',
         ]);
 
-        // Post review Opus-D — vérifie rendu HTML effectif (UUID, stdout, stderr,
-        // correlation_id) plutôt que juste l'état Livewire interne.
+        // On vérifie le rendu HTML effectif (UUID, stdout, stderr,
+        // correlation_id) plutôt que le seul état Livewire interne.
         Livewire::test($this->componentName, ['id' => $log->id])
             ->assertSee($log->workstation_uuid)
             ->assertSee('Hello world output')

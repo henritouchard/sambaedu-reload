@@ -15,7 +15,7 @@
     $inheritedProfiles = $profiles['inherited'];
     $directApps = $apps['direct'];
     $inheritedApps = $apps['inherited'];
-    // Story 29.1 — Périmètre d'autorisation WPKG = salle physique du poste.
+    // Périmètre d'autorisation WPKG = salle physique du poste.
     // Résolu UNE fois ici (l'accessor physicalRoom requête sinon à chaque @can,
     // N+1) puis passé au Gate scopé. null (poste nomade) → fallback global.
     $wpkgScope = $this->workstation?->physicalRoom;

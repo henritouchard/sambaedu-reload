@@ -4,7 +4,7 @@
  * Configuration LdapRecord pour SambaEdu
  * 
  * Cette configuration utilise SambaEduConfig pour récupérer les paramètres
- * depuis la configuration SambaEdu (/etc/sambaedu/).
+ * depuis la configuration SambaEdu (etc/sambaedu/).
  */
 return [
     'default' => env('LDAP_CONNECTION', 'default'),

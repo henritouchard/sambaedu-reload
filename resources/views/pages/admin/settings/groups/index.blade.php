@@ -6,33 +6,32 @@ use Livewire\Attributes\Url;
 use Livewire\Component;
 
 /**
- * Story 62.1 — /admin/settings/groups : « Groupes & droits » (page HÔTE à
+ * Admin/settings/groups : « Groupes & droits » (page HÔTE à
  * onglets).
  *
- * Elle réunit le VOCABULAIRE du modèle groupes/rôles/droits (Epic 62) : ce qui se
+ * Elle réunit le VOCABULAIRE du modèle groupes/rôles/droits : ce qui se
  * déclare une fois et se réutilise partout ailleurs. Trois onglets :
  *
- *   - « Rôles » (62.1) : le catalogue des rôles d'appartenance — une clé IMMUABLE,
+ *  - « Rôles » : le catalogue des rôles d'appartenance — une clé IMMUABLE,
  *     un libellé modifiable, un ordre d'affichage. C'est la valeur portée par
  *     `user_group_user.role` et visée par les recettes de répertoire.
- *   - « Types de groupes » (62.2) : le catalogue des types — une clé IMMUABLE, un
+ *  - « Types de groupes » : le catalogue des types — une clé IMMUABLE, un
  *     libellé, une icône. C'est la valeur portée par `user_groups.type`, celle
  *     que les recettes de répertoire visent par `attached_group_type`, et celle
  *     que le code métier compare en littéral.
- *   - « Arborescences » (62.6) : l'éditeur des recettes d'arbre, type par type —
+ *  - « Arborescences » : l'éditeur des recettes d'arbre, type par type
  *     nœuds, natures, plafonds, matrice rôles × verbes, et l'aperçu du plan
  *     résolu AVANT enregistrement. C'est l'écran qui rend administrable ce que
- *     les stories 60.1 → 62.5 ont rendu exprimable.
+ *     le modèle de groupes rend exprimable.
  *
  * ⚠️ **Pas d'onglet fantôme.** La règle tient toujours : `TABS` liste ce qui est
  * réellement rendu, la barre n'affiche que lui, et un onglet retiré ne doit
  * laisser aucune UI orpheline (correctif ef55abe3). Le troisième onglet
- * n'apparaît ici que parce que son partiel EXISTE — jusqu'à la story 62.6, ce
- * docblock disait le contraire, et il a été réécrit avec le code plutôt qu'après.
+ * n'apparaît ici que parce que son partiel EXISTE.
  *
  * Sécurité : `can:server.admin` sur la route + garde `mount()` — `server.admin`
- * SEUL pour toute l'administration de l'Epic 62 (Q4 = A, décision Henri
- * 2026-08-08). Aucune permission Spatie nouvelle.
+ * SEUL pour toute l'administration des groupes.
+ * Aucune permission Spatie nouvelle.
  */
 new #[Title('Groupes & droits')] class extends Component {
     #[Url(keep: true)]

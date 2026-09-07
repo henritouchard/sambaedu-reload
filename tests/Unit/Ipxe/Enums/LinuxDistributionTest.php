@@ -9,7 +9,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 3.4 — AC1.2 / T1.2.
+ * T1.2.
  *
  * Tests unitaires de la whitelist enum {@see LinuxDistribution}.
  */

@@ -11,14 +11,14 @@ use App\Services\Filesystem\Plan\GroupNameNormalizer;
 use App\Services\Filesystem\Plan\PlanNode;
 
 /**
- * Story 60.4 → 60.5 — la GARDE DE CHEMIN du serveur de fichiers historique,
+ * → — la GARDE DE CHEMIN du serveur de fichiers historique,
  * descendue sous la ligne de contrat.
  *
  * **Pourquoi elle vit ici.** Un chemin absolu est un savoir de backend : le plan
  * ne porte que des chemins RELATIFS et une ZONE logique. Tant que la garde vivait
  * dans l'orchestrateur, celui-ci connaissait la racine réelle — et la coupe passait
  * donc APRÈS la dérivation des chemins concrets, c'est-à-dire au mauvais endroit.
- * Le code est repris à l'identique de la garde 34.1
+ * Le code est repris à l'identique de la garde
  * (`NetworkShareService::validateSharePath`, elle-même calquée 1:1 sur
  * `AclService::validatePath`) : **triple garde conservée** — motif anti-traversal
  * ici, `escapeshellarg` chez l'exécutant, liste blanche `sudo` côté système.
@@ -29,14 +29,13 @@ use App\Services\Filesystem\Plan\PlanNode;
  * profondeur du plan ({@see MAX_PLAN_DEPTH}), et elle reste une borne — pas une
  * porte ouverte : au delà, le chemin est refusé comme avant.
  *
- * ---------------------------------------------------------------------------
- * **STORY 60.5 — DEUX ANCRES, UNE SEULE TABLE, ET AUCUN CHEMIN EN DEHORS.**
+ * **DEUX ANCRES, UNE SEULE TABLE, ET AUCUN CHEMIN EN DEHORS.**
  *
  * SE5 gouverne désormais deux zones disjointes : les répertoires réseau nommés et
  * les arbres de classe de la chaîne générique. La garde connaît une table FERMÉE
  * {@see ROOT_CONFIG_KEYS} qui traduit le jeton de zone porté par le plan en racine
  * réelle — et RIEN d'autre ne fabrique de racine. C'est ce qui rend vraie, par
- * construction et non par précaution, la promesse centrale de la story :
+ * construction et non par précaution, la promesse centrale de ce garde :
  *
  *   **aucune combinaison d'entrées ne fait produire ici un chemin sous l'arbre de
  *   classe HISTORIQUE.** Cette racine-là n'a pas de jeton ; elle n'est donc pas
@@ -58,7 +57,7 @@ final class PosixPathGuard
     public static string $sharesRoot = '/var/sambaedu/Partages';
 
     /**
-     * Racine canonique des arbres de classe de la chaîne générique (story 60.5).
+     * Racine canonique des arbres de classe de la chaîne générique.
      *
      * Voisine de l'arbre historique et strictement DISTINCTE de lui. Le repli
      * statique recopie le défaut de la configuration, pour la même raison qu'au
@@ -137,7 +136,7 @@ final class PosixPathGuard
      * valeur LIVRÉE — ce qui ne dit rien de la valeur qu'une instance porte
      * réellement. Un copier-coller malheureux dans le fichier d'environnement
      * suffirait à faire écrire SE5 dans l'arbre historique, en silence, alors que
-     * la story entière repose sur l'idée qu'il n'existe aucun chemin pour cela.
+     * tout ce garde repose sur l'idée qu'il n'existe aucun chemin pour cela.
      *
      * On refuse donc de servir une racine qui coïncide, avec un message qui dit
      * quoi corriger. Bruyant vaut mieux que faux.
@@ -280,7 +279,7 @@ final class PosixPathGuard
      * **Le suffixe est une DATE, et pas l'identifiant de la ligne SQL.** La
      * séquence historique suffixait par l'identifiant du partage ; cet
      * identifiant n'appartient pas au plan, et l'y faire entrer casserait la
-     * portabilité que tout l'epic construit. La date d'archivage rend la cible
+     * portabilité que tout le plan construit. La date d'archivage rend la cible
      * unique, lisible pour l'exploitant, et n'imbrique pas deux archivages
      * successifs l'un dans l'autre — ce que le suffixe stable, lui, faisait.
      */

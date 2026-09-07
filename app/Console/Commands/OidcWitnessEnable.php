@@ -13,19 +13,19 @@ use InvalidArgumentException;
 use Throwable;
 
 /**
- * Story 55.3 — `php artisan oidc:witness:enable [--rotate]`
+ * `php artisan oidc:witness:enable [--rotate]`
  *
  * Provisionne l'app-témoin SSO : déclare son client confidentiel au registre
  * OIDC et pose son fichier de credentials. **Doctrine ops du projet** : toute
  * opération multi-instance est une commande artisan IDEMPOTENTE, jamais une
  * procédure manuelle à rejouer (patron `oidc:keys:init` / `auth:ca:init`).
  *
- * Ce que cette commande préfigure : en Epic 56, c'est l'INSTALLATION d'une
+ * Ce que cette commande préfigure : en, c'est l'INSTALLATION d'une
  * extension `app` qui fera ces deux gestes — déclarer le client, poser sa
  * configuration chez elle. Le témoin le fait à la main, une fois, pour que le
  * contrat soit démontré avant d'être industrialisé.
  *
- * ⚠️ **NFR3 — le secret n'est JAMAIS affiché ni journalisé.** Contrairement à
+ * ⚠️ **Le secret n'est JAMAIS affiché ni journalisé.** Contrairement à
  * `oidc:client:register`, dont l'appelant humain doit recopier le secret dans
  * une configuration tierce, ici le destinataire du secret est un FICHIER que la
  * commande écrit elle-même (0600). L'afficher n'aurait aucune utilité et
@@ -45,7 +45,7 @@ class OidcWitnessEnable extends Command
     public const REDIRECT_URI = '/sso-demo/callback';
 
     /**
-     * Story 56.4 — Les scopes ACCORDÉS au témoin, DÉRIVÉS de ce qu'il demande.
+     * Les scopes ACCORDÉS au témoin, DÉRIVÉS de ce qu'il demande.
      *
      * `config('oidc.witness.scope')` moins `openid` (plancher du protocole,
      * jamais accordé explicitement) : le témoin obtient exactement ce que sa
@@ -96,7 +96,7 @@ class OidcWitnessEnable extends Command
         $existing = WitnessCredentials::load();
         $rotate = (bool) $this->option('rotate');
 
-        // ── No-op signalé ────────────────────────────────────────────────
+        // No-op signalé
         if ($existing !== null && ! $rotate) {
             if ($registry->findEnabledByClientId($existing->clientId) !== null) {
                 $this->info('App-témoin déjà provisionnée — aucune action.');
@@ -121,7 +121,7 @@ class OidcWitnessEnable extends Command
             return 1;
         }
 
-        // ── Rotation : on révoque AVANT de réenregistrer ─────────────────
+        // Rotation : on révoque AVANT de réenregistrer
         if ($rotate && $existing !== null) {
             $revoked = $registry->revoke($existing->clientId);
 
@@ -130,7 +130,7 @@ class OidcWitnessEnable extends Command
                 : 'Ancien client déjà révoqué ou inconnu : ' . $existing->clientId);
         }
 
-        // ── Enregistrement ───────────────────────────────────────────────
+        // Enregistrement
         try {
             $result = $registry->register(
                 self::CLIENT_NAME,
@@ -161,7 +161,7 @@ class OidcWitnessEnable extends Command
             $credentials->write();
         } catch (Throwable $e) {
             // Le client est déclaré mais son secret n'a pas pu être posé : il
-            // est irrécupérable (NFR3). On révoque pour ne pas laisser un
+            // est irrécupérable. On révoque pour ne pas laisser un
             // client fantôme au registre.
             $registry->revoke($result['client_id']);
             $this->error('Écriture du fichier de credentials impossible — client révoqué : ' . $e->getMessage());
@@ -189,7 +189,7 @@ class OidcWitnessEnable extends Command
         $this->line('issuer       : ' . $credentials->issuer);
         $this->line('credentials  : ' . WitnessCredentials::path() . ' (0600, ' . $this->ownerOf(WitnessCredentials::path()) . ')');
         $this->line('');
-        $this->warn('Le client_secret n\'est PAS affiché : il n\'existe que dans ce fichier (NFR3).');
+        $this->warn('Le client_secret n\'est PAS affiché : il n\'existe que dans ce fichier.');
         $this->line('');
         $this->info('Reste à faire pour que la tuile apparaisse :');
         $this->line('  1. php artisan db:seed --class=BundledExtensionSeeder --force');

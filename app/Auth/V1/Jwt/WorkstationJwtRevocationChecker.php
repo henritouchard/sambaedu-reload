@@ -12,8 +12,6 @@ use Illuminate\Support\Facades\Cache;
 use Throwable;
 
 /**
- * Story 16.10 — D4.
- *
  * Vérifie si un `jti` est révoqué via une double couche :
  *
  *  1. Cache APCu (`Cache::store('apc')->get('jwt:revoked:<jti>')`,
@@ -41,7 +39,7 @@ class WorkstationJwtRevocationChecker
     /**
      * Vérifie si un JWT est révoqué.
      *
-     * Deux checks effectués (Q3 review 16.10 — révocation par workstation_uuid) :
+     * Deux checks effectués :
      *
      *  1. **Check par `jti`** (legacy) : la row `(jti=$jti)` existe ?
      *  2. **Check workstation-wide** : si `$workstationUuid` et `$iat` fournis, il existe
@@ -186,7 +184,7 @@ class WorkstationJwtRevocationChecker
     }
 
     /**
-     * Push une révocation workstation-wide dans le cache (Q3 review 16.10).
+     * Push une révocation workstation-wide dans le cache.
      * Stocke le timestamp `revoked_at` sous la clé `jwt:revoked_ws:<uuid>` ;
      * le checker invalide tous les JWT de ce poste dont `iat <= revoked_at`.
      */

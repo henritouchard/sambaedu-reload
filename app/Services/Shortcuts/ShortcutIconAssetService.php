@@ -7,7 +7,7 @@ namespace App\Services\Shortcuts;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Content-adressage des icônes UPLOADÉES de raccourcis (Story 27.7, AC1).
+ * Content-adressage des icônes UPLOADÉES de raccourcis.
  *
  * Un `.ico` déjà produit par `ImageManagerService` (name-addressed
  * `<name>.ico` dans `$iconsPath` — PRÉSERVÉ pour l'UI/legacy) est ÉGALEMENT
@@ -18,9 +18,9 @@ use Illuminate\Support\Facades\Log;
  *
  * Le checksum est calculé ICI (à l'upload / au backfill) et persisté en base
  * sur `shortcuts.icon_asset`/`icon_checksum` : le provider ne fait qu'une
- * lecture de colonne (zéro hash au render — invariant perf, piège n° 2).
+ * lecture de colonne : zéro hash au render.
  *
- * GARDE-FOU SÉCURITÉ (piège n° 1, n° 3) : `<sha>.ico` ne sort JAMAIS du
+ * GARDE-FOU SÉCURITÉ : `<sha>.ico` ne sort JAMAIS du
  * `served_path` — le filename est entièrement dérivé du contenu (hash hex),
  * jamais du nom utilisateur (aucun `..`/séparateur possible).
  */

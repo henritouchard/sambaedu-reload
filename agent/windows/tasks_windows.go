@@ -7,29 +7,27 @@ import (
 	"syscall"
 )
 
-// Tâches planifiées at-logon du sous-système compagnon (Story 24.6,
-// décision n° 3) — enregistrées par `agent.exe install`, supprimées par
-// `uninstall` :
+// Tâches planifiées at-logon du sous-système compagnon — enregistrées par
+// `agent.exe install`, supprimées par `uninstall` :
 //
 //   - SambaEduAgent-SessionFetch : principal SYSTEM (S-1-5-18, seul
 //     détenteur du token), `agent.exe session-fetch`, ExecutionTimeLimit
 //     10 min (bornée par les timeouts HTTP — 30 s/requête, plusieurs
-//     sessions + réessais, review 24.3 #8) ;
+//     sessions + réessais) ;
 //   - SambaEduAgent-SessionCompanion : principal groupe BUILTIN\Users
 //     (S-1-5-32-545, traduit par API — jamais de nom localisé en dur),
 //     `agent.exe companion`, SANS limite d'exécution — le compagnon est
-//     RÉSIDENT (boucle 24.4 : poll mtime + re-test périodique), une limite
-//     le tuerait après la première passe (piège 24.4 n° 9). Le processus
+//     RÉSIDENT (boucle : poll mtime + re-test périodique), une limite
+//     le tuerait après la première passe. Le processus
 //     meurt au logoff ; MultipleInstances IgnoreNew empêche le doublon.
 //
 // Implémentation : shell-out `powershell Register-ScheduledTask`
-// (échappatoire EXPLICITEMENT admise par l'addendum architecture — le Task
-// Scheduler natif est du COM, exclu par la règle Rust/COM-WinRT, et
-// schtasks.exe gère mal les principals de groupe). Idempotent : unregister
-// si présentes — les tâches PS HOMONYMES héritées du spike 24.3 (poste lab
-// ws 49) sont désenregistrées par la même voie (piège n° 21).
+// (échappatoire assumée — le Task Scheduler natif est du COM, et schtasks.exe
+// gère mal les principals de groupe). Idempotent : chaque tâche est
+// désenregistrée si elle existe avant d'être recréée, de sorte qu'une tâche
+// HOMONYME posée autrement disparaît par la même voie.
 //
-// NFR1 : déclencheur At log on = tâches ASYNCHRONES, en parallèle de
+// Déclencheur At log on = tâches ASYNCHRONES, en parallèle de
 // l'ouverture de session — rien dans le chemin synchrone du logon (jamais
 // Winlogon/Userinit/GPO logon script).
 

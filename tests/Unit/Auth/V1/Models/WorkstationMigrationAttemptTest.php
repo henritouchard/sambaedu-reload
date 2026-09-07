@@ -11,7 +11,6 @@ use Tests\Concerns\IssuesWorkstationJwt;
 use Tests\TestCase;
 
 /**
- * Story 16.11 — AC6.2 / AC8.1.
  *
  * Tests modèle `WorkstationMigrationAttempt` — scopes + truncate mutator.
  */

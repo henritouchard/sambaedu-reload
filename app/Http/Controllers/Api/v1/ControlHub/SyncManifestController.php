@@ -27,14 +27,12 @@ class SyncManifestController extends Controller
                 'task_type' => 'required|string|in:sync_manifest',
                 'manifest_version' => 'required|string',
                 'payload' => 'required|array',
-                // Shortcuts
                 'payload.shortcuts' => 'nullable|array',
                 'payload.shortcuts.*.controlhub_id' => 'required|uuid',
                 'payload.shortcuts.*.controlhub_version' => 'nullable|date',
                 'payload.shortcuts.*.name' => 'required|string|max:255',
                 'payload.shortcuts.*.owner' => 'nullable|string|max:255',
                 'payload.shortcuts.*.place' => 'nullable|string|in:desktop,startup,taskbar',
-                // App profiles
                 'payload.app_profiles' => 'nullable|array',
                 'payload.app_profiles.*.controlhub_id' => 'required|uuid',
                 'payload.app_profiles.*.controlhub_version' => 'nullable|date',

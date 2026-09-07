@@ -10,17 +10,17 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 1bis.18f — Tests unitaires du service RoamingProfileService.
+ * .18f — Tests unitaires du service RoamingProfileService.
  *
  * Couvre :
  *  - getExclusions early-return graceful quand la GPO `redirections` est
  *    introuvable (shim 18g host-side retourne false ou vide).
  *  - generatePurgeScript byte-for-byte avec exclusions seedées.
  *  - generatePurgeScript skip + log warning sur valeur path-traversal `../`.
- *  - VALUE_REGEX rejette `..`, `;`, `$()`, etc.
+ *  - VALUE_REGEX rejette `..`, `;`, `$`, etc.
  *  - setExclusions filtre silencieusement les valeurs malformées avant écriture.
  *
- * Pas de mock du legacy (instruction Henri) : on appelle réellement le service.
+ * Pas de mock du legacy : on appelle réellement le service.
  * Les fonctions legacy (`search_ad`, `read_gpo_sysvol`, etc.) sont chargées par
  * le bootstrap et leurs shims 18g répondent host-side avec des valeurs safe
  * (typiquement `false` ou `[]`).

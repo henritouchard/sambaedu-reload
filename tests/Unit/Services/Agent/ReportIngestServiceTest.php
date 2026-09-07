@@ -15,9 +15,9 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Tests Unit `ReportIngestService` — Story 24.1 (AC1, AC2, AC3, AC5).
+ * Tests Unit `ReportIngestService`.
  *
- * Matrice COMPLÈTE de la règle d'événement (décision n° 2), upsert borné,
+ * Matrice COMPLÈTE de la règle d'événement, upsert borné,
  * fraîcheur `reported_at`, flag history, comptes retournés — sans HTTP
  * (le contrat HTTP vit dans `ReportEndpointTest`).
  */
@@ -74,7 +74,7 @@ class ReportIngestServiceTest extends TestCase
         return $this->service->ingest($this->ws, $this->report($items));
     }
 
-    // ── Matrice des événements (décision n° 2) ───────────────────────────
+    // Matrice des événements
 
     #[Test]
     public function first_compliant_report_creates_state_but_no_event(): void
@@ -128,7 +128,7 @@ class ReportIngestServiceTest extends TestCase
     public function compliant_to_compliant_with_changed_hash_creates_no_event_but_updates_hash(): void
     {
         // La cible a bougé et l'agent a convergé silencieusement : pas une
-        // dérive — le hash de la ligne d'état suffit (décision n° 2).
+        // dérive — le hash de la ligne d'état suffit.
         $this->ingest([$this->item('compliant', self::HASH_A)]);
 
         $this->ingest([$this->item('compliant', self::HASH_B)]);
@@ -144,7 +144,7 @@ class ReportIngestServiceTest extends TestCase
 
         $this->ingest([$this->item('compliant')]);
 
-        // Dérive CORRIGÉE = un changement (D3) — même hash, statut changé.
+        // Dérive CORRIGÉE = un changement — même hash, statut changé.
         self::assertSame(2, AgentReportEvent::query()->count());
         $corrected = AgentReportEvent::query()->orderByDesc('id')->first();
         self::assertSame(AgentResourceStatus::Drift, $corrected->previous_status);
@@ -168,7 +168,7 @@ class ReportIngestServiceTest extends TestCase
         self::assertSame('apply KO', $last->detail);
     }
 
-    // ── Upsert borné + détail ─────────────────────────────────────────────
+    // Upsert borné + détail
 
     #[Test]
     public function state_is_upserted_per_workstation_and_type_never_duplicated(): void
@@ -209,7 +209,7 @@ class ReportIngestServiceTest extends TestCase
         self::assertSame(1, AgentResourceState::query()->where('workstation_id', $other->id)->count());
     }
 
-    // ── Fix fantômes : nettoyage level-triggered des types session ─────────
+    // Fix fantômes : nettoyage level-triggered des types session
 
     #[Test]
     public function session_scoped_row_absent_from_next_report_is_pruned(): void
@@ -258,7 +258,7 @@ class ReportIngestServiceTest extends TestCase
         self::assertSame(3, AgentResourceState::query()->count(), 'types session tous présents = aucun purgé');
     }
 
-    // ── Comptes retournés ─────────────────────────────────────────────────
+    // Comptes retournés
 
     #[Test]
     public function ingest_returns_counts_for_every_status_with_zero_defaults(): void
@@ -285,7 +285,7 @@ class ReportIngestServiceTest extends TestCase
         self::assertSame(0, AgentReportEvent::query()->count());
     }
 
-    // ── Flag history (AC3) ────────────────────────────────────────────────
+    // Flag history
 
     #[Test]
     public function history_is_skipped_when_flag_off_and_appended_when_on(): void
@@ -300,7 +300,7 @@ class ReportIngestServiceTest extends TestCase
         $history = AgentReportHistory::query()->sole();
         self::assertSame($this->ws->id, $history->workstation_id);
         // assertEquals (==) et non assertSame : jsonb Postgres réordonne les
-        // clés — l'égalité de contenu suffit (review 24.1 #7).
+        // clés — l'égalité de contenu suffit.
         self::assertEquals($report, $history->payload, 'payload validé complet conservé');
     }
 

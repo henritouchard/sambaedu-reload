@@ -20,7 +20,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 8.1 — Service métier de gestion DHCP (FR20 + FR22).
+ * Service métier de gestion DHCP.
  *
  * Encapsule :
  *  - validations (MAC, IP, name) ;
@@ -28,10 +28,10 @@ use Illuminate\Support\Facades\Log;
  *    reload service) ;
  *  - parsing `/var/lib/dhcp/dhcpd.leases` ;
  *  - statut du service `isc-dhcp-server` ;
- *  - import depuis le fichier legacy `reservations.inc` (T8b / AC9).
+ * - import depuis le fichier legacy `reservations.inc` (T8b /).
  *
- * Pattern shellout aligné `App\Services\Print\CupsPrinterService` (Story 6.1)
- * et `App\Services\Filesystem\XfsQuotaService` (Story 5.1a) :
+ * Pattern shellout aligné `App\Services\Print\CupsPrinterService`
+ * et `App\Services\Filesystem\XfsQuotaService` :
  *  - `escapeshellarg()` systématique sur tout input user-controlled ;
  *  - capture stdout / stderr / returnCode → `DhcpCommandException` typée ;
  *  - préfixe logs `DhcpService:` (grep opérateurs), channel `network`.
@@ -40,7 +40,7 @@ use Illuminate\Support\Facades\Log;
  * `exportReservationsFile + reloadService` pour neutraliser R2 (deux
  * mutations simultanées → fichier `reservations.inc` corrompu).
  *
- * Mode dégradé (AC6) : un échec de reload N'annule PAS la mutation DB —
+ * Mode dégradé : un échec de reload N'annule PAS la mutation DB
  * `createReservation` capture `DhcpCommandException` après commit et la
  * propage à l'appelant qui choisit le toast (le service ne rollback pas la
  * réservation, elle reste persistée pour reload manuel ultérieur).
@@ -57,10 +57,6 @@ class DhcpService
         private readonly CommandRunner $commandRunner,
     ) {
     }
-
-    // ========================================================================
-    // VALIDATION (defense in depth — utilisable côté UI Livewire ET service)
-    // ========================================================================
 
     /**
      * @throws DhcpValidationException si nom non conforme.
@@ -113,10 +109,6 @@ class DhcpService
             throw new DhcpValidationException('Format IP invalide (IPv4 attendu, ex. 10.0.0.50).');
         }
     }
-
-    // ========================================================================
-    // CRUD réservation (mutation = lock + DB + export fichier + reload)
-    // ========================================================================
 
     /**
      * @param  array{name:string,mac:string,ip:string,workstation_id?:int|null,description?:string|null,source?:string}  $attrs
@@ -312,7 +304,7 @@ class DhcpService
     /**
      * Pipeline post-mutation : export atomique du fichier conf + reload.
      * Capture l'éventuel `DhcpCommandException` et le rapropage à l'appelant
-     * (UI Livewire) — la mutation DB n'est PAS rollbackée (AC6 : ne jamais
+     * (UI Livewire) — la mutation DB n'est PAS rollbackée ( : ne jamais
      * perdre une réservation).
      *
      * @param  array<string,mixed>  $extraLogCtx
@@ -323,7 +315,7 @@ class DhcpService
 
         // `block($timeout)` lève `LockTimeoutException` après expiration —
         // il ne retourne jamais `false`. On wrappe pour remonter une
-        // exception métier claire (cf. review code 8.1 #1).
+        // exception métier claire.
         try {
             $lock->block(15);
         } catch (LockTimeoutException $e) {
@@ -350,10 +342,6 @@ class DhcpService
             optional($lock)->release();
         }
     }
-
-    // ========================================================================
-    // EXPORT / RELOAD
-    // ========================================================================
 
     /**
      * Génère et écrit atomiquement `/etc/sambaedu/reservations.inc` à partir
@@ -389,7 +377,7 @@ class DhcpService
     {
         $lines = [];
         $lines[] = '# /etc/sambaedu/reservations.inc';
-        $lines[] = '# Fichier généré automatiquement par SambaEdu-Reload (Story 8.1).';
+        $lines[] = '# Fichier généré automatiquement par SambaEdu-Reload.';
         $lines[] = '# NE PAS éditer manuellement — toute modification sera écrasée au prochain';
         $lines[] = '# reload (mutation depuis /app/network/dhcp).';
         $lines[] = '# Source de vérité : table SQL dhcp_reservations.';
@@ -441,7 +429,7 @@ class DhcpService
      * is-active`.
      *
      * Best-effort : ne lève jamais — l'appelant utilise `active=false` pour
-     * afficher la bannière de mode dégradé (AC6).
+     * afficher la bannière de mode dégradé.
      *
      * @return array{active:bool, details:string}
      */
@@ -449,7 +437,7 @@ class DhcpService
     {
         // Cache 15s pour éviter de spammer `sudo systemctl is-active` à
         // chaque cycle Livewire (`rendering()` est appelé sur tout update —
-        // recherche debounced, ouverture modale, etc.). Cf. review code 8.1 #4.
+        // recherche debounced, ouverture modale, etc.).
         return Cache::remember('dhcp.service_status', 15, function (): array {
             $service = (string) config('sambaedu.dhcp.service_name', 'isc-dhcp-server.service');
             $command = 'sudo systemctl is-active ' . escapeshellarg($service);
@@ -481,10 +469,6 @@ class DhcpService
         }
     }
 
-    // ========================================================================
-    // PARSING LEASES
-    // ========================================================================
-
     /**
      * Parse `/var/lib/dhcp/dhcpd.leases` (format ISC DHCP standard).
      *
@@ -492,12 +476,12 @@ class DhcpService
      *  - binding state ∈ {`active`, `free`} uniquement ;
      *  - déduplication : on garde le DERNIER bloc rencontré par IP ;
      *  - exclusion : on retire les baux dont l'IP est déjà réservée (pour
-     *    éviter d'afficher comme « bail dynamique » une IP de réservation —
+     *  éviter d'afficher comme « bail dynamique » une IP de réservation
      *    cf. `list_dhcp_leases` legacy ldap.inc.php:5044).
      *
      * Tolérance : si le fichier est introuvable / illisible, retourne une
      * collection vide (l'UI affiche « Lecture des baux indisponible »
-     * — AC6 mode dégradé). Aucune exception n'est levée pour ne pas
+     * Mode dégradé). Aucune exception n'est levée pour ne pas
      * empêcher l'affichage de la page.
      *
      * @return Collection<int,array{ip:string,mac:string,hostname:?string,state:string,ends_at:?string}>
@@ -548,7 +532,7 @@ class DhcpService
             $ip = $m[1][0];
             $openBracePos = $m[0][1] + strlen($m[0][0]) - 1; // position du `{`
 
-            // Review code 8.1 #10 — scan caractère par caractère avec compteur
+            // Scan caractère par caractère avec compteur
             // d'imbrication pour trouver la `}` fermante au niveau 0. Le simple
             // `strpos('}', ...)` casse dès qu'une option ISC dans le body
             // contient des accolades (rare mais possible : option blocks).
@@ -615,19 +599,15 @@ class DhcpService
         return array_values($blocks);
     }
 
-    // ========================================================================
-    // MIGRATION LEGACY — T8b / AC9
-    // ========================================================================
-
     /**
-     * Story 8.1 / T8b — Importe le fichier legacy `/etc/sambaedu/reservations.inc`
+     * T8b — Importe le fichier legacy `/etc/sambaedu/reservations.inc`
      * dans la table `dhcp_reservations` (greffé sur l'étape 10 de `/sync-from-ad`).
      *
      * Sémantique :
      *  - lecture seule du fichier (aucun reload DHCP déclenché) ;
      *  - upsert par MAC en priorité, sinon par name ;
      *  - `source='legacy-migration'` uniquement à la création ; les mises à
-     *    jour préservent la source d'origine (AC9 — ne pas écraser
+     * jour préservent la source d'origine (ne pas écraser
      *    `manual`/`import` plus spécifiques) ;
      *  - tolérance : commentaires `#` / `//`, lignes vides, blocs mal formés
      *    sont ignorés / comptabilisés en erreurs sans avorter l'import ;
@@ -681,7 +661,7 @@ class DhcpService
             $logger('info', 'Aucun bloc `host {…}` valide trouvé');
         }
 
-        // AC9 / review code 8.1 #5 : second pass pour détecter les `host <cn> {`
+        // Second pass pour détecter les `host <cn> {`
         // ORPHELINS (sans bloc complet correspondant — accolade fermante
         // manquante, point-virgule oublié, etc.) afin de les pousser en
         // `errors[]` plutôt que de les skipper silencieusement.
@@ -751,7 +731,7 @@ class DhcpService
 
             // Upsert : recherche séquentielle déterministe — MAC d'abord
             // (clé physique stable), puis name (cn legacy unique). Pas d'IP
-            // ici : l'unicité legacy est MAC + name. Cf. review code 8.1 #3.
+            // ici : l'unicité legacy est MAC + name.
             $existing = DhcpReservation::query()->where('mac', $mac)->first()
                 ?? DhcpReservation::query()->where('name', $name)->first();
 
@@ -767,7 +747,7 @@ class DhcpService
                     ]);
                     $stats['created']++;
                 } else {
-                    // Préservation de la source d'origine (AC9).
+                    // Préservation de la source d'origine.
                     $existing->fill([
                         'name' => $name,
                         'mac' => $mac,
@@ -806,13 +786,9 @@ class DhcpService
         return $line ?: 1;
     }
 
-    // ========================================================================
-    // HELPERS internes
-    // ========================================================================
-
     private function logChannel(): string
     {
-        // Channel `network` dédié (Story 8.1 T4). On laisse Laravel se
+        // Channel `network` dédié ( T4). On laisse Laravel se
         // rabattre sur le default si le channel n'existe pas (cohérent avec
         // les tests SQLite qui n'ont pas forcément config/logging à jour).
         return config('logging.channels.network') !== null ? 'network' : config('logging.default', 'single');

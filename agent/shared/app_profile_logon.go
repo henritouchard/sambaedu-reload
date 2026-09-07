@@ -6,14 +6,14 @@ import (
 )
 
 // Logique PORTABLE de la pose du lien `app_profile` par le SERVICE SYSTEM au
-// logon (Story 36.5, amendement final — conception ARRÊTÉE Henri 2026-07-21).
+// logon.
 //
 // POURQUOI SYSTEM POSE LE LIEN. Le lien de dossier vers UNC (report SE4
 // `mklink /D`, `applications.inc.php:597`) exige `SeCreateSymbolicLinkPrivilege`,
 // que l'utilisateur standard n'a pas et qu'AUCUN canal SE5 ne peut lui accorder
-// (le mécanisme `privilege` 35.6 est `SeDeny*`-only par conception). Le service
+// (le mécanisme `privilege` est `SeDeny*`-only par conception). Le service
 // LocalSystem, LUI, possède ce privilège nativement. Sur le modèle EXACT de
-// l'overlay (Story 27.1bis, `overlay_logon_windows.go`), SYSTEM pose donc le
+// L'overlay (`overlay_logon_windows.go`), SYSTEM pose donc le
 // LIEN au `WTS_SESSION_LOGON`, dans le profil de la session résolu via le token
 // WTS — le COMPAGNON garde tout le reste (dossier serveur, marqueur, user.js,
 // paire d'ini ; contexte user, non privilégié).
@@ -36,7 +36,7 @@ import (
 // agent/windows/app_profile_logon_windows.go (non testable hôte, comme l'overlay).
 
 // SubstituteServerTokens substitue les DEUX tokens serveur `<user>` et `<se4fs>`
-// d'un chemin — CŒUR PUR unique de la substitution (contrainte 36.5 : un SEUL
+// d'un chemin — CŒUR PUR unique de la substitution (contrainte : un SEUL
 // helper). Le compagnon l'appelle avec les valeurs tirées de son ENVIRONNEMENT
 // (substituteTokens, agent/windows) ; le service SYSTEM l'appelle avec l'identité
 // de la SESSION (login WTS) et le SE4FS machine — car sous SYSTEM l'environnement
@@ -111,7 +111,7 @@ func ValidateAppProfileBounds(link, profileDir, target string) error {
 // "\\\\"` ne suffit pas : les syntaxes extended-length (`\\?\C:\…`) et device
 // (`\\.\PhysicalDrive0`) commencent aussi par `\\` mais désignent des chemins
 // LOCAUX — les accepter contournerait l'invariant « un lien de profil ne pointe
-// QUE vers le home réseau » (contre-review 36.5, P1). On exige donc un premier
+// QUE vers le home réseau » (contre-review, P1). On exige donc un premier
 // segment hôte qui ne soit ni `?` ni `.`, suivi d'un partage non vide.
 func isUncPath(target string) bool {
 	if !strings.HasPrefix(target, `\\`) {

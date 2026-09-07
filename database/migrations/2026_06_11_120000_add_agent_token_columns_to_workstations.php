@@ -7,21 +7,19 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 23.2 — AC1/AC3/AC4.
  *
  * Ajoute les colonnes `agent_*` à `workstations` — couche d'authentification
- * du canal agent desired-state (Epic 23). Le token vit SUR la ligne du poste
+ * du canal agent desired-state. Le token vit SUR la ligne du poste
  * (pas de table dédiée) : la suppression du poste révoque par construction
- * (AC6).
  *
  *  - `agent_token_hash` VARCHAR(64) NULL UNIQUE — sha256 hex du bearer
  *    courant (jamais de clair persisté, iso `WorkstationRefreshToken`).
  *  - `agent_previous_token_hash` VARCHAR(64) NULL + index — fenêtre de grâce
- *    D5 : l'ancien token reste valide jusqu'au premier usage du nouveau.
+ *    l'ancien token reste valide jusqu'au premier usage du nouveau.
  *  - `agent_token_rotated_at` TIMESTAMP NULL — base du calcul d'échéance de
  *    rotation (`config('agent.token_rotation_days')`).
  *  - `agent_last_checkin_at` TIMESTAMP NULL — maj à chaque requête
- *    authentifiée (y compris quarantaine, FR15).
+ *    authentifiée (y compris quarantaine).
  *  - `agent_quarantined_at` TIMESTAMP NULL — quarantaine anti-clonage
  *    (403 AGENT_QUARANTINED tant que non levée).
  *

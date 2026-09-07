@@ -15,18 +15,18 @@ use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 /**
- * Story 27.1bis — `GET /api/v1/agent/tools/{filename}`
+ * `GET /api/v1/agent/tools/{filename}`
  * (route `agent.v1.tools.download`).
  *
  * Serving binaire des artefacts d'OUTILS DE RENDU posés par l'agent au
- * bootstrap (décision D8) — aujourd'hui le seul : l'archive PORTABLE de
+ * bootstrap — aujourd'hui le seul : l'archive PORTABLE de
  * Rainmeter (zéro registre, GPLv2). DÉLIBÉRÉMENT séparé de
  * {@see ReleaseController} : `agent_releases` est mono-artefact réservé au
- * BINAIRE agent + auto-update (Story 25.2, pattern filename
+ * BINAIRE agent + auto-update (pattern filename
  * `^sambaedu-agent-…\.exe$`) — un outil tiers (`.zip` au nom différent) y
  * serait rejeté. La même séparation vaut côté storage : `storage/agent/tools/`
- * (≠ `storage/agent/releases/`). PAS de rings/versioning d'Epic 25 (Q3 =
- * mono-version : Rainmeter ne bouge quasi jamais).
+ * (≠ `storage/agent/releases/`). PAS de rings ni de versioning ici : un seul
+ * artefact à la fois (Rainmeter ne bouge quasi jamais).
  *
  * Controller mince, iso `AssetController`/`ReleaseController` :
  *   - pattern de filename STRICT (`sambaedu-rainmeter-…\.zip`) AVANT tout
@@ -63,7 +63,7 @@ class ToolController extends Controller
         }
 
         $base = realpath((string) config('agent.tools_path'));
-        // Normalise un éventuel séparateur final (#1) : sur certaines configs
+        // Normalise un éventuel séparateur final : sur certaines configs
         // (ou la racine `/` en tests Linux), realpath peut conserver un
         // séparateur terminal — le retirer garantit que la comparaison
         // `str_starts_with($path, $base . DIRECTORY_SEPARATOR)` ci-dessous ne
@@ -72,7 +72,7 @@ class ToolController extends Controller
             $base = rtrim($base, DIRECTORY_SEPARATOR);
         }
         if ($base === false || $base === '') {
-            // Signal ops distinct (iso review 25.1 #8) : répertoire d'outils
+            // Signal ops distinct : répertoire d'outils
             // absent/illisible ≠ artefact inconnu — un parc entier en 404 doit
             // pointer la config, pas un fichier manquant. Réponse client
             // inchangée (404 indistinct, zéro oracle).
@@ -104,14 +104,14 @@ class ToolController extends Controller
     }
 
     /**
-     * Story 25.6 (D8(b)) — MANIFEST tool/skin DÉDIÉ
+     * MANIFEST tool/skin DÉDIÉ
      * (route `agent.v1.tools.manifest`). Iso `ReleaseController::manifest()` :
      * wrapper SE5 `{success, …}`, JAMAIS un golden item desired-state (un outil
      * de rendu n'est pas une ressource StateItem — le golden overlay/state
      * reste INCHANGÉ). Expose l'outil ACTIF `{key, filename, sha256, size}` (le
-     * SHA-256 du portable que l'agent vérifie AVANT extraction — D6, remplace
-     * la constante Go figée) et la skin `{filename, sha256}`. Outil absent ou
-     * désactivé → `tool: null` (no-op gracieux côté agent — D4) ; skin
+     * SHA-256 du portable que l'agent vérifie AVANT extraction) et la skin
+     * `{filename, sha256}`. Outil absent ou
+     * désactivé → `tool: null` (no-op gracieux côté agent) ; skin
      * introuvable → `skin: null`.
      */
     public function manifest(Request $request, AgentToolManifestService $manifests): JsonResponse
@@ -121,7 +121,7 @@ class ToolController extends Controller
 
         $manifest = $manifests->manifest();
 
-        // Debug : un par check-in (volume NFR4) — jamais en info.
+        // Debug : un par check-in — jamais en info.
         Log::channel('agent')->debug('[ToolController] agent.tool.manifest_served', [
             'action_type' => 'agent.tool.manifest_served',
             'workstation_id' => $workstation->id,
@@ -133,7 +133,7 @@ class ToolController extends Controller
     }
 
     /**
-     * Story 25.6 (D7) — SERVING de la skin d'overlay Rainmeter
+     * SERVING de la skin d'overlay Rainmeter
      * (route `agent.v1.tools.skin`). PAS d'alias Apache public : la skin n'est
      * pas client-facing comme SYSVOL/wpkg — elle est consommée par l'agent
      * authentifié token (chaîne middleware iso `download()`). Filename FIXE
@@ -188,7 +188,7 @@ class ToolController extends Controller
         Log::channel('agent')->info('[ToolController] agent.tool.download_not_found', [
             'action_type' => 'agent.tool.download_not_found',
             'workstation_id' => $workstation->id,
-            // Input client non authentifié en forme : borné avant log (P5 23.2).
+            // Input client non authentifié en forme : borné avant log (P5).
             'filename' => Str::limit($filename, 128),
         ]);
 

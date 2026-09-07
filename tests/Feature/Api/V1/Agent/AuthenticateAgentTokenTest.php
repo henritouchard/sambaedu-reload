@@ -16,13 +16,13 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Tests Feature `AuthenticateAgentToken` — Story 23.2 (AC1-AC6).
+ * Tests Feature `AuthenticateAgentToken`.
  *
- * Aucun endpoint métier du canal n'existe encore (23.5/24.1) : le middleware
+ * Aucun endpoint métier du canal n'existe encore : le middleware
  * est exercé via une route éphémère déclarée dans le test, derrière l'alias
  * `agent.token` enregistré par `AgentServiceProvider`. La route renvoie l'id
  * du workstation injecté (`agent.workstation`) — vérifie la résolution
- * d'identité par token (AC1).
+ * D'identité par token.
  */
 final class AuthenticateAgentTokenTest extends TestCase
 {
@@ -58,7 +58,7 @@ final class AuthenticateAgentTokenTest extends TestCase
         ], $headers))->getJson(self::ROUTE);
     }
 
-    // ── AC2 — 401 sans oracle ────────────────────────────────────────────
+    // — 401 sans oracle
 
     #[Test]
     public function missing_bearer_returns_401_with_se5_error_format(): void
@@ -100,7 +100,7 @@ final class AuthenticateAgentTokenTest extends TestCase
     #[Test]
     public function deleted_workstation_token_returns_401(): void
     {
-        // AC6 — révocation par construction : les colonnes vivent sur la ligne.
+        // Révocation par construction : les colonnes vivent sur la ligne.
         $ws = Workstation::factory()->create();
         $token = $this->service->issueFor($ws);
         $ws->delete();
@@ -108,7 +108,7 @@ final class AuthenticateAgentTokenTest extends TestCase
         $this->checkin($token)->assertStatus(401);
     }
 
-    // ── AC1 — résolution d'identité + check-in ──────────────────────────
+    // — résolution d'identité + check-in
 
     #[Test]
     public function valid_token_resolves_its_own_workstation_and_stamps_checkin(): void
@@ -127,7 +127,7 @@ final class AuthenticateAgentTokenTest extends TestCase
         self::assertNotNull($ws->refresh()->agent_last_checkin_at);
     }
 
-    // ── AC3 — quarantaine ────────────────────────────────────────────────
+    // — quarantaine
 
     #[Test]
     public function quarantined_workstation_gets_403_but_checkin_is_still_stamped(): void
@@ -143,11 +143,11 @@ final class AuthenticateAgentTokenTest extends TestCase
                 'code' => AuthenticateAgentToken::CODE_QUARANTINED,
             ]);
 
-        // FR15 — le poste poursuit des check-ins légers, il reste visible.
+        // Le poste poursuit des check-ins légers, il reste visible.
         self::assertNotNull($ws->refresh()->agent_last_checkin_at);
     }
 
-    // ── AC4 — rotation à échéance + fenêtre de grâce ─────────────────────
+    // — rotation à échéance + fenêtre de grâce
 
     private function makeRotationDue(Workstation $ws): void
     {
@@ -215,7 +215,7 @@ final class AuthenticateAgentTokenTest extends TestCase
     #[Test]
     public function six_months_old_token_authenticates_and_rotates_instead_of_dying(): void
     {
-        // AC4 — pas d'expiration calendaire sèche : le poste vivant après
+        // Pas d'expiration calendaire sèche : le poste vivant après
         // les vacances se rotate, ne meurt pas.
         $ws = Workstation::factory()->create();
         $token = $this->service->issueFor($ws);
@@ -242,7 +242,7 @@ final class AuthenticateAgentTokenTest extends TestCase
     #[Test]
     public function future_rotated_at_triggers_immediate_rotation(): void
     {
-        // Review 23.2 — snapshot DB restauré / horloge corrigée : un
+        // Review — snapshot DB restauré / horloge corrigée : un
         // `rotated_at` futur figerait le token pour toujours. État
         // incohérent → rotation immédiate, qui repose une date saine.
         $ws = Workstation::factory()->create();
@@ -260,7 +260,7 @@ final class AuthenticateAgentTokenTest extends TestCase
     #[Test]
     public function zero_rotation_days_misconfig_does_not_rotate_every_checkin(): void
     {
-        // Review 23.2 — plancher à 1 jour : AGENT_TOKEN_ROTATION_DAYS=0
+        // Review — plancher à 1 jour : AGENT_TOKEN_ROTATION_DAYS=0
         // (fat-finger) ne doit pas déclencher une rotation par check-in.
         config(['agent.token_rotation_days' => 0]);
         $ws = Workstation::factory()->create();
@@ -271,7 +271,7 @@ final class AuthenticateAgentTokenTest extends TestCase
         self::assertNull($response->headers->get(AuthenticateAgentToken::HEADER_NEW_TOKEN));
     }
 
-    // ── AC5 — anti-clonage ───────────────────────────────────────────────
+    // — anti-clonage
 
     #[Test]
     public function diverging_mac_quarantines_workstation_and_returns_403(): void
@@ -301,7 +301,7 @@ final class AuthenticateAgentTokenTest extends TestCase
     #[Test]
     public function mac_with_dash_separators_is_canonicalized_and_accepted(): void
     {
-        // Review 23.2 — l'agent Windows émettra naturellement le format
+        // Review — l'agent Windows émettra naturellement le format
         // ipconfig `AA-BB-CC-DD-EE-FF` : un mismatch de séparateur ne doit
         // pas quarantainer un poste légitime (comparaison via
         // MacAddressNormalizer::normalize, forme canonique commune).
@@ -317,7 +317,7 @@ final class AuthenticateAgentTokenTest extends TestCase
     #[Test]
     public function unrecognized_mac_format_skips_detection(): void
     {
-        // Review 23.2 — format non parseable ≠ divergence : pas de détection
+        // Review — format non parseable ≠ divergence : pas de détection
         // (iso header absent), pas de fausse quarantaine.
         $ws = Workstation::factory()->create(['mac' => 'aa:bb:cc:dd:ee:ff']);
         $token = $this->service->issueFor($ws);
@@ -353,7 +353,7 @@ final class AuthenticateAgentTokenTest extends TestCase
         self::assertFalse($ws->refresh()->isAgentQuarantined());
     }
 
-    // ── AC6 — révocation ────────────────────────────────────────────────
+    // — révocation
 
     #[Test]
     public function revocation_makes_next_call_return_401(): void

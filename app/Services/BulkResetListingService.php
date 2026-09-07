@@ -17,11 +17,11 @@ use Illuminate\Support\Str;
  *   - le listing contient des mots de passe en clair (nécessaires au téléchargement
  *     PDF/CSV par l'opérateur), donc il ne doit JAMAIS être stocké en session PHP
  *     (cf. feedback_session_leak_tests.md) ni sur disque.
- *   - stocké chiffré at-rest via {@see Crypt::encrypt()} dans le cache (Redis
+ *  - stocké chiffré at-rest via {@see Crypt::encrypt()} dans le cache (Redis
  *     en prod, array en test) avec TTL 1200 s (20 min) strict.
  *   - un seul listing actif par opérateur — toute nouvelle réinitialisation
  *     purge le listing précédent (garantie UX + surface d'exposition minimale).
- *   - accès uniquement via URL signée Laravel ({@see URL::temporarySignedRoute()}).
+ *  - accès uniquement via URL signée Laravel ({@see URL::temporarySignedRoute()}).
  */
 class BulkResetListingService
 {

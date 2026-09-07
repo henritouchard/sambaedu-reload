@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
 /**
- * Story 55.1 — Gestion de la paire de signature RS256 **dédiée à OIDC**.
+ * Gestion de la paire de signature RS256 **dédiée à OIDC**.
  *
  * Trois responsabilités, et rien d'autre :
  *
@@ -17,8 +17,8 @@ use RuntimeException;
  *     zéro shell (patron {@see \App\Auth\V1\Pki\CaInitializer}).
  *  2. **Lecture** de la clé privée (signature) et publique (JWKS), avec le
  *     garde-fou « pas de fixture de test en production » appliqué
- *     SYMÉTRIQUEMENT aux deux — calque `WorkstationJwtIssuer::loadPrivateKey()`
- *     ET `WorkstationJwtVerifier::buildKeyMap()`.
+ *  SYMÉTRIQUEMENT aux deux — calque `WorkstationJwtIssuer::loadPrivateKey()`
+ *  ET `WorkstationJwtVerifier::buildKeyMap()`.
  *  3. **Export JWKS** (RFC 7517) : `kty`/`n`/`e`/`kid`/`use`/`alg`, base64url
  *     sans padding.
  *
@@ -206,10 +206,6 @@ class OidcKeyManager
     {
         return rtrim(strtr(base64_encode($raw), '+/', '-_'), '=');
     }
-
-    // =========================================================================
-    // Interne
-    // =========================================================================
 
     private function keyPath(string $which, ?string $kid = null): string
     {

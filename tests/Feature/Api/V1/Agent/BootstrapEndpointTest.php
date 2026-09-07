@@ -17,13 +17,13 @@ use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Tests\TestCase;
 
 /**
- * Story 25.4 — Endpoints d'amorçage LAN NON authentifiés (AC4) :
+ * Endpoints d'amorçage LAN NON authentifiés :
  * `GET /api/v1/agent/stable`, `GET /api/v1/agent/stable/download`,
  * `GET /api/v1/agent/ca`.
  *
  * Routes RÉELLES (`agent.v1.stable*`, `agent.v1.ca`) derrière
  * `auth.v1.lan-only` + `auth.v1.secure-headers` + `throttle:60,1`, HORS du groupe
- * `agent.token` (pas de bearer requis). Confinement realpath iso 25.1, 404
+ * `agent.token` (pas de bearer requis). Confinement realpath iso, 404
  * indistinct, 503 si CA non initialisée. `auth.v1.lan-only` (subnets RFC1918)
  * rejette hors LAN — un vrai poste sur le LAN passe (≠ `local.request`).
  */
@@ -58,7 +58,7 @@ final class BootstrapEndpointTest extends TestCase
 
     /**
      * Release stable RÉELLE : binaire factice sur disque + ligne
-     * `agent_releases` au hash exact (invariant de création 25.1).
+     * `agent_releases` au hash exact (invariant de création).
      */
     private function publishedStable(string $version, bool $stable = true, ?string $content = null): AgentRelease
     {
@@ -118,7 +118,7 @@ final class BootstrapEndpointTest extends TestCase
         return $this->call('GET', $uri, server: $server);
     }
 
-    // ── AC4 — manifest stable ────────────────────────────────────────────
+    // — manifest stable
 
     #[Test]
     public function stable_manifest_serves_the_stable_release_with_absolute_url(): void
@@ -166,7 +166,7 @@ final class BootstrapEndpointTest extends TestCase
         self::assertSame('2.0.0', $served[0][2]['version']);
     }
 
-    // ── AC4 — download du binaire stable ─────────────────────────────────
+    // — download du binaire stable
 
     #[Test]
     public function download_serves_the_stable_binary_whose_sha256_matches_the_manifest(): void
@@ -244,11 +244,11 @@ final class BootstrapEndpointTest extends TestCase
     #[Test]
     public function download_returns_404_when_stable_release_has_pathological_filename(): void
     {
-        // Défense en profondeur (piège n° 8) : l'URL download est FIXE (aucun
+        // Défense en profondeur : l'URL download est FIXE (aucun
         // input client), mais si une ligne `agent_releases` portait un filename
         // pathologique (traversal injecté en DB), la re-validation par le
         // pattern strict + le confinement realpath doivent sortir 404 indistinct
-        // — jamais servir hors `releases_path`. Régression-test du garde-fou.
+        // — jamais servir hors `releases_path`.
         AgentRelease::query()->create([
             'version' => '9.9.9',
             'hash' => str_repeat('a', 64),
@@ -261,7 +261,7 @@ final class BootstrapEndpointTest extends TestCase
             ->assertJson(['error' => 'not_found']);
     }
 
-    // ── AC4 — racine CA ──────────────────────────────────────────────────
+    // — racine CA
 
     #[Test]
     public function ca_endpoint_serves_pem_as_text_plain(): void
@@ -281,8 +281,7 @@ final class BootstrapEndpointTest extends TestCase
     #[Test]
     public function ca_endpoint_returns_503_when_ca_not_initialized(): void
     {
-        // Piège n° 9 : CA non initialisée → 503 (config serveur incomplète),
-        // jamais 500.
+        // CA non initialisée → 503 (config serveur incomplète), jamais 500.
         $this->mock(CaInitializer::class, function ($mock): void {
             $mock->shouldReceive('getCaCertPem')
                 ->andThrow(new RuntimeException('CA root cert not initialized'));
@@ -291,7 +290,7 @@ final class BootstrapEndpointTest extends TestCase
         $this->fromLan(self::CA_ROUTE)->assertStatus(503);
     }
 
-    // ── AC4 — frontière LAN ──────────────────────────────────────────────
+    // — frontière LAN
 
     #[Test]
     public function endpoints_reject_non_lan_callers_with_403(): void

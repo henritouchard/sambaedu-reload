@@ -12,7 +12,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 27.11 — `NativeApplicationSeeder` : référentiel curé des built-ins Win32.
+ * `NativeApplicationSeeder` : référentiel curé des built-ins Win32.
  * Vérifie l'idempotence (rejouable, zéro doublon) et l'exclusion des UWP (seules
  * des apps Win32 à ProgId canonique connu, exe runtime, et extensions déclarées).
  */
@@ -51,7 +51,7 @@ class NativeApplicationSeederTest extends TestCase
     {
         (new NativeApplicationSeeder())->run();
 
-        // Le cas canonique de Henri : Bloc-notes → txtfile, .txt déclaré.
+        // Le cas canonique : Bloc-notes → txtfile, avec .txt déclaré.
         $notepad = NativeApplication::query()->where('progid', 'txtfile')->firstOrFail();
         self::assertTrue($notepad->supportsIdentifier('.txt'));
         self::assertFalse($notepad->supportsIdentifier('.png'), 'le Bloc-notes ne déclare pas .png (piège n°2)');

@@ -17,14 +17,14 @@ use Tests\TestCase;
 use Tests\Traits\CreatesPermissionSchema;
 
 /**
- * Story 5.2 — Tests Unit ShareService.
+ * Tests Unit ShareService.
  *
  * Stratégie : `Process::fake()` mocks `setfacl`/`mkdir`/`mv`/`chown`/`chgrp`/`rm`.
  * AclService réel (DI) — on ne le mocke pas car il est lui-même testé.
  *
  * Attention : `is_dir()` est un appel système réel. Pour tester l'idempotence
  * et l'archivage, on override `ShareService::$classesRoot` vers un tempdir
- * réel auquel on prépare les pré-conditions FS (D13).
+ * réel auquel on prépare les pré-conditions FS.
  */
 class ShareServiceTest extends TestCase
 {
@@ -118,10 +118,6 @@ class ShareServiceTest extends TestCase
         ]);
     }
 
-    // =========================================================================
-    // resolveClassPath / escapeAclClassName
-    // =========================================================================
-
     #[Test]
     public function it_rejects_non_classe_user_group(): void
     {
@@ -141,7 +137,7 @@ class ShareServiceTest extends TestCase
     public function it_lowercases_acl_class_name_and_rejects_spaces(): void
     {
         $this->assertSame('6a', $this->service->escapeAclClassName('6A'));
-        // Review 5.2 #15 — refus des espaces (cohérence avec validatePath).
+        // Refus des espaces (cohérence avec validatePath).
         $this->assertNull($this->service->escapeAclClassName('Seconde B'));
         $this->assertNull($this->service->escapeAclClassName('Classe;rm -rf'));
     }
@@ -197,7 +193,7 @@ class ShareServiceTest extends TestCase
     }
 
     /**
-     * Review 5.2 #12 + #15 — durcissement preventif `escapeAclClassName`.
+     * Durcissement préventif d'`escapeAclClassName`.
      */
     #[Test]
     #[\PHPUnit\Framework\Attributes\DataProvider('rejectedClassNameProvider')]
@@ -208,10 +204,6 @@ class ShareServiceTest extends TestCase
             "Le nom '$name' devrait être refusé"
         );
     }
-
-    // =========================================================================
-    // Suffixe établissement (AD fédéré) — establishmentSuffix / aclGroupLocalPart
-    // =========================================================================
 
     #[Test]
     public function it_derives_establishment_suffix_from_uai_ou_in_dn(): void
@@ -285,10 +277,6 @@ class ShareServiceTest extends TestCase
         });
     }
 
-    // =========================================================================
-    // ACL builders — décalque legacy
-    // =========================================================================
-
     #[Test]
     public function it_creates_class_share_with_canonical_acls(): void
     {
@@ -353,7 +341,7 @@ class ShareServiceTest extends TestCase
         $group = $this->makeClasse('6A');
         $this->service->createClassShare($group, performedBy: 'admin');
 
-        // _echange doit recevoir group:classe_6a:rwx (D6=A activé par défaut).
+        // _echange doit recevoir group:classe_6a:rwx (activé par défaut).
         Process::assertRan(function ($p) {
             return str_contains($p->command, 'setfacl')
                 && str_contains($p->command, 'group:classe_6a:rwx')
@@ -430,10 +418,6 @@ class ShareServiceTest extends TestCase
         $this->assertSame(2, QuotaAuditLog::query()->where('action', 'create_share')->count());
     }
 
-    // =========================================================================
-    // toggleEchange (AC 5)
-    // =========================================================================
-
     #[Test]
     public function it_toggles_echange_acls_to_inactive(): void
     {
@@ -463,10 +447,6 @@ class ShareServiceTest extends TestCase
         Process::assertRan(fn ($p) => str_contains($p->command, 'setfacl')
             && str_contains($p->command, 'group:classe_6a:rwx'));
     }
-
-    // =========================================================================
-    // syncUserClassMemberships (AC 4 + D3)
-    // =========================================================================
 
     #[Test]
     public function it_creates_eleve_dir_when_user_is_added_to_a_class(): void
@@ -554,10 +534,6 @@ class ShareServiceTest extends TestCase
         $this->assertFalse($ok);
     }
 
-    // =========================================================================
-    // archiveClassShare (D4)
-    // =========================================================================
-
     #[Test]
     public function it_archives_class_share_via_mv(): void
     {
@@ -578,7 +554,7 @@ class ShareServiceTest extends TestCase
     }
 
     /**
-     * Story 5.2 review #11 Q2 — décalque legacy strict + log warning.
+     * Décalque legacy strict + log warning.
      */
     #[Test]
     public function it_logs_warning_when_archive_target_already_exists(): void
@@ -615,10 +591,6 @@ class ShareServiceTest extends TestCase
         Process::assertNotRan(fn ($p) => str_contains($p->command, 'sudo mv'));
     }
 
-    // =========================================================================
-    // Fail-soft (AC 10)
-    // =========================================================================
-
     #[Test]
     public function it_returns_false_on_setfacl_failure(): void
     {
@@ -643,10 +615,6 @@ class ShareServiceTest extends TestCase
         $newValues = $log->new_values;
         $this->assertSame(false, $newValues['success']);
     }
-
-    // =========================================================================
-    // getStatus
-    // =========================================================================
 
     #[Test]
     public function get_status_returns_subdirs_state(): void

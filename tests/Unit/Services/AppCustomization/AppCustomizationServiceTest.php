@@ -19,7 +19,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Tests unit — AppCustomizationService (AC 4, 12).
+ * Tests unit — AppCustomizationService.
  *
  * Vérifie la résolution hiérarchique 5 niveaux + perf DB ≤ 4 queries.
  */
@@ -53,7 +53,7 @@ class AppCustomizationServiceTest extends TestCase
             $t->id();
             $t->unsignedBigInteger('user_id');
             $t->unsignedBigInteger('user_group_id');
-            // Story 42.1 — rôle sur l'arête, lu par withPivot('role').
+            // Rôle sur l'arête, lu par withPivot('role').
             $t->string('role', 20)->default('member');
             $t->timestamps();
         });
@@ -215,7 +215,7 @@ class AppCustomizationServiceTest extends TestCase
         $queries = DB::getQueryLog();
         DB::disableQueryLog();
 
-        // Perf cible AC 4 : ≤ 4 queries DB pour la résolution
+        // Perf cible : ≤ 4 queries DB pour la résolution
         // (1 default étab + 1 WG + 1 userGroups ids + 1 userGroup overrides + 1 user override)
         // En pratique la lecture de pluck('user_groups.id') ajoute 1 query.
         // On fait un contrôle souple : ≤ 6 queries (marge).

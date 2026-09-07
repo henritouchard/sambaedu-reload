@@ -11,7 +11,7 @@ use Tests\Support\IpxeSchemaBootstrapper;
 use Tests\TestCase;
 
 /**
- * Story 3.5 — AC5.3 / T6.3.
+ * T6.3.
  *
  * Tests feature de la route native `GET|POST /ipxe/windows/install.bat`.
  */

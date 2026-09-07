@@ -13,7 +13,6 @@ use Tests\Concerns\SeedsWorkstationConfig;
 use Tests\TestCase;
 
 /**
- * Story 16.13bis — AC4.
  *
  * Tests unit pour `Workstation::migrationStatus()` (HasOne) + accessor
  * `migrated` + scopes `migrated()` / `notMigrated()`.

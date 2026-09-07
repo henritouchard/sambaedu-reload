@@ -11,39 +11,39 @@ import (
 	"sambaedu/agent/shared"
 )
 
-// installService : remplace Install-SambaEduAgent.ps1 (24.2). Le binaire
+// installService : remplace Install-SambaEduAgent.ps1. Le binaire
 // courant est enregistré comme service SYSTEM (LocalSystem = défaut SCM),
 // démarrage automatique, relance 30 s sur crash. Idempotent : un service
 // existant est arrêté/supprimé puis recréé (iso-PS).
 //
-// Story 25.4 (Fork 1 = B) : la garde « token présent » est RELÂCHÉE. L'install
+// La garde « token présent » est RELÂCHÉE. L'install
 // procède SANS token — c'est le chemin du poste migré (GPO-dispatcher figée),
 // qui n'a pas encore de token : il s'auto-enrôle (porte 2) une fois le service
 // posé. La suppression de la garde est bénigne : sans token, le run loop ne
 // converge pas (il poste sa demande d'enrôlement + check-ins légers), il ne se
 // brique jamais. La config/arborescence/ACL/SCM restent écrites à l'identique.
 // Sur un poste DÉJÀ enrôlé dont l'agent est briqué, la réinstall CONSERVE le
-// token (hors périmètre install, piège n° 11) → convergence directe.
+// token (hors périmètre install) → convergence directe.
 //
 // Le binaire doit être exécuté depuis son emplacement DÉFINITIF (recommandé :
 // C:\Program Files\SambaEdu\Agent\agent.exe) : le SCM enregistre ce chemin.
 func installService(serverURL string, intervalSeconds int) error {
 	store := &shared.Store{SetACL: setAgentACL}
 
-	// Config locale (format 24.2 conservé) + arborescence cache/applied-state.
+	// Config locale (format conservé) + arborescence cache/applied-state.
 	if err := store.WriteConfig(shared.Config{ServerURL: serverURL, IntervalSeconds: intervalSeconds}); err != nil {
 		return fmt.Errorf("écriture de la configuration : %w", err)
 	}
 	if err := store.EnsureLayout(); err != nil {
 		return fmt.Errorf("préparation de l'arborescence : %w", err)
 	}
-	// Story 24.6 : cache d'assets (Users:R) créé dès l'install — les
+	// Cache d'assets (Users:R) créé dès l'install — les
 	// répertoires per-SID (cache de session, drop) sont créés/ACLés par le
 	// fetch SYSTEM à la volée, SID par SID.
 	if err := store.EnsureAssetsDir(setAssetsACL); err != nil {
 		return fmt.Errorf("préparation du cache d'assets : %w", err)
 	}
-	// Story 25.2 : répertoire de staging d'auto-update (SYSTEM F + Admins F,
+	// Répertoire de staging d'auto-update (SYSTEM F + Admins F,
 	// PAS de Users:R — un binaire stagé n'est pas un asset affiché). Créé dès
 	// l'install ; SelfUpdate le (re)crée à la volée si absent (idempotent).
 	if err := store.EnsureUpdateDir(setUpdateACL); err != nil {
@@ -102,14 +102,14 @@ func installService(serverURL string, intervalSeconds int) error {
 	// → svc.Handler signale SERVICE_STOPPED gracieusement) n'est PAS relancé : la
 	// relance ne vaut que pour les terminaisons anormales.
 	//
-	// Story 25.2 (Option A) : après un swap d'auto-update réussi, l'agent sort
+	// Après un swap d'auto-update réussi, l'agent sort
 	// par os.Exit(≠0) (swapExitCode, update_windows.go) — le process meurt SANS
 	// que le svc.Handler ne signale SERVICE_STOPPED proprement. Le SCM voit une
 	// terminaison anormale et applique ces RecoveryActions → relance avec le
 	// binaire vN+1. La fenêtre de reset (86400 s) ne remet le compteur d'échecs
 	// à zéro qu'après 24 h sans incident : 3 relances ×30 s couvrent largement un
 	// swap (un seul échec attendu par update), et un poste qui bouclerait sur des
-	// crashs serait de toute façon réparé par le bootstrap GPO figé (25.4).
+	// crashs serait de toute façon réparé par le bootstrap GPO figé.
 	if err := s.SetRecoveryActions([]mgr.RecoveryAction{
 		{Type: mgr.ServiceRestart, Delay: 30 * time.Second},
 		{Type: mgr.ServiceRestart, Delay: 30 * time.Second},
@@ -117,7 +117,7 @@ func installService(serverURL string, intervalSeconds int) error {
 	}, 86400); err != nil {
 		return fmt.Errorf("configuration de la relance sur crash : %w", err)
 	}
-	// Story 25.2 (Option A) : ceinture-bretelles pour garantir la relance après la
+	// Ceinture-bretelles pour garantir la relance après la
 	// sortie volontaire post-swap. Selon que le SCM classe notre os.Exit(≠0)
 	// comme un « crash » (process disparu sans SERVICE_STOPPED) ou comme un
 	// « échec non-crash » (code de sortie ≠ 0), seul ce flag garantit que les
@@ -128,9 +128,9 @@ func installService(serverURL string, intervalSeconds int) error {
 		return fmt.Errorf("activation de la relance sur sortie non-gracieuse (post-swap) : %w", err)
 	}
 
-	// Story 24.6 : tâches planifiées at-logon du compagnon (session-fetch
-	// SYSTEM + companion Users), idempotent — désenregistre au passage les
-	// tâches PS homonymes héritées du spike (piège n° 21).
+	// Tâches planifiées at-logon du compagnon (session-fetch
+	// SYSTEM + companion Users), idempotent — désenregistre au passage toute
+	// tâche planifiée homonyme déjà posée sur le poste.
 	if err := registerSessionTasks(exe); err != nil {
 		return err
 	}
@@ -150,7 +150,7 @@ func installService(serverURL string, intervalSeconds int) error {
 }
 
 // uninstallService : remplace Uninstall-SambaEduAgent.ps1. Par défaut,
-// CONSERVE les données d'enrôlement (token 23.3, cache, logs) : une
+// CONSERVE les données d'enrôlement (token, cache, logs) : une
 // réinstallation reprend là où le poste en était, sans re-enrôlement.
 // purge=true efface tout (le poste devra être re-enrôlé via la chaîne iPXE).
 func uninstallService(purge bool) error {
@@ -177,7 +177,7 @@ func uninstallService(purge bool) error {
 		fmt.Printf("Service %s absent : rien à supprimer.\n", serviceName)
 	}
 
-	// Story 24.6 : suppression des 2 tâches at-logon (données conservées —
+	// Suppression des 2 tâches at-logon (données conservées
 	// le flag -purge ci-dessous reste le seul à toucher aux données).
 	if err := unregisterSessionTasks(); err != nil {
 		fmt.Fprintf(os.Stderr, "avertissement : %v\n", err)

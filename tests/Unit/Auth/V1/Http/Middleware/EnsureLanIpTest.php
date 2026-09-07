@@ -15,7 +15,6 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 16.11 — AC2.1.
  *
  * Tests `EnsureLanIp` — IP whitelist LAN avec subnets RFC1918 par défaut.
  */
@@ -37,7 +36,7 @@ class EnsureLanIpTest extends TestCase
     }
 
     /**
-     * Recorder no-op pour Unit tests (pas de DB). Story 16.11 Q2.
+     * Recorder no-op : ces tests unitaires tournent sans base.
      */
     private function noopRecorder(): MigrationAttemptRecorder
     {
@@ -204,10 +203,6 @@ class EnsureLanIpTest extends TestCase
         );
         $this->assertSame(403, $res->getStatusCode());
     }
-
-    // ====================================================================
-    // Q2 (Opus-D) — MigrationAttemptRecorder invoqué sur rejet LAN
-    // ====================================================================
 
     #[Test]
     public function lan_block_records_failed_attempt_with_not_lan_code(): void

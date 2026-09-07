@@ -5,19 +5,18 @@ declare(strict_types=1);
 namespace App\Services\Filesystem\Backend\Nextcloud;
 
 /**
- * Story 61.3 — UNE RÈGLE DE PERMISSION AVANCÉE, telle qu'elle s'écrit et telle
+ * UNE RÈGLE DE PERMISSION AVANCÉE, telle qu'elle s'écrit et telle
  * qu'elle se relit.
  *
  * Quatre champs, et QUATRE SEULEMENT, parce que ce sont les quatre que l'écriture
  * porte : le type de principal, son identifiant, le masque (quels bits cette règle
  * gouverne) et les permissions (la valeur de ces bits).
  *
- * ---------------------------------------------------------------------------
  * **LE SERVEUR AJOUTE UN CINQUIÈME CHAMP À LA RELECTURE, ET IL NE COMPTE PAS.**
  *
  * Une règle relue revient augmentée d'un libellé d'affichage du principal, que
  * personne n'a écrit et que personne ne contrôle. C'est la TROISIÈME occurrence du
- * même piège dans cet epic — un point de montage qui gagnait une barre oblique, un
+ * même piège sur ce produit — un point de montage qui gagnait une barre oblique, un
  * booléen `false` qui se relisait `true` — et c'est toujours le même remède :
  * **comparer sur les valeurs RELUES, en ignorant les champs que le serveur
  * ajoute**. {@see equals()} porte cette règle, et rien d'autre ne compare deux

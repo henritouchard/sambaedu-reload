@@ -25,7 +25,7 @@ class MachinePowerServiceTest extends TestCase
         $this->service = new MachinePowerService($this->configService);
     }
 
-    // ── ping (détection d'OS) ─────────────────────────────────────────
+    // ping (détection d'OS)
 
     public function test_ping_detects_windows_via_rpc_when_smb_filtered(): void
     {
@@ -52,7 +52,7 @@ class MachinePowerServiceTest extends TestCase
         $this->assertFalse($service->ping('172.20.1.103'));
     }
 
-    // ── resolveBroadcast ──────────────────────────────────────────────
+    // resolveBroadcast
 
     public function test_resolve_broadcast_from_dhcp_config(): void
     {
@@ -145,7 +145,7 @@ class MachinePowerServiceTest extends TestCase
         $this->assertFalse($result);
     }
 
-    // ── resolveAllBroadcasts ──────────────────────────────────────────
+    // resolveAllBroadcasts
 
     public function test_resolve_all_broadcasts_covers_every_configured_subnet(): void
     {
@@ -190,7 +190,7 @@ class MachinePowerServiceTest extends TestCase
         $this->assertEquals(['255.255.255.255'], $result);
     }
 
-    // ── wakeOnLan ─────────────────────────────────────────────────────
+    // wakeOnLan
 
     public function test_wol_without_ip_broadcasts_to_all_subnets(): void
     {
@@ -274,7 +274,7 @@ class MachinePowerServiceTest extends TestCase
         });
     }
 
-    // ── shutdown ──────────────────────────────────────────────────────
+    // shutdown
 
     public function test_shutdown_windows_success(): void
     {
@@ -308,7 +308,7 @@ class MachinePowerServiceTest extends TestCase
         $this->assertStringContains('déjà éteinte', $result['message']);
     }
 
-    // ── reboot ───────────────────────────────────────────────────────
+    // reboot
 
     public function test_reboot_machine_off_fallback_wol(): void
     {
@@ -346,7 +346,7 @@ class MachinePowerServiceTest extends TestCase
         $this->assertEquals(203, $result['code']);
     }
 
-    // ── force shutdown (story 4-2) ────────────────────────────────────
+    // force shutdown (-2)
 
     public function test_shutdown_force_tags_action_as_shutdown_force_in_logs(): void
     {
@@ -376,7 +376,7 @@ class MachinePowerServiceTest extends TestCase
 
     public function test_readiness_timeout_constant_is_exposed_via_config(): void
     {
-        // AC4 — la constante de timeout doit être accessible via config/parc.php.
+        // La constante de timeout doit être accessible via config/parc.php.
         // Le default applicatif (fallback) est 120s ; on le ré-affirme ici pour
         // figer la sémantique : une régression du default casserait ce test.
         $timeout = config('parc.machine_readiness_timeout_seconds');
@@ -389,7 +389,7 @@ class MachinePowerServiceTest extends TestCase
         $this->assertLessThan($timeout, $interval, 'Le poll interval doit rester strictement inférieur au timeout.');
     }
 
-    // ── return code compatibility ────────────────────────────────────
+    // return code compatibility
 
     public function test_return_codes_are_compatible_with_legacy(): void
     {
@@ -418,7 +418,7 @@ class MachinePowerServiceTest extends TestCase
         return 203;
     }
 
-    // ── Helper assertion ─────────────────────────────────────────────
+    // Helper assertion
 
     private function assertStringContains(string $needle, string $haystack): void
     {

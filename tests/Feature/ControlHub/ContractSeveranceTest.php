@@ -44,27 +44,28 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 32.1 (FR7 + NFR5) — Release des verrous à la rupture du lien amont (controlHub).
+ * Release des verrous à la rupture du lien amont (controlHub).
  *
  * Couvre :
- *  - AC1 : réception du signal → `severed` + `ControlHubContractChanged` ; 2e signal = no-op.
- *  - AC2 : levée AUTOMATIQUE verrous + bornage catalogue + refus de modif (chokepoint
- *          `active()` → null partagé par catalog/lock/policy), prouvée par test + query-log.
- *  - AC3 : conservation des supports locaux (override `capability_assignments`, `Application`),
+ * - réception du signal → `severed` + `ControlHubContractChanged` ; 2e signal = no-op.
+ * - levée AUTOMATIQUE verrous + bornage catalogue + refus de modif (chokepoint
+ *  `active()` → null partagé par catalog/lock/policy), prouvée par test + query-log.
+ * - conservation des supports locaux (override `capability_assignments`, `Application`),
  *          jamais écrasés par la valeur amont.
- *  - AC4 : conservation de l'état effectif COMPLET, déverrouillé (M1) — **PARITÉ D'ÉTAT** :
- *          `StateCompiler::compile()` d'un poste du parc émet la MÊME sortie avant/après la
+ * - conservation de l'état effectif COMPLET, déverrouillé — **PARITÉ D'ÉTAT** :
+ *  `StateCompiler::compile()` d'un poste du parc émet la MÊME sortie avant/après la
  *          rupture, via matérialisation du canal `registry` réel et des affectations d'apps.
- *  - AC5 : standalone strictement no-op (NFR3) + contrat déjà `severed` = no-op.
- *  - AC6 : exactement 1 ligne d'audit par transition ; 0 sur re-signal.
+ * - standalone strictement no-op + contrat déjà `severed` = no-op.
+ * - exactement 1 ligne d'audit par transition ; 0 sur re-signal.
  *
- * AC7 (contrat agent figé) vit dans sa propre suite (`ContractV1Test` / golden) : ce test
+ * (contrat agent figé) vit dans sa propre suite (`ContractV1Test` / golden) : ce test
  * ne touche AUCUN champ wire. Tests HÔTE (php8.4 + pdo_sqlite, `CACHE_DRIVER=array`),
  * `RefreshDatabase` (le patron des suites capacité+contrat — `UpstreamLockResolverTest`,
  * `CapabilitiesOverrideAuditTest`). SQLite n'applique pas varchar/enum PG → on teste des
  * DÉCISIONS (état/présence/count/valeur compilée), jamais des bornes de colonne.
  *
- * ⚠️ GARDE-FOU R3 : aucun « central » ; vocabulaire « amont » / `Upstream` / `ControlHub*`.
+ * ⚠️ RÈGLE DE NOMMAGE : aucun identifiant livré ne contient « central » ;
+ * vocabulaire « amont » / `Upstream` / `ControlHub*`.
  */
 class ContractSeveranceTest extends TestCase
 {
@@ -91,7 +92,7 @@ class ContractSeveranceTest extends TestCase
         return app(ControlHubContractSeveranceService::class);
     }
 
-    // ── AC1 + AC6 — réception du signal, event, idempotence ───────────────────
+    // + — réception du signal, event, idempotence
 
     #[Test]
     public function it_severs_the_active_contract_and_dispatches_change_event(): void
@@ -127,12 +128,12 @@ class ContractSeveranceTest extends TestCase
 
         self::assertFalse($second->severed);
         self::assertNull($second->contractId);
-        // Idempotence stricte (AC1/AC6) : aucun nouvel event, aucune nouvelle trace.
+        // Idempotence stricte : aucun nouvel event, aucune nouvelle trace.
         Event::assertDispatched(ControlHubContractChanged::class, 1);
         self::assertSame(1, ControlHubLinkAuditLog::count());
     }
 
-    // ── AC2 — levée automatique (chokepoint active() → null) ──────────────────
+    // — levée automatique (chokepoint active → null)
 
     #[Test]
     public function severance_lifts_catalog_bound_lock_and_modify_refusal(): void
@@ -187,7 +188,7 @@ class ContractSeveranceTest extends TestCase
         self::assertFalse($touchedItems, 'Après severed, aucune requête sur controlhub_contract_items.');
     }
 
-    // ── AC3 — supports locaux conservés (jamais écrasés) ──────────────────────
+    // — supports locaux conservés (jamais écrasés)
 
     #[Test]
     public function a_preexisting_local_override_is_preserved_and_never_overwritten(): void
@@ -225,8 +226,8 @@ class ContractSeveranceTest extends TestCase
         $result = $this->service()->sever(ControlHubLinkAuditLog::ORIGIN_COMMAND, 'refnum01');
 
         // L'override local survit TEL QUEL (jamais touché par la matérialisation) :
-        // le défaut d'instance est posé À CÔTÉ (correctif #7), l'override par parc
-        // reste intact et continue de PRIMER (AC3).
+        // le défaut d'instance est posé À CÔTÉ, l'override par parc
+        // reste intact et continue de PRIMER.
         $row = DB::table('capability_assignments')
             ->where('capability_id', $capability->id)
             ->where('assignable_id', $parc->id)
@@ -236,18 +237,18 @@ class ContractSeveranceTest extends TestCase
         // Le défaut d'instance a bien été posé ('on'), mais l'override par parc prime :
         self::assertSame(1, $result->valuesMaterialized, 'défaut d\'instance posé (l\'override par parc reste à côté)');
         self::assertSame('on', $capability->fresh()->default_value);
-        // PARITÉ AC3 : un poste DU parc overridé garde 'off' (registre 0) — l'override
+        // PARITÉ : un poste DU parc overridé garde 'off' (registre 0) — l'override
         // plus spécifique prime sur le défaut d'instance 'on'.
         $effective = $this->registryValueForKey($this->compileRegistry($ws), 'HKLM', 'Software\\Se5', 'Kiosk');
         self::assertSame(0, $effective, 'l\'override par parc (off) prime sur le défaut d\'instance (on)');
 
-        // L'app matérialisée survit + flag d'origine conservé (Q2 — pas de retombée).
+        // L'app matérialisée survit + flag d'origine conservé.
         $app->refresh();
         self::assertSame(ApplicationStatus::Available, $app->status);
         self::assertTrue($app->managed_by_control_hub);
     }
 
-    // ── AC4 — PARITÉ D'ÉTAT : registry locked conservé (M1/M2) ────────────────
+    // — PARITÉ D'ÉTAT : registry locked conservé
 
     #[Test]
     public function instance_locked_registry_state_is_identical_before_and_after_severance(): void
@@ -272,7 +273,7 @@ class ContractSeveranceTest extends TestCase
 
         $result = $this->service()->sever(ControlHubLinkAuditLog::ORIGIN_COMMAND, 'refnum01');
 
-        // Correctif #7 : la valeur de capacité 'on' a été RECOUVRÉE depuis la valeur
+        // La valeur de capacité 'on' a été RECOUVRÉE depuis la valeur
         // registre 1 et figée dans le DÉFAUT D'INSTANCE (`capabilities.default_value`),
         // PAS en override par parc (couvre tous les postes, même hors parc).
         self::assertSame(1, $result->valuesMaterialized);
@@ -293,7 +294,7 @@ class ContractSeveranceTest extends TestCase
     #[Test]
     public function instance_locked_registry_parity_holds_for_a_workstation_outside_any_parc(): void
     {
-        // Correctif #7 — PREUVE de parité pour un poste HORS de tout parc logique
+        // PREUVE de parité pour un poste HORS de tout parc logique
         // (aucun groupe) : c'est précisément ce que le défaut d'instance couvre et
         // qu'un override par salle physique ne couvrirait PAS.
         Event::fake([ControlHubContractChanged::class]);
@@ -393,7 +394,7 @@ class ContractSeveranceTest extends TestCase
         self::assertSame(0, DB::table('capability_assignments')->count());
     }
 
-    // ── AC4 — PARITÉ D'ÉTAT : app ordonnée amont conservée ────────────────────
+    // — PARITÉ D'ÉTAT : app ordonnée amont conservée
 
     #[Test]
     public function ordered_application_assignment_is_preserved_after_severance(): void
@@ -427,8 +428,8 @@ class ContractSeveranceTest extends TestCase
 
         $result = $this->service()->sever(ControlHubLinkAuditLog::ORIGIN_COMMAND, 'refnum01');
 
-        // Correctif #7 : un ordre `instance` est figé en DÉFAUT D'INSTANCE
-        // (`Application.is_parc_default`, Broadcast 27.17), PAS en affectation par
+        // Un ordre `instance` est figé en DÉFAUT D'INSTANCE
+        // (`Application.is_parc_default`, Broadcast), PAS en affectation par
         // groupe — AUCUNE ligne pivot créée (ni salle physique ni parc).
         self::assertSame(1, $result->applicationsAssigned);
         self::assertSame(0, DB::table('application_workstation_group')->count(), 'instance = défaut, aucun pivot');
@@ -462,15 +463,13 @@ class ContractSeveranceTest extends TestCase
 
         $result = $this->service()->sever(ControlHubLinkAuditLog::ORIGIN_COMMAND, 'refnum01');
 
-        // Correctif #7 : un ordre `label` reste une affectation par parc PORTEUR
+        // Un ordre `label` reste une affectation par parc PORTEUR
         // (pivot), JAMAIS un défaut d'instance.
         self::assertSame(1, $result->applicationsAssigned);
         self::assertFalse($app->fresh()->is_parc_default, 'label ⇒ pas de défaut d\'instance');
         self::assertSame(1, DB::table('application_workstation_group')
             ->where('workstation_group_id', $carrying->id)->count());
     }
-
-    // ── AC5 — standalone strictement no-op (NFR3) ─────────────────────────────
 
     #[Test]
     public function severance_is_a_total_noop_in_standalone(): void
@@ -497,7 +496,7 @@ class ContractSeveranceTest extends TestCase
         self::assertSame(1, DB::table('capability_assignments')->count());
     }
 
-    // ── AC6 — récap d'audit ───────────────────────────────────────────────────
+    // — récap d'audit
 
     #[Test]
     public function the_audit_log_records_origin_actor_contract_and_summary(): void
@@ -513,7 +512,7 @@ class ContractSeveranceTest extends TestCase
             'type' => 'shortcuts',
         ]);
 
-        // Correctif review #10 : un VRAI item `registry/locked` (matérialisé en défaut
+        // Un VRAI item `registry/locked` (matérialisé en défaut
         // d'instance) ET un VRAI item `applications` (matérialisé en is_parc_default),
         // pour PROUVER que les compteurs de matérialisation sont audités.
         $this->registryCapability('HKLM', 'Software\\Se5', 'Audit', default: 'off');
@@ -539,12 +538,12 @@ class ContractSeveranceTest extends TestCase
         self::assertSame(ControlHubLinkAuditLog::ORIGIN_API, $log->origin);
         self::assertSame('controlhub:instance', $log->actor_label);
         self::assertSame('révocation refnum', $log->reason);
-        // Correctif review #2 : `items_lifted` ne compte QUE locked+permissive (l'absent
+        // `items_lifted` ne compte QUE locked+permissive (l'absent
         // exclu) : 3 shortcuts + 1 registry + 1 applications = 5.
         self::assertSame(5, $log->summary['items_lifted']);
         // 2 apps managed_by_control_hub conservées (firefox + vlc).
         self::assertSame(2, $log->summary['apps_preserved']);
-        // Correctif review #10 : compteurs de matérialisation audités.
+        // Compteurs de matérialisation audités.
         self::assertSame(1, $log->summary['values_materialized'], 'défaut d\'instance registry audité');
         self::assertSame(1, $log->summary['applications_assigned'], 'défaut d\'instance app audité');
     }
@@ -567,7 +566,7 @@ class ContractSeveranceTest extends TestCase
         $log->save();
     }
 
-    // ── Story 51.1 (AC10) — rupture = release PASSIF côté dépôts ──────────────
+    // — rupture = release PASSIF côté dépôts
 
     #[Test]
     public function severance_lifts_the_depot_add_lock_and_keeps_the_imposed_depot_and_apps(): void
@@ -602,8 +601,6 @@ class ContractSeveranceTest extends TestCase
         self::assertSame($imposed->id, $app->fresh()->depot_id);
     }
 
-    // ── Q2/#5 — trace d'origine des apps matérialisées (vrai service) ─────────
-
     #[Test]
     public function materialize_from_source_marks_managed_and_does_not_reset_a_preexisting_local_app(): void
     {
@@ -617,7 +614,7 @@ class ContractSeveranceTest extends TestCase
         self::assertTrue($created->fresh()->managed_by_control_hub, 'app matérialisée ⇒ managed_by_control_hub=true');
 
         // App LOCALE préexistante (managed=false) : un 2e appel (firstOrCreate) NE la
-        // réinitialise PAS (flag + métadonnées préservés — AC3).
+        // réinitialise PAS (flag + métadonnées préservés —).
         $local = Application::create([
             'app_id' => 'vlc', 'name' => 'VLC',
             'status' => ApplicationStatus::Available, 'managed_by_control_hub' => false,
@@ -629,7 +626,7 @@ class ContractSeveranceTest extends TestCase
         self::assertSame('VLC', $local->name, 'métadonnées locales préservées (firstOrCreate)');
     }
 
-    // ── Helpers ──────────────────────────────────────────────────────────────
+    // Helpers
 
     private function refnum(): User
     {
@@ -679,7 +676,7 @@ class ContractSeveranceTest extends TestCase
 
     /**
      * Crée une capacité projetée registre + un item amont `locked`/`instance`/
-     * `registry` qui la verrouille (clé alignée hive|path|name). Conservé pour AC2
+     * `registry` qui la verrouille (clé alignée hive|path|name). Conservé pour
      * (n'examine pas la valeur).
      */
     private function lockedRegistryCapability(

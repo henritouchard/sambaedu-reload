@@ -14,7 +14,7 @@ use Illuminate\Support\Facades\Process;
  * Inspection read-only des ACL POSIX d'un répertoire legacy, et CLASSIFICATION
  * de chaque entrée vers le modèle managé (`network_share_assignables`).
  *
- * **Rôle.** Socle commun de deux usages (Epic 34 — reprise du legacy `acls/`) :
+ * **Rôle.** Socle commun de deux usages (reprise du legacy `acls/`) :
  *  1. `shares:inspect-fs` — diagnostic pur : « qu'y a-t-il sur ce dossier, et
  *     qu'est-ce qui serait importable ? » (répond à la question du gisement).
  *  2. `shares:import-from-fs` — matérialise les entrées MAPPABLES en assignations.

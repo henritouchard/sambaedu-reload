@@ -10,7 +10,7 @@ use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Carbon;
 
 /**
- * Story 3.11 — Factory pour les tests du service / boot / tick.
+ * Factory pour les tests du service / boot / tick.
  *
  * @extends Factory<WorkstationReinstallRequest>
  */

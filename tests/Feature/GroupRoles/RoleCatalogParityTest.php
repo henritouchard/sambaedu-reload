@@ -14,9 +14,9 @@ use Tests\TestCase;
 use Tests\Traits\InstallsCollegeRoleProfile;
 
 /**
- * Story 62.1 — LA PARITÉ D'AFFICHAGE, FIGÉE EN LITTÉRAUX.
+ * LA PARITÉ D'AFFICHAGE, FIGÉE EN LITTÉRAUX.
  *
- * La table de libellés de la story 60.2 est supprimée ; le catalogue la
+ * La table de libellés de la est supprimée ; le catalogue la
  * remplace. Ce fichier est la preuve exécutable que la substitution n'a RIEN
  * changé à l'écran : ce sont les neuf épingles de son test, reprises
  * intégralement, portées sur le nouveau point de lecture.
@@ -34,7 +34,7 @@ class RoleCatalogParityTest extends TestCase
     {
         parent::setUp();
         $this->seed(GroupRoleSeeder::class);
-        // Story 62.3 — « Élève », « Enseignant », « Porteur »… étaient posés par la
+        // « Élève », « Enseignant », « Porteur »… étaient posés par la
         // MIGRATION : cette suite les recevait sans les demander. Ce sont désormais
         // un PROFIL qu'un administrateur installe — déclarer des rôles FERME un
         // type, et le vocabulaire scolaire n'est pas un défaut universel. La parité
@@ -55,7 +55,7 @@ class RoleCatalogParityTest extends TestCase
     public function the_same_stored_role_reads_differently_by_group_type(): void
     {
         // C'est TOUT l'objet de la table : une seule valeur stockée, trois
-        // lectures métier. Avant 60.2, trois écrans disaient « Prof » partout.
+        // lectures métier. Avant, trois écrans disaient « Prof » partout.
         $this->assertSame('Enseignant', RoleCatalog::label('classe', 'manager'));
         $this->assertSame('Porteur', RoleCatalog::label('projet', 'manager'));
         $this->assertSame('Référent', RoleCatalog::label('equipe', 'manager'));
@@ -92,7 +92,7 @@ class RoleCatalogParityTest extends TestCase
     #[Test]
     public function a_dirty_edge_role_reads_as_the_least_endowed_one(): void
     {
-        // Même normalisation que les écrans de groupes depuis 42.3 : jamais une
+        // Même normalisation que les écrans de groupes depuis : jamais une
         // valeur technique ni un vide rendus comme texte visible.
         foreach ([null, '', 'prof', 'PP', 'contributor'] as $dirty) {
             $this->assertSame('Élève', RoleCatalog::label('classe', $dirty));
@@ -130,7 +130,7 @@ class RoleCatalogParityTest extends TestCase
     }
 
     /**
-     * Le renommage du vocabulaire STOCKÉ a été EXAMINÉ et ÉCARTÉ (story 60.2) : le
+     * Le renommage du vocabulaire STOCKÉ a été EXAMINÉ et ÉCARTÉ : le
      * rôle d'arête n'est pas un niveau d'accès. Ce test épingle la décision — si
      * un jour `contributeur`/`lecteur` apparaissent comme libellés, c'est que le
      * glissement a recommencé.
@@ -146,10 +146,6 @@ class RoleCatalogParityTest extends TestCase
             }
         }
     }
-
-    // =========================================================================
-    // Ce que le catalogue ajoute, et que la constante ne savait pas faire
-    // =========================================================================
 
     #[Test]
     public function the_display_order_follows_the_catalog_not_the_insertion_order(): void
@@ -173,7 +169,7 @@ class RoleCatalogParityTest extends TestCase
     }
 
     /**
-     * AC8 — un renommage de libellé suit à l'écran là où le repli générique
+     * Un renommage de libellé suit à l'écran là où le repli générique
      * s'appliquait, et la surcharge par TYPE continue de primer là où elle existe.
      */
     #[Test]
@@ -185,7 +181,7 @@ class RoleCatalogParityTest extends TestCase
         $this->assertSame('Encadrant', RoleCatalog::label(null, 'manager'));
         $this->assertSame('Encadrant', RoleCatalog::label('cours', 'manager'));
 
-        // La table transitoire des surcharges (donnée de 62.3) prime toujours.
+        // La table transitoire des surcharges (donnée) prime toujours.
         $this->assertSame('Enseignant', RoleCatalog::label('classe', 'manager'));
         $this->assertSame('Porteur', RoleCatalog::label('projet', 'manager'));
     }

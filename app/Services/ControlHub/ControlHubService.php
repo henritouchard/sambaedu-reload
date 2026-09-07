@@ -114,7 +114,7 @@ class ControlHubService
      * Fabrique le client HTTP dédié au handshake (URL cible saisie à la volée,
      * pas encore persistée). Isolé en méthode protégée pour permettre au test de
      * substituer un client factice — le `new` direct sur Guzzle n'est pas
-     * interceptable autrement (couture E10 testable sans réseau, Story 39.5).
+     * interceptable autrement (couture E10 testable sans réseau).
      */
     protected function makeHandshakeClient(string $baseUrl): ControlHubApiClient
     {
@@ -266,7 +266,7 @@ class ControlHubService
      * hors service, et depuis la couture E10 le token est dual-use
      * (`api_token` sortant == `se4fs_api_token` entrant) — une rotation qui
      * n'aurait mis à jour que `api_token` aurait rebasculé l'ingress en 403
-     * jusqu'au re-handshake. Cf. Story 39.5.
+     * jusqu'au re-handshake..
      */
     public function getToken(): ?string
     {
@@ -454,42 +454,27 @@ class ControlHubService
         ];
     }
 
-    /**
-     * Obtenir l'instance ID
-     */
     public function getInstanceId(): string
     {
         return $this->instanceId;
     }
 
-    /**
-     * Obtenir l'instance API key
-     */
     public function getInstanceApiKey(): string
     {
         return $this->instanceApiKey;
     }
 
-    /**
-     * Obtenir le token webhook
-     */
     public function getWebhookToken(): ?string
     {
         $connection = $this->repository->getCurrentConnection();
         return $connection ? $connection->se4fs_api_token : null;
     }
 
-    /**
-     * Obtenir l'URL du webhook
-     */
     public function getWebhookUrl(): ?string
     {
         return $this->repository->getWebhookUrl();
     }
 
-    /**
-     * Obtenir l'URL du heartbeat
-     */
     public function getHeartbeatUrl(): ?string
     {
         return $this->repository->getHeartbeatUrl();
@@ -504,9 +489,6 @@ class ControlHubService
         return $connection ? $connection->heartbeat_interval : 300;
     }
 
-    /**
-     * Obtenir l'URL de base du ControlHub
-     */
     public function getBaseUrl(): string
     {
         return $this->apiClient->getBaseUrl();

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature\Ipxe\Concerns;
 
 /**
- * Story 3.8 — Q-3 helper config fixture parité (cf. _README.md).
+ * Q-3 helper config fixture parité (cf. _README.md).
  *
  * Surcharge `config()` avec les valeurs interpolées dans les fixtures
  * legacy capturées via curl direct sur VM `192.168.122.50` :

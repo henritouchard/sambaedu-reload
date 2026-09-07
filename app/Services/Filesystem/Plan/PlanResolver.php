@@ -9,7 +9,7 @@ use App\Exceptions\Filesystem\PlanResolutionException;
 use App\Models\DirectoryTemplate;
 
 /**
- * Story 60.1 — RÉSOLUTION PURE : (recette + appartenances) → plan.
+ * RÉSOLUTION PURE : (recette + appartenances) → plan.
  *
  * **Pure, au sens fort.** Aucun accès disque, aucun processus enfant, aucun appel
  * réseau, aucune élévation de privilège, aucune requête : toutes les entrées
@@ -20,10 +20,10 @@ use App\Models\DirectoryTemplate;
  *
  * **Ce que ce résolveur ne fait PAS.** Il ne pose aucune permission, ne dérive
  * aucun nom système, n'invente aucune racine absolue — la ZONE qu'il recopie
- * depuis la recette (story 60.5) est un jeton neutre, que seule la garde de chemin
+ * depuis la recette est un jeton neutre, que seule la garde de chemin
  * du backend sait traduire en racine réelle. Il produit un plan NEUTRE ;
  * la traduction vers un plan de fichiers concret appartient au contrat de backend
- * (story 60.3) et passe APRÈS cette ligne. En 60.1, ce résolveur n'a pour
+ * et passe APRÈS cette ligne. En, ce résolveur n'a pour
  * consommateur que ses tests.
  *
  * **La maille du groupe EST la maille du cloisonnement.** On résout UN groupe :
@@ -31,8 +31,8 @@ use App\Models\DirectoryTemplate;
  * cloisonnent pas parce que leurs dossiers sont voisins, mais parce que leurs
  * groupes diffèrent. Pour les matières, la maille pertinente sera « matière ×
  * classe » (le groupe qui porte réellement l'audience) et jamais « matière » nue.
- * L'ACCROCHAGE d'une recette à un type de groupe est le périmètre de la story
- * suivante — ici, l'invariant est documenté et respecté, pas implémenté.
+ * L'ACCROCHAGE d'une recette à un type de groupe reste à faire — ici, l'invariant
+ * est documenté et respecté, pas implémenté.
  *
  * **La forme des octrois est dictée par une mesure.** La pose récursive de
  * permissions nominatives est quadratique et bute sur une limite dure : un octroi
@@ -48,8 +48,8 @@ use App\Models\DirectoryTemplate;
  * utilisateur » a deux rôles de maille utilisateur, cardinalité un). Ce résolveur
  * ne peut donc pas distinguer, par le seul type du sujet, une désignation
  * nominative légitime d'une audience énumérée à tort. **Choisir le sujet d'une
- * audience est la responsabilité de la couche des stratégies de résolution (story
- * suivante)** ; c'est là que l'arbitrage se garde, pas ici.
+ * audience est la responsabilité de la couche des stratégies de résolution** ;
+ * c'est là que l'arbitrage se garde, pas ici.
  *
  * **Trois états distincts, jamais confondus** :
  *  - octroi ACTIF — le rôle a l'accès ;
@@ -101,10 +101,6 @@ final class PlanResolver
         return new FilePlan((string) $template->key, $rootPath, $roles, $nodes, $template->rootAnchor());
     }
 
-    // =========================================================================
-    // Nœuds
-    // =========================================================================
-
     /**
      * Émet les nœuds de plan d'UNE spécification de nœud : un seul, sauf pour un
      * nœud par membre qui en émet un PAR MEMBRE portant le rôle d'arête visé
@@ -132,7 +128,7 @@ final class PlanResolver
         $closure = $this->closureFor($grantSpecs, $roleKeys);
 
         if (! $nature->expandsPerMember()) {
-            // Story 60.5 — le JETON RACINE ne se substitue pas et ne se valide pas
+            // Le JETON RACINE ne se substitue pas et ne se valide pas
             // comme un chemin : il désigne la racine du plan elle-même. Le faire
             // passer par la substitution le refuserait comme « chemin relatif non
             // sûr » — ce qu'il est, et c'est précisément pour cela qu'il est un
@@ -183,10 +179,6 @@ final class PlanResolver
         return $nodes;
     }
 
-    // =========================================================================
-    // Octrois et clôture
-    // =========================================================================
-
     /**
      * Octrois d'un nœud. Un octroi d'audience se démultiplie sur les sujets du
      * rôle (zéro cible = zéro octroi) ; le jeton du membre énuméré produit UN
@@ -207,7 +199,7 @@ final class PlanResolver
         foreach ($grantSpecs as $grantSpec) {
             /** @var array<string, mixed> $grantSpec */
             $role = (string) $grantSpec['role'];
-            // Story 62.4 — la recette dit une LISTE de verbes. Aucune tolérance
+            // La recette dit une LISTE de verbes. Aucune tolérance
             // pour l'ancienne clé scalaire : une recette non migrée est refusée à
             // la validation, elle n'arrive jamais jusqu'ici.
             $verbs = (array) ($grantSpec['verbs'] ?? []);
@@ -281,10 +273,6 @@ final class PlanResolver
         return array_values(array_unique($keys));
     }
 
-    // =========================================================================
-    // Substitution
-    // =========================================================================
-
     /**
      * Valeurs de substitution dérivées du groupe de cloisonnement.
      *
@@ -292,12 +280,12 @@ final class PlanResolver
      * casse préservée). Sans lui, un motif qui re-préfixe produirait le double
      * préfixe bien connu sur les groupes dont le nom stocké porte déjà le préfixe.
      *
-     * **Story 60.2 — les deux moitiés d'un nom « matière × classe ».**
+     * **les deux moitiés d'un nom « matière × classe ».**
      * `{group.matiere}` et `{group.classe}` ne sont fournis que pour un groupe de
      * ce type, dont le nom (`Matiere_Maths@6A`) porte deux mailles et n'est donc
      * pas un segment de chemin sûr. Un placeholder NON FOURNI fait échouer la
-     * substitution avec son message dédié — c'est le comportement de la story
-     * 60.1, et c'est exactement ce qu'on veut ici : `{group.bare_name}` sur un
+     * substitution avec son message dédié, et c'est exactement ce qu'on veut
+     * ici : `{group.bare_name}` sur un
      * groupe matière×classe continue d'échouer explicitement, le « @ » n'entrant
      * jamais dans un segment de chemin.
      *

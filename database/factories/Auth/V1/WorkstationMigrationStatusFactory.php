@@ -10,7 +10,6 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 
 /**
- * Story 16.11 — AC6.3.
  *
  * Factory pour `WorkstationMigrationStatus`. Génère un row valide :
  *

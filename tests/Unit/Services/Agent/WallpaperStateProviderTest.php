@@ -21,11 +21,12 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Tests Unit `WallpaperStateProvider` — Story 23.4 (AC4).
+ * Tests Unit `WallpaperStateProvider`.
  *
  * Mapping owner → maille, lockscreen ignoré, règle sans asset = payload null
  * explicite, applicabilité au contexte (jamais de précédence : tous les
- * candidats applicables sont retournés, étiquetés — D2 = compilateur).
+ * candidats applicables sont retournés, étiquetés ; c'est le compilateur qui
+ * arbitre).
  */
 class WallpaperStateProviderTest extends TestCase
 {
@@ -47,7 +48,7 @@ class WallpaperStateProviderTest extends TestCase
     {
         parent::setUp();
         // Projection Postgres-pure : aucune synchro AD à déclencher (host sans
-        // LDAP, iso NFR7). Pattern aligné sur ShortcutsStateProviderTest (27.1).
+        // LDAP). Pattern aligné sur ShortcutsStateProviderTest.
         \App\Observers\WorkstationGroupObserver::disableSync();
         \App\Observers\UserGroupObserver::disableSync();
         \App\Observers\UserGroupUserPivotObserver::disableSync();

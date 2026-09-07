@@ -7,8 +7,8 @@ namespace App\Wpkg\Deployment\Events;
 use Illuminate\Foundation\Events\Dispatchable;
 
 /**
- * Story 15.2 / AC4.1 — Poste qui rejoint/quitte un parc.
- * Émetteurs : Story 15.4 (HORS scope ici).
+ * Poste qui rejoint/quitte un parc.
+ * Émetteurs : (HORS scope ici).
  *
  * @phpstan-type Direction 'joined'|'left'
  */

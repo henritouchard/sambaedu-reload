@@ -1,6 +1,6 @@
-{{-- Story 3.8 - D6 / AC4.2 - Port iso legacy/modules/ipxe/Win10/action.php cmd_nosysprep (LOC 151-192). --}}
+{{-- Port iso legacy/modules/ipxe/Win10/action.php cmd_nosysprep (LOC 151-192). --}}
 {{-- Securite critique : ce .cmd s'execute en SYSTEM cote Windows post-reboot. --}}
-{{-- Q-2 REFACTO CLARTE (decision Henri 2026-05-25) : le SE5 emet `etape=nosysprep` distinct --}}
+{{-- Le SE5 emet `etape=nosysprep` distinct --}}
 {{-- (PAS `etape=sysprep&ret=2` comme legacy lignes 169, 187 - ambiguite legacy levee pour --}}
 {{-- la clarte de la state machine SE5). --}}
 REM cmd

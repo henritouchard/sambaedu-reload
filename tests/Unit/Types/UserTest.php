@@ -12,7 +12,6 @@ use PHPUnit\Framework\TestCase;
 /**
  * Tests unitaires du DTO App\Types\User (Wireable).
  *
- * Story 14.4 — Post-review #11 :
  * Vérifie que passwordChangedAt round-trip correctement à travers le pipeline
  * Livewire toArray() / fromLivewire() (sérialisation ISO8601 + parsing miroir).
  */
@@ -70,7 +69,7 @@ class UserTest extends TestCase
     public function it_handles_missing_password_changed_at_key_in_fromLivewire(): void
     {
         // Compat ascendante : un payload Livewire sans la clé passwordChangedAt
-        // (ex: serialisation antérieure à 14.4) doit produire null sans planter.
+        // (ex: serialisation antérieure) doit produire null sans planter.
         $payload = [
             'login' => 'legacy-user',
             'fullname' => 'Legacy',

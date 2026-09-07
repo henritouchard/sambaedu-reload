@@ -11,28 +11,28 @@ use Livewire\Component;
 use Livewire\WithPagination;
 
 /**
- * Story 56.5 (AC5/AC6, FR36) — /admin/extensions/journal : le JOURNAL D'AUDIT
+ * Admin/extensions/journal : le JOURNAL D'AUDIT
  * du système d'extensions, en lecture seule.
  *
  * Qui a intégré quoi, quand, et ce qui a échoué : intégrations et
- * désinstallations (54.2), actes de source (56.1), installations et retraits
- * (56.2), mises à jour (56.3), révocations d'autorisation (56.4). Tout était
- * écrit depuis 54.2 ; cette page est la première à le LIRE.
+ * désinstallations, actes de source, installations et retraits
+ * , mises à jour, révocations d'autorisation. Tout était
+ * écrit depuis ; cette page est la première à le LIRE.
  *
- * **Page dédiée plutôt qu'un onglet** (décision n° 6 de la story) : la
+ * **Page dédiée plutôt qu'un onglet** : la
  * bibliothèque est déjà dense (cartes, modales, runs), et le journal mélange
  * extensions ET sources — il est transverse au domaine, pas rattaché à une
  * fiche. La fiche y LIE, pré-filtrée (`?ext=<clé>`).
  *
  * **Rendu TOLÉRANT** : une action inconnue du mapping s'affiche telle quelle avec
  * un badge neutre. `action` est un string libre par construction, et cette page
- * verra un jour des actions écrites par une story future.
+ * verra un jour des actions écrites plus tard.
  *
  * **Ce qui n'apparaît JAMAIS ici** : URL de source, secret, `client_id`,
  * `installed_sha256`. La page ne rend que les colonnes du journal — jamais une
  * relation au-delà des dénormalisations — et tout est échappé par `{{ }}`.
  *
- * NFR15 (3 couches) : aucune requête, aucun Eloquent dans ce composant. Tout
+ * 3 couches : aucune requête, aucun Eloquent dans ce composant. Tout
  * passe par {@see ExtensionAuditJournalService} (lecture) et par les statiques du
  * modèle pour le MARQUEUR d'échec d'écriture — un signal d'exploitation, pas une
  * donnée du journal.
@@ -56,7 +56,7 @@ new #[Title('Journal des extensions')] class extends Component {
     public string $ext = '';
 
     /**
-     * Marqueur « une écriture d'audit a été perdue » (legs review 56.3 #4).
+     * Marqueur « une écriture d'audit a été perdue ».
      *
      * `null` = cas normal. Chargé au montage et après acquittement : c'est un
      * signal d'exploitation, il n'a pas besoin d'être temps réel.
@@ -75,7 +75,7 @@ new #[Title('Journal des extensions')] class extends Component {
         $this->loadWriteFailure();
     }
 
-    // ── Filtres ─────────────────────────────────────────────────────────
+    // Filtres
 
     public function updatingAction(): void
     {
@@ -96,7 +96,7 @@ new #[Title('Journal des extensions')] class extends Component {
         $this->resetPage();
     }
 
-    // ── AC6 — acquittement du signal d'échec d'écriture ─────────────────
+    // — acquittement du signal d'échec d'écriture
 
     public function askAcknowledge(): void
     {
@@ -113,7 +113,7 @@ new #[Title('Journal des extensions')] class extends Component {
     /**
      * Efface le marqueur.
      *
-     * ⚠️ N'écrit AUCUNE ligne d'audit — décision assumée (n° 5 de la story) : le
+     * ⚠️ N'écrit AUCUNE ligne d'audit, et c'est assumé : le
      * marqueur est un signal d'exploitation, pas une donnée de conformité.
      * L'auditer créerait une boucle (que faire si l'audit de l'acquittement
      * échoue ?).
@@ -130,13 +130,13 @@ new #[Title('Journal des extensions')] class extends Component {
         $this->toastSuccess('Signal acquitté. Il réapparaîtra si une écriture d\'audit échoue de nouveau.');
     }
 
-    // ── Lecture ─────────────────────────────────────────────────────────
+    // Lecture
 
     /**
-     * La page courante du journal (tableaux plats — NFR15).
+     * La page courante du journal (tableaux plats, jamais des modèles).
      *
      * Toute défaillance de lecture (table absente pendant la fenêtre
-     * `update.sh`) rend une page VIDE plutôt qu'une 500 : patron 54.2 « une
+     * `update.sh`) rend une page VIDE plutôt qu'une 500 : patron « une
      * bibliothèque illisible ne doit pas rendre une 500 », étendu ici.
      */
     #[Computed]
@@ -331,7 +331,7 @@ new #[Title('Journal des extensions')] class extends Component {
         </div>
     </div>
 
-    {{-- ===== Modale : acquitter le signal d'échec d'écriture (AC6) ===== --}}
+    {{-- ===== Modale : acquitter le signal d'échec d'écriture ===== --}}
     <x-molecules.modal wire:model="isAcknowledgeOpen" size="max-w-lg" height="h-auto"
         close-method="closeAcknowledge" title="Acquitter le signal" icon="fa-check text-warning">
 

@@ -14,14 +14,14 @@ use App\Models\ExtensionSource;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 54.1 — Service de catalogue du registre d'extensions.
+ * Service de catalogue du registre d'extensions.
  *
- * Unique point d'entrée des pages `/admin/extensions` (NFR15 : les SFC Livewire
+ * Unique point d'entrée des pages `/admin/extensions` (les SFC Livewire
  * ne touchent JAMAIS Eloquent directement) et unique écrivain du registre —
  * pour la source EMBARQUÉE (`syncBundled()`) comme pour les sources DISTANTES
  * (`syncManifestsForSource()`, appelée par {@see RemoteCatalogSyncService}).
  *
- * ## `syncBundled()` — chargement de la source embarquée (AC1/AC2)
+ * ## `syncBundled` — chargement de la source embarquée
  *
  * Parcourt `config('extensions.bundled_path')/<id>/manifest.json`, décode
  * chaque fichier, puis délègue à {@see self::syncManifestsForSource()} qui
@@ -36,20 +36,20 @@ use Illuminate\Support\Facades\Log;
  *  2. **`status` n'est JAMAIS écrit.** Ni à la création (le défaut DB
  *     `available` s'applique), ni à la mise à jour. Sinon un simple
  *     rechargement de catalogue dé-intégrerait une extension que l'admin a
- *     intégrée (Story 54.2). La colonne est d'ailleurs hors `$fillable`.
+ * intégrée. La colonne est d'ailleurs hors `$fillable`.
  *  3. **Idempotence** : rejouer la synchro ne duplique rien ; les lignes dont le
- *     manifest n'a pas bougé ne changent pas (`isDirty()` ⇒ pas d'écriture).
+ *  manifest n'a pas bougé ne changent pas (`isDirty()` ⇒ pas d'écriture).
  *  4. **Prune BORNÉ** : seules les lignes de la source bundled encore
  *     `available` dont le manifest a disparu du disque sont supprimées. Une
  *     extension `integrated` n'est **jamais** retirée silencieusement — on la
  *     signale (`Log::warning`) et on la laisse en place ; c'est à l'admin de la
- *     désinstaller (54.2).
+ *  désinstaller.
  *  5. **Arbre embarqué introuvable ≠ catalogue vide** : si la racine des
  *     manifests n'existe pas (déploiement incomplet, `EXTENSIONS_BUNDLED_PATH`
  *     mal résolu), la synchro sort en no-op bruyant SANS pruner — sinon un
  *     accident de chemin viderait tout le catalogue.
  *
- * ## Story 56.1 — `syncManifestsForSource()` : le MÊME moteur pour toute source
+ * ## `syncManifestsForSource` : le MÊME moteur pour toute source
  *
  * Les invariants #1 à #4 ci-dessus ne sont pas propres à la source embarquée :
  * ils décrivent ce que « charger un lot de manifests dans le registre » doit
@@ -57,7 +57,7 @@ use Illuminate\Support\Facades\Log;
  * VERBATIM dans une méthode publique que {@see RemoteCatalogSyncService}
  * consomme une fois — et une fois SEULEMENT — la signature du catalogue
  * distant vérifiée. Le comportement de `syncBundled()` est inchangé : ce
- * refactor est une extraction, pas une évolution (les tests 54.1 passent
+ * refactor est une extraction, pas une évolution (les tests passent
  * inchangés).
  *
  * L'invariant #5 (« rien observé ⇒ aucun prune ») reste, lui, du ressort de
@@ -73,20 +73,19 @@ use Illuminate\Support\Facades\Log;
  * prêts à afficher — aucune entité Eloquent ne remonte dans un composant
  * Livewire.
  *
- * **Story 56.1 — filtrage par l'état de la SOURCE** (dette explicite de
- * l'Epic 54, soldée ici) : une extension `available` n'est proposée que si sa
- * source est ACTIVE et que son dernier catalogue a été VÉRIFIÉ. Une source
+ * **Filtrage par l'état de la SOURCE** : une extension `available` n'est proposée
+ * que si sa source est ACTIVE et que son dernier catalogue a été VÉRIFIÉ. Une source
  * désactivée par l'admin, ou dont la signature ne se vérifie plus, ne propose
- * plus rien (fail-closed NFR2) — sa fiche répond 404. Une extension
+ * plus rien (fail-closed) — sa fiche répond 404. Une extension
  * **`integrated` reste TOUJOURS listée**, avec les drapeaux qui disent l'état
  * de sa source (`source_enabled`, `source_sync_status`) : on ne dé-intègre
  * jamais silencieusement (invariant #4), c'est l'admin qui désinstalle.
  *
  * Un dépôt momentanément INJOIGNABLE ne masque rien : le registre EST le cache
- * local, ses lignes sont le dernier catalogue *vérifié* (NFR7).
+ * local, ses lignes sont le dernier catalogue *vérifié*.
  *
  * ⚠️ Vocabulaire : « amont » / `Upstream`, jamais « central ». Ce service n'a
- * AUCUN lien avec la sync amont controlHub (isolement NFR14).
+ * AUCUN lien avec la synchronisation amont controlHub.
  */
 class ExtensionCatalogService
 {
@@ -95,10 +94,6 @@ class ExtensionCatalogService
         private readonly ExtensionScopeService $scopes,
     ) {
     }
-
-    // =====================================================================
-    // Synchronisation de la source EMBARQUÉE
-    // =====================================================================
 
     /**
      * Garantit l'existence de la source embarquée (clé `bundled`).
@@ -179,7 +174,7 @@ class ExtensionCatalogService
     }
 
     /**
-     * Story 56.1 — Charge un lot de manifests DÉCODÉS dans le registre, pour
+     * Charge un lot de manifests DÉCODÉS dans le registre, pour
      * une source quelconque : valide, upsert, puis prune borné.
      *
      * **Extraction verbatim des invariants #1 à #4** de `syncBundled()` — voir
@@ -385,15 +380,11 @@ class ExtensionCatalogService
         return $pruned;
     }
 
-    // =====================================================================
-    // Lecture (pages admin)
-    // =====================================================================
-
     /**
      * La bibliothèque : les extensions du registre PROPOSABLES, prêtes à
      * afficher.
      *
-     * Story 56.1 — les extensions `available` d'une source désactivée ou dont
+     * Les extensions `available` d'une source désactivée ou dont
      * le dernier catalogue a été refusé sont MASQUÉES (voir
      * {@see self::isProposable()}). Les `integrated` restent toutes listées,
      * quel que soit l'état de leur source.
@@ -432,7 +423,7 @@ class ExtensionCatalogService
     }
 
     /**
-     * Story 56.1 — Cette extension a-t-elle sa place dans la bibliothèque ?
+     * Cette extension a-t-elle sa place dans la bibliothèque ?
      *
      * - Une extension **`integrated`** : TOUJOURS. La désactivation d'une
      *   source gèle ce qu'elle propose, elle ne dé-intègre pas ce qui a été
@@ -441,9 +432,9 @@ class ExtensionCatalogService
      *   décide de désinstaller.
      * - Une extension **`available`** : seulement si sa source est ACTIVE et
      *   que son dernier catalogue a été VÉRIFIÉ. Une source en `error`
-     *   (signature invalide) ne propose plus rien — fail-closed NFR2. Une
+     *   (signature invalide) ne propose plus rien — fail-closed. Une
      *   source `unreachable` continue, elle, de proposer son dernier catalogue
-     *   vérifié : le registre EST le cache local (NFR7).
+     *   vérifié : le registre EST le cache local.
      * - Source manquante (ligne orpheline — la FK `cascadeOnDelete` rend le cas
      *   théorique) : on masque. On ne propose pas une extension dont on ne peut
      *   plus dire d'où elle vient.
@@ -460,18 +451,18 @@ class ExtensionCatalogService
         }
 
         // Règle unique, portée par le modèle : ce qui s'affiche et ce qui
-        // s'intègre doivent dire la même chose (review 56.1 #1).
+        // s'intègre doivent dire la même chose.
         return $source->offersAvailableExtensions();
     }
 
     /**
      * Ligne de LISTE (dénormalisations + libellés).
      *
-     * Story 56.1 — la ligne porte désormais la PROVENANCE complète
+     * La ligne porte désormais la PROVENANCE complète
      * (`source_is_official`, `source_host`) et l'état de la source
      * (`source_enabled`, `source_sync_status`) : la carte doit pouvoir afficher
      * un badge « Tierce » et un avertissement sans jamais retoucher la base, et
-     * la modale d'avertissement doit nommer l'hôte réel du dépôt (FR4/UX-DR4).
+     * la modale d'avertissement doit nommer l'hôte réel du dépôt.
      *
      * @return array<string, mixed>
      */
@@ -503,7 +494,7 @@ class ExtensionCatalogService
             'source_sync_label' => $syncStatus->label(),
             'source_sync_badge' => $syncStatus->badgeClass(),
 
-            // ── Story 56.3 — cycle `app` ────────────────────────────────────
+            // — cycle `app`
             // `installed_version` est ce qui TOURNE, `version` ce que la source
             // PUBLIE : deux faits différents, et leur écart EST la détection de
             // mise à jour.
@@ -511,7 +502,7 @@ class ExtensionCatalogService
             'update_available' => $this->hasUpdateAvailable($extension),
             'installable' => $this->isAppInstallable($extension),
 
-            // ── Story 56.5 — santé (LUE, jamais mesurée ici) ────────────────
+            // — santé (LUE, jamais mesurée ici)
             // Badge discret sur la carte d'une `app` installée dont le backend a
             // été observé injoignable. MÊME règle unique que la tuile du
             // lanceur ({@see \App\Models\Extension::isFlaggedUnreachable()}) :
@@ -523,14 +514,14 @@ class ExtensionCatalogService
     }
 
     /**
-     * Story 56.3 (AC3) — Une mise à jour est-elle PROPOSABLE pour cette
+     * Une mise à jour est-elle PROPOSABLE pour cette
      * extension ?
      *
      * ⚠️ Règle à UN SEUL énoncé, calculée dans {@see self::toListRow()} : la
      * fiche hérite par construction ({@see self::toDetail()} = `toListRow()` +
      * des champs de manifest), donc la liste et la fiche ne peuvent pas
-     * diverger. La dupliquer dans la vue ou dans un composant rouvrirait
-     * exactement le défaut de la review 56.1 #3.
+     * diverger. La dupliquer dans la vue ou dans un composant la ferait
+     * inévitablement diverger.
      *
      * La règle est un **ÉCART**, jamais un ORDRE. `version` est une chaîne
      * LIBRE du manifest — le validateur ne lui impose aucun format — donc un
@@ -546,18 +537,18 @@ class ExtensionCatalogService
     private function hasUpdateAvailable(Extension $extension): bool
     {
         // Une DÉCISION = un FAIT + une AUTORISATION, et chacun a un seul
-        // énoncé (review 56.5 #5) :
+        // énoncé :
         //
         //  - le FAIT « ce qui tourne n'est pas ce que le catalogue publie » est
-        //    porté par {@see Extension::hasVersionDrift()} — c'est aussi ce que
+        //  porté par {@see Extension::hasVersionDrift()} — c'est aussi ce que
         //    le doctor veut savoir, écart de version compris quand la source
         //    est gelée ;
         //  - l'AUTORISATION « cette source propose encore quelque chose » est
-        //    portée par {@see ExtensionSource::offersAvailableExtensions()}, la
-        //    même que pour l'affichage et l'intégration (review 56.1 #1).
+        //  portée par {@see ExtensionSource::offersAvailableExtensions()}, la
+        //    même que pour l'affichage et l'intégration.
         //
         // Les deux énoncés vivaient dupliqués ici. Une règle recopiée est une
-        // règle qui divergera : c'est la leçon la plus répétée de cet epic.
+        // règle qui divergera.
         if (! $extension->hasVersionDrift()) {
             return false;
         }
@@ -566,7 +557,7 @@ class ExtensionCatalogService
     }
 
     /**
-     * Story 56.3 (AC1) — Le moteur accepterait-il d'installer cette extension ?
+     * Le moteur accepterait-il d'installer cette extension ?
      *
      * L'UI ne doit JAMAIS proposer ce que le moteur refusera. Les deux
      * conditions sont exactement celles de
@@ -592,7 +583,7 @@ class ExtensionCatalogService
     }
 
     /**
-     * Fiche DÉTAIL : la liste + ce qui se lit du manifest (FR3).
+     * Fiche DÉTAIL : la liste + ce qui se lit du manifest.
      *
      * @return array<string, mixed>
      */
@@ -603,7 +594,7 @@ class ExtensionCatalogService
         return $this->toListRow($extension) + [
             'entry_url' => $extension->entryUrl(),
             'scopes' => $extension->requestedScopes(),
-            // Story 56.4 — les scopes RÉELLEMENT ACCORDÉS (`null` = aucun
+            // Les scopes RÉELLEMENT ACCORDÉS (`null` = aucun
             // client OIDC actif : la fiche n'affiche alors pas de volet).
             // Résolu ICI, par le service : une vue ne requête pas la base.
             'granted_scopes' => $this->scopes->grantedScopesFor($extension),
@@ -617,10 +608,10 @@ class ExtensionCatalogService
     }
 
     /**
-     * Story 56.5 (AC4) — La carte « Santé » de la fiche, prête à afficher.
+     * La carte « Santé » de la fiche, prête à afficher.
      *
      * Tout est calculé ICI : une vue ne décide pas si un horodatage est périmé et
-     * ne formate pas de date métier (NFR15 — 3 couches). La fiche n'a plus qu'à
+     * ne formate pas de date métier. La fiche n'a plus qu'à
      * choisir un badge.
      *
      * `health_monitored` est la CONDITION d'affichage de la carte : une `link` ou
@@ -631,7 +622,7 @@ class ExtensionCatalogService
      *
      * ⚠️ La version installée vs disponible n'est PAS recalculée ici : elle vient
      * de `toListRow()` (`installed_version`, `version`, `update_available`) —
-     * réutiliser, jamais redire (leçon review 56.1 #3).
+     * réutiliser, jamais redire.
      *
      * @return array<string, mixed>
      */

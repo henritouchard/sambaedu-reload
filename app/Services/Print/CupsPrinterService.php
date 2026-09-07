@@ -11,23 +11,23 @@ use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
 
 /**
- * Story 6.1 — Service d'encapsulation des commandes CUPS.
+ * Service d'encapsulation des commandes CUPS.
  *
  * Wrappe les binaires `lpstat`, `lpadmin`, `cupsenable`, `cupsdisable`, `lpinfo`,
  * `smbcontrol` derrière une API typée. Tous les arguments user-controlled sont
- * `escapeshellarg`-és + revalidés via regex strictes (defense in depth, AC5/AC8).
+ * `escapeshellarg`-és + revalidés via regex strictes (defense in depth).
  *
- * Pattern shellout aligné sur `App\Services\Filesystem\XfsQuotaService` (Story 5.1a) :
+ * Pattern shellout aligné sur `App\Services\Filesystem\XfsQuotaService` :
  *  - `escapeshellarg()` systématique avant `commandRunner->run()`.
  *  - Capture stdout / stderr / returnCode → `CupsCommandException` structurée.
  *  - Préfixe logs `CupsPrinterService:` (grep opérateurs).
  *  - `LC_ALL=C` centralisé dans `RealCommandRunner::run()` — la VM dev est en
  *    français ; sans `LC_ALL=C` les chaînes `is now printing` deviennent
- *    `imprime maintenant`, etc. (fix #14).
+ *    `imprime maintenant`, etc.
  *
  * Comportement CUPS-down : `listPrinters()` lève `CupsDaemonDownException` si
  * `lpstat -s` échoue, pour permettre aux appelants de distinguer « CUPS down »
- * de « liste vide » (fix #12). Le `PrintersSyncCommand` l'attrape pour éviter
+ * de « liste vide ». Le `PrintersSyncCommand` l'attrape pour éviter
  * de marquer tous les rows SER comme orphelins.
  */
 class CupsPrinterService
@@ -45,10 +45,6 @@ class CupsPrinterService
         private readonly CommandRunner $commandRunner,
     ) {
     }
-
-    // ========================================================================
-    // VALIDATION (defense in depth)
-    // ========================================================================
 
     /**
      * @throws InvalidArgumentException si nom non conforme.
@@ -71,17 +67,13 @@ class CupsPrinterService
             throw new InvalidArgumentException('URI invalide. Formats acceptés : socket://, ipp://, ipps://, lpd://, http://, https://.');
         }
 
-        // Double-validation structurelle via parse_url (defense in depth, fix #3).
+        // Double-validation structurelle via parse_url (defense in depth).
         $parsed = parse_url($uri);
         if ($parsed === false || empty($parsed['scheme']) || empty($parsed['host'])) {
             Log::warning('CupsPrinterService: URI invalide (parse_url)', ['uri' => $uri]);
             throw new InvalidArgumentException('URI structurellement invalide (hôte ou schéma manquant).');
         }
     }
-
-    // ========================================================================
-    // SANTÉ CUPS
-    // ========================================================================
 
     /**
      * Vérifie que le daemon CUPS répond via `lpstat -r`.
@@ -93,10 +85,6 @@ class CupsPrinterService
         $result = $this->runQuiet('lpstat -r');
         return $result['returnCode'] === 0;
     }
-
-    // ========================================================================
-    // LISTAGE (lpstat)
-    // ========================================================================
 
     /**
      * Liste toutes les imprimantes CUPS avec leur état + métadata.
@@ -144,7 +132,7 @@ class CupsPrinterService
 
         $byName = $this->parseLpstatLp($details['stdout']);
 
-        // Un seul appel `lpstat -o` pour tous les jobs (fix #2 N+1).
+        // Un seul appel `lpstat -o` pour tous les jobs, pour éviter le N+1.
         $jobsCounts = $this->getAllJobsCounts(array_keys($names));
 
         $result = [];
@@ -184,7 +172,7 @@ class CupsPrinterService
     /**
      * Compte les jobs en attente d'une imprimante précise (`lpstat -o <name>`).
      * Méthode standalone conservée pour usage external ; `listPrinters()` utilise
-     * `getAllJobsCounts()` (batch) pour éviter le N+1 (fix #2).
+     * `getAllJobsCounts()` (batch) pour éviter le N+1.
      */
     public function getJobsCount(string $name): int
     {
@@ -230,14 +218,10 @@ class CupsPrinterService
         return $drivers;
     }
 
-    // ========================================================================
-    // MUTATIONS (lpadmin, cupsenable, cupsdisable)
-    // ========================================================================
-
     /**
      * Ajoute une imprimante via `lpadmin -p <name> -E -v <uri> [-D] [-L] [-m]`.
      *
-     * Retourne le résultat du reload Samba best-effort (fix #15 : l'appelant
+     * Retourne le résultat du reload Samba best-effort (l'appelant
      * peut montrer un toast d'avertissement si le reload échoue).
      *
      * @throws InvalidArgumentException
@@ -274,7 +258,7 @@ class CupsPrinterService
      * Met à jour la configuration CUPS d'une imprimante existante.
      *
      * Les clés acceptées dans `$changes` : `uri`, `description`, `location`, `ppd`.
-     * Retourne le résultat du reload Samba (fix #15).
+     * Retourne le résultat du reload Samba.
      *
      * @param  array{uri?:string,description?:string,location?:string,ppd?:string}  $changes
      * @throws InvalidArgumentException
@@ -311,7 +295,7 @@ class CupsPrinterService
     /**
      * Supprime une imprimante CUPS via `lpadmin -x <name>`.
      *
-     * Retourne le résultat du reload Samba (fix #15).
+     * Retourne le résultat du reload Samba.
      *
      * @throws InvalidArgumentException
      * @throws CupsCommandException
@@ -351,10 +335,6 @@ class CupsPrinterService
         $this->runOrThrow($command, 'désactivation imprimante', ['name' => $name]);
         return true;
     }
-
-    // ========================================================================
-    // PARSING privé
-    // ========================================================================
 
     /**
      * Parse `lpstat -s` (LC_ALL=C) :
@@ -483,10 +463,6 @@ class CupsPrinterService
         return $counts;
     }
 
-    // ========================================================================
-    // PRIMITIVES Internal
-    // ========================================================================
-
     /**
      * Run a shell command + log silencieux. `LC_ALL=C` est injecté par
      * `RealCommandRunner::run()` — ne pas le répéter ici.
@@ -530,7 +506,7 @@ class CupsPrinterService
     /**
      * Notifie Samba que la liste d'imprimantes a changé. Best-effort : retourne
      * `false` sans lever d'exception si le reload échoue, permettant à l'appelant
-     * d'afficher un toast d'avertissement (fix #15).
+     * d'afficher un toast d'avertissement.
      */
     private function reloadSamba(): bool
     {

@@ -5,8 +5,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 27.3bis — Set initial du catalogue d'associations (D-Henri n°4 :
- * reproduction de l'existant legacy). IDEMPOTENT : `updateOrInsert` par `key`
+ * Set initial du catalogue d'associations, reproduisant l'existant legacy. IDEMPOTENT : `updateOrInsert` par `key`
  * (rejouable, zéro doublon). Le catalogue grossit ensuite par DATA / via le
  * {@see \Database\Seeders\FileAssociationSeeder} (qui parse `default.xml` quand
  * il est lisible sur la VM) — zéro release agent.
@@ -32,12 +31,12 @@ return new class extends Migration
      * {@see \Database\Seeders\FileAssociationSeeder} (baseline ET parse default.xml),
      * pour qu'une paire identique upsert au lieu de dupliquer le catalogue sur VM.
      *
-     * **Extension WPKG-aware (D-Henri n°7).** Chaque ligne est TAGUÉE par `source` :
+     * **Extension WPKG-aware.** Chaque ligne est TAGUÉE par `source` :
      *   - Firefox (`.html/.htm/http/https → Firefox*`) = `wpkg`, `wpkg_package='firefox'`
      *     (le `<package id>` représentatif — = `Application::app_id` ; applicable
      *     seulement si Firefox est déployé sur le parc) ;
      *   - `.jpg → WindowsPhotoViewer` = `native` (built-in Windows) ;
-     *   - `.txt → txtfile` = `native` (Notepad, le cas de Henri) — toujours applicable.
+     *   - `.txt → txtfile` = `native` (Notepad) — toujours applicable.
      * Cohérent avec le {@see \Database\Seeders\FileAssociationSeeder} (mêmes tags
      * dans sa baseline figée).
      *

@@ -12,7 +12,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Tests Unit `AdUserManager` — Story 16.3b (correctifs post-review 2026-05-12).
+ * Tests Unit `AdUserManager`.
  *
  * Mock complet de `SambaToolRunner` : aucun appel shell réel. Vérifie le
  * contrat (args passés, gestion erreurs, idempotence "already exists",

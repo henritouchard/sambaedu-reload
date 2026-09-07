@@ -11,10 +11,9 @@ use Illuminate\Support\Facades\Log;
 use Livewire\Component;
 
 /**
- * Story 63.4 — LA CARTE « QUOTAS DES ESPACES PERSONNELS », dans le bloc
+ * LA CARTE « QUOTAS DES ESPACES PERSONNELS », dans le bloc
  * « Réglages » de l'onglet des emplacements.
  *
- * ---------------------------------------------------------------------------
  * **CE QU'ELLE RÉPARE.** L'écran d'avant portait une grille de « quotas par
  * défaut par profil » — quatre publics × deux partitions — qui écrivait une clé
  * de réglage que **la résolution ne lisait pas**. Elle répondait « Réglages
@@ -71,7 +70,6 @@ use Livewire\Component;
  * tant que l'administrateur n'a pas enregistré une valeur lui-même, la carte
  * affiche ce qui a été regroupé et avec quelles valeurs. L'avertissement disparaît
  * au premier enregistrement.
- * ---------------------------------------------------------------------------
  *
  * Composant enfant (nested) — double garde `server.admin` au montage ET à chaque
  * écriture, et **racine stable** : aucune condition au premier niveau du
@@ -97,8 +95,8 @@ new class extends Component {
      * Elle est lue ici, et effacée au premier enregistrement manuel.
      *
      * ⚠️ Ce n'est PAS la clé de l'ancienne grille : celle-là est morte avec elle, et
-     * la ressusciter sous une autre casquette serait exactement le défaut que cette
-     * story ferme. Celle-ci ne porte aucun plafond — seulement de quoi expliquer une
+     * la ressusciter sous une autre casquette serait exactement le défaut qu'on
+     * ferme ici. Celle-ci ne porte aucun plafond — seulement de quoi expliquer une
      * fois ce qui a été regroupé.
      */
     public const COLLAPSE_NOTICE_KEY = 'quota.profils_regroupes';
@@ -380,18 +378,16 @@ new class extends Component {
     /**
      * **LE SECOND GESTE : PORTER LE PLAFOND À TOUS LES COMPTES COUVERTS.**
      *
-     * ---------------------------------------------------------------------------
      * **POURQUOI IL EXISTE, ET POURQUOI IL EST SÉPARÉ.** Enregistrer le plafond
      * l'écrit en base ; il n'atteint AUCUN compte tant que rien ne le porte sur le
      * système de fichiers. Le porter d'un coup à toute la population est légitime —
      * c'est même la seule façon de rendre un plafond effectif sur un parc existant
-     * — mais c'est une application EN MASSE, et la doctrine de cette story est
+     * — mais c'est une application EN MASSE, et la doctrine est
      * qu'aucune ne se fait sans clic. D'où deux boutons, et une annonce chiffrée
      * entre les deux.
      *
      * Les règles de groupe restent respectées : ce qui est mis en file est le quota
      * EFFECTIF de chaque compte, jamais le défaut appliqué à l'aveugle.
-     * ---------------------------------------------------------------------------
      */
     public function applyToCovered(string $key): void
     {

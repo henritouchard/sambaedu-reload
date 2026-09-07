@@ -9,7 +9,7 @@ use PHPUnit\Framework\TestCase;
 use Symfony\Component\Finder\Finder;
 
 /**
- * Garde-fou architectural Epic 38 (Story 38.4 / AC2).
+ * Garde-fou architectural.
  *
  * Interdit toute réintroduction d'un chemin FS legacy `/var/www/sambaedu` OU
  * d'une consultation de `config('sambaedu.legacy_path')` dans le code serveur
@@ -18,16 +18,16 @@ use Symfony\Component\Finder\Finder;
  *
  * Les commentaires/docblocks sont ignorés (on ne teste que le CODE effectif).
  *
- * Liste blanche (frontière refermée d'un cran par 38.5) :
+ * Liste blanche (frontière refermée d'un cran par) :
  *  - `LegacyCatchallController` : sert les modules in-repo + dégrade en 404 ;
  *  - `legacy/stubs/config.inc.php` : chaîne `include_path` FPM générée (inerte,
  *    référence documentée « à ne pas toucher »).
  *
- * Story 38.5 : `LegacyEmbedService` (dernière route legacy embarquée) a été
+ * `LegacyEmbedService` (dernière route legacy embarquée) a été
  * SUPPRIMÉ — retiré de la liste blanche (la frontière architecturale s'est
  * refermée : plus aucun couple contrôleur/service embed dédié).
  *
- * Story 38.6 : `InteractsWithSe4Extinction` (commandes se4:{status,unplug,
+ * `InteractsWithSe4Extinction` (commandes se4:{status,unplug,
  * replug,purge}) est autorisé à consulter `sambaedu.legacy_path` — c'est
  * l'outillage d'extinction lui-même (déplacement vers `.off`, purge), pas une
  * réintroduction du canal. Il reste soumis au test du littéral FS.
@@ -36,7 +36,7 @@ class GpoLegacyIsolationTest extends TestCase
 {
     /**
      * Basenames autorisés à contenir un littéral `/var/www/sambaedu` ou une
-     * consultation `sambaedu.legacy_path` (frontière catchall/embed/38.5).
+     * consultation `sambaedu.legacy_path` (frontière catchall/embed).
      *
      * @var list<string>
      */
@@ -48,7 +48,7 @@ class GpoLegacyIsolationTest extends TestCase
     /**
      * Basenames autorisés en PLUS à consulter `sambaedu.legacy_path` (mais
      * toujours interdits de littéral `/var/www/sambaedu`) : l'outillage
-     * d'extinction 38.6 opère sur le chemin legacy par définition.
+     * d'extinction opère sur le chemin legacy par définition.
      *
      * @var list<string>
      */

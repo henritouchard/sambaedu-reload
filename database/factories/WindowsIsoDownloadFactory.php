@@ -10,13 +10,13 @@ use App\Models\WindowsIsoDownload;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
- * Story 3.6 — D9 / AC1.2 — Factory pour {@see \App\Models\WindowsIsoDownload}.
+ * Factory pour {@see \App\Models\WindowsIsoDownload}.
  *
  * Convention iso projet :
  *  - Par défaut, une row `pending` rattachée à un nouvel admin via
- *    `User::factory()`.
+ *  `User::factory()`.
  *  - States dédiés `downloading()`, `extracting()`, `success()`, `failed()`,
- *    `cancelled()` pour les tests Feature/Unit.
+ *  `cancelled()` pour les tests Feature/Unit.
  *
  * @extends Factory<WindowsIsoDownload>
  */
@@ -114,8 +114,8 @@ class WindowsIsoDownloadFactory extends Factory
     }
 
     /**
-     * Ré-injection de pilotes (ré-extraction d'une ISO déjà déployée, Story
-     * 3.10) : aucune URL source, le fichier est déjà sur disque.
+     * Ré-injection de pilotes (ré-extraction d'une ISO déjà déployée) : aucune URL
+     * source, le fichier est déjà sur disque.
      */
     public function reinject(): static
     {

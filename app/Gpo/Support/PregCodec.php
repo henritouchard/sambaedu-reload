@@ -10,7 +10,7 @@ use RuntimeException;
  * Codec du format binaire `Registry.pol` (PReg) — port natif fidèle des
  * fonctions legacy `read_pol` / `write_pol` (`sambaedu/includes/gpo.inc.php`).
  *
- * Story 38.4 (AC2) — sortie du dernier `require` FS legacy consommé par le
+ * Sortie du dernier `require` FS legacy consommé par le
  * plan roaming ({@see \App\Services\Gpo\SysvolPolicyService}). Pur PHP, aucun
  * side effect, aucun `exec` : donc légitime sous `App\Gpo` (garde-fou
  * `GpoNamespaceTest`).
@@ -23,11 +23,11 @@ use RuntimeException;
  *       · `type` et `size` sont des DWORD little-endian (4 octets) ;
  *       · `data` fait `size` octets bruts.
  *
- * **Byte-stabilité** (AC — `project_severance_freezes_effective_state`) : un
+ * **Byte-stabilité** : un
  * `decode()` suivi d'un `encode()` sans modification reproduit EXACTEMENT les
  * octets d'origine pour REG_SZ/REG_EXPAND_SZ **ASCII** et REG_DWORD (les types
  * non manipulés sont conservés bruts). LIMITES héritées du port fidèle de
- * `dstr2str` (retrait de TOUS les NUL, review 38.4 #6) : REG_MULTI_SZ perd ses
+ * `dstr2str`, qui retire TOUS les NUL : REG_MULTI_SZ perd ses
  * séparateurs NUL internes, et le non-ASCII n'est PAS round-trip — n'utiliser
  * ce codec que sur des politiques ASCII à valeurs `;`-séparées (cas
  * ExcludeProfileDirs). Divergence volontaire vs legacy : `dwordToInt` lit le
@@ -200,7 +200,7 @@ final class PregCodec
      * Si la clé n'existe pas, RIEN n'est modifié (parité legacy : change_pol_key
      * ne créait pas la clé absente) et `false` est retourné — l'appelant DOIT
      * décider (log/erreur) plutôt que laisser croire à une écriture
-     * (review 38.4 #7 : no-op silencieux).
+     * silencieuse.
      *
      * @param  list<array<string,mixed>>  $entries  Modifié par référence.
      * @param  list<string>  $data
@@ -218,10 +218,6 @@ final class PregCodec
 
         return false;
     }
-
-    // -----------------------------------------------------------------------
-    // Helpers binaires — équivalents des dstr2str/str2dstr/dword legacy.
-    // -----------------------------------------------------------------------
 
     /**
      * Sépare le corps sur le premier `;` UTF-16LE (`3B 00`) — parité

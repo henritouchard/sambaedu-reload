@@ -16,7 +16,6 @@ use Tests\Concerns\IssuesWorkstationJwt;
 use Tests\TestCase;
 
 /**
- * Story 16.10 — AC5.1 / AC7.2.
  *
  * Tests Feature `POST /api/v1/agent/enroll`.
  *
@@ -51,7 +50,7 @@ class EnrollControllerTest extends TestCase
         config([
             'sambaedu.se4fs_name' => 'se4fs-test001',
             'auth_v1.server.host_suffix' => 'lab.local',
-            // Story 16.11 — Loopback 127.0.0.1 doit passer le LAN whitelist
+            // Loopback 127.0.0.1 doit passer le LAN whitelist
             // pour les tests Feature.
             'auth_v1.bootstrap.allowed_subnets' => '127.0.0.0/8,192.168.0.0/16,10.0.0.0/8',
         ]);
@@ -66,7 +65,7 @@ class EnrollControllerTest extends TestCase
     /**
      * Mock `LegacyBootstrapTokenValidator` pour fixer la décision.
      *
-     * Le mock accepte 1 ou 2 arguments (story 16.10 et 16.11) — par défaut
+     * Le mock accepte 1 ou 2 arguments — par défaut
      * `isValid` retourne `$valid` pour toute combinaison d'arguments.
      */
     private function bootstrapTokenValid(bool $valid): void
@@ -74,7 +73,7 @@ class EnrollControllerTest extends TestCase
         $mock = Mockery::mock(LegacyBootstrapTokenValidator::class);
         $mock->shouldReceive('isValid')->andReturn($valid);
         // checkMismatch ne sera pas appelé si isValid retourne true ; sinon
-        // il retourne false par défaut (= comportement legacy 16.10).
+        // il retourne false par défaut (= comportement legacy).
         $mock->shouldReceive('checkMismatch')->andReturn(false);
         $this->app->instance(LegacyBootstrapTokenValidator::class, $mock);
     }
@@ -233,10 +232,6 @@ class EnrollControllerTest extends TestCase
         );
     }
 
-    // ====================================================================
-    // Story 16.11 — couple token↔UUID + LAN whitelist (AC3.1 / AC3.2)
-    // ====================================================================
-
     #[Test]
     public function it_rejects_enroll_when_uuid_does_not_match_bootstrap_context(): void
     {
@@ -282,7 +277,7 @@ class EnrollControllerTest extends TestCase
     public function refresh_route_is_not_lan_restricted(): void
     {
         // Restreint enroll à un subnet impossible → enroll devrait être 403,
-        // mais /refresh ne doit PAS être impacté (D1 — pas de lan-only).
+        // mais /refresh ne doit PAS être impacté (pas de lan-only).
         // On vérifie ici juste que /refresh retourne une réponse non-403-lan
         // (le 401 refresh.missing est attendu sans body refresh).
         config([
@@ -293,10 +288,6 @@ class EnrollControllerTest extends TestCase
 
         $this->assertNotSame(403, $res->getStatusCode());
     }
-
-    // ====================================================================
-    // Q2 (Opus-B + Opus-D) — `failed` attempts insérés sur rejets
-    // ====================================================================
 
     #[Test]
     public function uuid_mismatch_inserts_a_failed_attempt(): void

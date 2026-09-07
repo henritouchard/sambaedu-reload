@@ -7,7 +7,7 @@ use Livewire\Attributes\Computed;
 use Livewire\Component;
 
 /**
- * Story 27.17 — Onglet « Applications » de /admin/settings/parc-defaults.
+ * Onglet « Applications » de /admin/settings/parc-defaults.
  *
  * Désigne les applications appliquées PAR DÉFAUT à tous les postes (couche
  * Broadcast) en basculant `applications.is_parc_default`. Lu par
@@ -18,7 +18,7 @@ use Livewire\Component;
  * ⚠️ Hors scope (acté) : l'override des apps PAR POSTE. On ne fait que marquer
  * « cette app = défaut établissement » (équivalent du `is_default` du wallpaper).
  *
- * Décision Henri : tout en `server.admin`. Chaque action mutante re-garde
+ * Toute cette page est gardée par `server.admin`. Chaque action mutante re-garde
  * `Gate::authorize('server.admin')`.
  */
 new class extends Component {

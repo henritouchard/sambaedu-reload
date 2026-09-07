@@ -12,9 +12,9 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 62.2 — LA PARITÉ D'AFFICHAGE, FIGÉE EN LITTÉRAUX.
+ * LA PARITÉ D'AFFICHAGE, FIGÉE EN LITTÉRAUX.
  *
- * Trois `match` divergents meurent avec cette story : celui de la fiche groupe
+ * Trois `match` divergents meurent avec le catalogue : celui de la fiche groupe
  * (qui ignorait `role`/`function` et rendait donc « Role »/« Function »), celui de
  * la fiche utilisateur (la forme la plus riche), et l'absence de tout traitement
  * dans le tiroir de sélection, qui rendait la valeur technique brute.
@@ -34,7 +34,7 @@ class GroupTypeCatalogParityTest extends TestCase
     }
 
     /**
-     * Les onze épingles de l'AC5, une par une. Aucune n'est dérivée d'une autre :
+     * Les onze épingles, une par une. Aucune n'est dérivée d'une autre :
      * une régression de libellé doit faire tomber la ligne qui la nomme.
      */
     #[Test]

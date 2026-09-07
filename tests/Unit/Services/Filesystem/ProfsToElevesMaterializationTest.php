@@ -23,7 +23,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 60.5 — **« profs → élèves » est PROUVÉE matérialisable, pas juste
+ * **« profs → élèves » est PROUVÉE matérialisable, pas juste
  * re-seedée.**
  *
  * La recette était inutilisable depuis cinq semaines : elle contraignait un type de

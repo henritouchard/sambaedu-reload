@@ -7,7 +7,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 15.2 / AC5.1 — Table d'overrides des options `.ini` per-poste.
+ * Table d'overrides des options `.ini` per-poste.
  *
  * Stocke les overrides ciblés des 8 options legacy (debug, logdebug, force,
  * forceinstall, nonotify, dryrun, nowpkg, noforcedremove). Un poste sans ligne

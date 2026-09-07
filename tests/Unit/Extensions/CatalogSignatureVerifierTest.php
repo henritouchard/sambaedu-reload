@@ -9,7 +9,7 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Story 56.1 (AC1/AC4/AC6) — Vérificateur de signature Ed25519.
+ * Vérificateur de signature Ed25519.
  *
  * Service PUR : test unitaire SANS base et sans framework (`PHPUnit\TestCase`,
  * pas `Tests\TestCase`). Les paires sont fabriquées à la volée par
@@ -53,7 +53,7 @@ class CatalogSignatureVerifierTest extends TestCase
         return base64_encode(sodium_crypto_sign_detached($bytes, $secret));
     }
 
-    // ── Chemin nominal ────────────────────────────────────────────────────
+    // Chemin nominal
 
     #[Test]
     public function a_valid_signature_verifies(): void
@@ -86,7 +86,7 @@ class CatalogSignatureVerifierTest extends TestCase
         self::assertTrue($this->verifier->verify('', $this->sign(''), $this->keys['public']));
     }
 
-    // ── Altérations ───────────────────────────────────────────────────────
+    // Altérations
 
     #[Test]
     public function a_single_altered_byte_breaks_the_verification(): void
@@ -125,7 +125,7 @@ class CatalogSignatureVerifierTest extends TestCase
         ));
     }
 
-    // ── Entrées malformées : refus, jamais d'exception ────────────────────
+    // Entrées malformées : refus, jamais d'exception
 
     #[Test]
     public function invalid_base64_is_refused_and_never_throws(): void

@@ -12,13 +12,12 @@ use App\Services\Filesystem\Plan\PlanNode;
 use App\Services\Filesystem\Plan\PlanSubject;
 
 /**
- * Story 62.5 — LA TRAVERSÉE SE CALCULE, ET ELLE SE CALCULE **ICI**, SOUS LA LIGNE
+ * LA TRAVERSÉE SE CALCULE, ET ELLE SE CALCULE **ICI**, SOUS LA LIGNE
  * DE CONTRAT.
  *
- * ---------------------------------------------------------------------------
  * **LA DÉCISION, ET SES QUATRE RAISONS.**
  *
- * L'epic laissait le choix : dériver la traversée dans le RÉSOLVEUR (en vocabulaire
+ * Le cadrage laissait le choix : dériver la traversée dans le RÉSOLVEUR (en vocabulaire
  * neutre, sous forme d'octrois supplémentaires posés sur les ancêtres) ou dans le
  * BACKEND (en entrées d'accès, invisibles du plan). Le choix est tranché : **c'est
  * un savoir de backend**, et il ne remonte jamais au-dessus de la ligne. Aucun
@@ -26,31 +25,30 @@ use App\Services\Filesystem\Plan\PlanSubject;
  * comparateur d'état ne bouge à cause de cette classe.
  *
  *  1. **La traversée n'est pas une intention, c'est un mécanisme.** Le vocabulaire
- *     du plan est FERMÉ à quatre verbes depuis la story 62.4, et « traverser » n'en
+ *     du plan est FERMÉ à quatre verbes, et « traverser » n'en
  *     est pas un cinquième : il n'exprime aucune volonté d'administrateur, il
  *     constate ce qu'un chemin exige pour être parcouru. Un octroi de plan que
- *     personne n'a écrit ferait MENTIR le plan, l'aperçu de la story 62.6 et
+ * personne n'a écrit ferait MENTIR le plan, l'aperçu de la et
  *     l'encart de dérive — trois surfaces qui promettent de ne montrer QUE ce qui a
  *     été saisi.
- *  2. **La clôture de la story 60.1 serait corrompue.** Elle est « influençable
+ * 2. **La clôture de la serait corrompue.** Elle est « influençable
  *     UNIQUEMENT en écrivant ou en retirant un octroi », et un test l'épingle. Un
  *     octroi de traversée injecté par le résolveur sortirait mécaniquement des rôles
  *     de la clôture de chaque ancêtre — exactement ce que ce test interdit, et pour
  *     une raison qui n'a rien de formel : la clôture est ce qui dit à un backend à
  *     propagation sur QUI refermer.
  *  3. **Sur un backend à propagation, une traversée dans le plan serait une
- *     FUITE.** Le sondage d'ouverture d'epic l'a MESURÉ contre une instance réelle :
+ *     FUITE.** Le sondage d'ouverture l'a MESURÉ contre une instance réelle :
  *     un partage posé sur un ANCÊTRE descend sur tout le sous-arbre. Un « octroi de
  *     traversée » exprimé dans le plan s'y matérialiserait donc en accès RÉEL
  *     propagé à tout ce qui est dessous — l'exact inverse de « la traversée
  *     n'accorde rien de plus ».
  *  4. **Le coût du choix est nul.** Ce serveur de fichiers est le seul qui ait
- *     besoin d'un couloir : les plans de fichiers distants de l'Epic 61 donnent
+ *     besoin d'un couloir : les plans de fichiers distants donnent
  *     l'accès DIRECT au dossier partagé, sans exiger quoi que ce soit de ses
  *     ancêtres. L'objection « chaque backend devrait la refaire » décrit donc un
  *     coût que personne ne paiera.
  *
- * ---------------------------------------------------------------------------
  * **LA RÈGLE, ET CE QU'ELLE REFUSE DE FAIRE.**
  *
  * Pour un nœud N, les sujets de traversée sont ceux des octrois **actifs et
@@ -75,7 +73,7 @@ use App\Services\Filesystem\Plan\PlanSubject;
  *    volontairement vidé.
  *  - **L'octroi du MEMBRE ÉNUMÉRÉ ne dérive JAMAIS** (jeton réservé
  *    {@see DirectoryTemplate::TREE_ROLE_MEMBER} côté recette, sujet nominatif d'un
- *    nœud par membre côté mécanisme — voir {@see isEnumeratedMemberGrant()} pour
+ *  nœud par membre côté mécanisme — voir {@see isEnumeratedMemberGrant()} pour
  *    lequel des deux critères attrape quoi). Dériver ces octrois poserait UNE
  *    ENTRÉE PAR MEMBRE sur chaque ancêtre partagé : la racine d'une classe de 250
  *    élèves porterait 250 entrées nominatives là où l'arbre historique n'en porte
@@ -84,7 +82,7 @@ use App\Services\Filesystem\Plan\PlanSubject;
  *    L'atteignabilité des membres est garantie AUTREMENT, et STATIQUEMENT : la
  *    validation de recette exige qu'un octroi d'audience couvrant les membres du
  *    rôle d'arête existe sur chaque ancêtre déclaré
- *    ({@see DirectoryTemplate::assertValidTreeSpec()}). Une garantie de validation
+ *  ({@see DirectoryTemplate::assertValidTreeSpec()}). Une garantie de validation
  *    plutôt qu'une garantie de pose : elle refuse la recette au lieu de la rattraper
  *    en écrivant 250 lignes.
  *
@@ -92,13 +90,12 @@ use App\Services\Filesystem\Plan\PlanSubject;
  * traversée SEULE — passer devant la porte, jamais entrer, jamais lire. Un rôle qui
  * lit `a/b/c` obtient de quoi traverser `a` et `a/b`, et ne peut ni les lister, ni y
  * lire un fichier, ni y créer, éditer ou supprimer quoi que ce soit. C'est la
- * propriété centrale de cette story, et elle est testée en toutes lettres.
+ * propriété centrale de ce planificateur, et elle est testée en toutes lettres.
  *
- * ---------------------------------------------------------------------------
  * **UNE SEULE VÉRITÉ, TROIS CONSOMMATEURS.** La pose, la relecture et le contrôle
  * d'impact sur le seed appellent tous CETTE méthode. Deux calculs qui divergeraient
  * donneraient soit une idempotence rompue (repose à chaque passage), soit une dérive
- * invisible — les deux défauts que l'epic paie le plus cher.
+ * invisible — les deux défauts qui coûtent le plus cher.
  *
  * **PUR** : le plan entre, des sujets sortent. Aucune projection vers un nom
  * système, aucun processus, aucune requête. La traduction des sujets appartient au
@@ -205,7 +202,7 @@ final class PosixTraversalPlanner
             return false;
         }
 
-        // Review 62.5 #1 — le critère de mécanisme seul confondait DEUX individus
+        // Le critère de mécanisme seul confondait DEUX individus
         // que rien n'oblige à se ressembler : le membre énuméré (une personne
         // DIFFÉRENTE par nœud) et une personne DÉSIGNÉE, fixe, répétée sur chaque
         // dossier personnel — un CPE, un référent, résolus par la stratégie

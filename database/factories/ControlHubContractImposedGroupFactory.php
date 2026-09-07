@@ -9,7 +9,7 @@ use App\Models\ControlHubContractImposedGroup;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
- * Story 28.1 — Factory de groupe imposé d'un contrat amont controlHub.
+ * Factory de groupe imposé d'un contrat amont controlHub.
  * Défaut : sans label réservé associé.
  *
  * @extends Factory<ControlHubContractImposedGroup>

@@ -31,7 +31,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 39.2 (canal ③) — Émetteur de conformité `se5-contract-compliance/v1`.
+ * Émetteur de conformité `se5-contract-compliance/v1`.
  *
  * Tests HÔTE (php8.4 + pdo_sqlite), `RefreshDatabase`. On teste des VALEURS
  * résolues (enveloppe, mapping de statut, gardes NFR-A1), jamais des bornes de
@@ -63,8 +63,6 @@ class ControlHubComplianceReportTest extends TestCase
         WorkstationGroupObserver::enableSync();
         parent::tearDown();
     }
-
-    // ── AC 1 — enveloppe conforme ─────────────────────────────────────────────
 
     #[Test]
     public function envelope_is_schema_conformant_with_all_top_level_and_item_keys(): void
@@ -111,7 +109,7 @@ class ControlHubComplianceReportTest extends TestCase
         }
     }
 
-    // ── AC 2 — gardes NFR-A1 : aucune émission parasite ───────────────────────
+    // Gardes : aucune émission parasite
 
     #[Test]
     public function build_envelope_returns_null_without_active_contract(): void
@@ -153,7 +151,7 @@ class ControlHubComplianceReportTest extends TestCase
     #[Test]
     public function emit_does_not_call_api_client_without_token(): void
     {
-        // 3ᵉ garde NFR-A1 (AC2, review 39.2 #2) : contrat actif + connexion valide,
+        // 3ᵉ garde : contrat actif + connexion valide,
         // mais token amont vide → aucune émission réseau.
         ControlHubContract::factory()->create();
         $this->validConnection();
@@ -170,7 +168,7 @@ class ControlHubComplianceReportTest extends TestCase
         self::assertSame('no_token', $result['reason']);
     }
 
-    // ── AC 3 — items:[] valide + filtrage absent ──────────────────────────────
+    // items:[] valide + filtrage des items absents
 
     #[Test]
     public function empty_items_is_a_valid_report_and_is_emitted(): void
@@ -220,7 +218,7 @@ class ControlHubComplianceReportTest extends TestCase
         self::assertSame('HKLM|A|B|REG_DWORD', $envelope['items'][0]['key']);
     }
 
-    // ── AC 4 — mapping de statut ──────────────────────────────────────────────
+    // Mapping de statut
 
     #[Test]
     public function locked_item_maps_to_applied(): void
@@ -282,7 +280,7 @@ class ControlHubComplianceReportTest extends TestCase
         self::assertNull($status['detail']);
     }
 
-    // ── Le rapport ne peut plus affirmer ──────────────────────────────────────
+    // Le rapport ne peut plus affirmer
 
     #[Test]
     public function a_locked_item_the_reconciler_could_not_apply_is_reported_pending(): void
@@ -407,8 +405,6 @@ class ControlHubComplianceReportTest extends TestCase
         self::assertStringContainsString('artifact', $status['detail']);
     }
 
-    // ── AC 4 — reported_at monotone (NFR-A2) ──────────────────────────────────
-
     #[Test]
     public function reported_at_is_monotonic_between_successive_reports(): void
     {
@@ -427,8 +423,6 @@ class ControlHubComplianceReportTest extends TestCase
 
         Carbon::setTestNow();
     }
-
-    // ── AC 5 — émission authentifiée sans fuite de token ──────────────────────
 
     #[Test]
     public function emit_posts_envelope_with_bearer_token_and_never_logs_it(): void
@@ -489,7 +483,7 @@ class ControlHubComplianceReportTest extends TestCase
         }
     }
 
-    // ── AC 7 — command dispatch conditionnel ──────────────────────────────────
+    // Dispatch conditionnel de la commande
 
     #[Test]
     public function command_dispatches_job_when_contract_and_connection_are_valid(): void
@@ -525,8 +519,6 @@ class ControlHubComplianceReportTest extends TestCase
         Queue::assertNotPushed(ControlHubReportComplianceJob::class);
     }
 
-    // ── Review #1 — le job RELÈVE sur échec HTTP (retry AC7 réellement armé) ──
-
     #[Test]
     public function job_throws_on_http_error_so_laravel_retry_engages(): void
     {
@@ -551,7 +543,7 @@ class ControlHubComplianceReportTest extends TestCase
         (new ControlHubReportComplianceJob())->handle(app(ControlHubComplianceReportService::class));
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
+    // Helpers
 
     private function service(
         ?ControlHubApiClient $apiClient = null,

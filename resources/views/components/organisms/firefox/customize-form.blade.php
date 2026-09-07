@@ -13,9 +13,8 @@ use Livewire\Component;
 /**
  * Form Livewire SFC — personnalisation Firefox.
  *
- * Story 4.8 — Task 4.5 (AC 7, 14). Reprend la structure `ff_form_policy`
- * legacy L89-194 mais en composant Livewire réactif + stripNonWhitelisted
- * côté Service.
+ * Reprend la structure `ff_form_policy` legacy (L89-194) en composant Livewire
+ * réactif, le filtrage `stripNonWhitelisted` restant côté service.
  */
 new class extends Component {
     use WithToasts;

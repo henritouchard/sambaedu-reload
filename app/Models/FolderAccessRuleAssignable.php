@@ -9,13 +9,13 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 
 /**
- * Story 36.4 — ligne du pivot polymorphe `folder_access_rule_assignables`.
+ * Ligne du pivot polymorphe `folder_access_rule_assignables`.
  *
  * Calque de {@see NetworkShareAssignable} SANS colonne `access` (une règle
  * d'accès porte son niveau dans `rights`, pas un ro/rw POSIX). v1 : le seul type
  * autorisé est `WorkstationGroup` (parc), validé applicativement
  * ({@see FolderAccessRule::ALLOWED_ASSIGNABLE_TYPES}) — le mécanisme est machine
- * (un override User/UserGroup serait sans effet, piège #10 36.1).
+ * (un override User/UserGroup serait sans effet).
  *
  * @property int $id
  * @property int $folder_access_rule_id

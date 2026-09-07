@@ -18,7 +18,7 @@ class Kernel extends ConsoleKernel
                  ->withoutOverlapping()
                  ->runInBackground();
 
-        // Story 39.2 (canal ③) — Émission du rapport de conformité amont.
+        // Émission du rapport de conformité amont.
         // Tick 1 min ; la commande gère elle-même sa cadence fixe
         // (config controlHub.compliance.interval, défaut 15 min) et court-circuite
         // sans contrat actif / sans connexion valide (NFR-A1). Dispatche un job fin
@@ -28,7 +28,7 @@ class Kernel extends ConsoleKernel
                  ->withoutOverlapping()
                  ->runInBackground();
 
-        // Story 4-4 : Exécution des programmations horaires WorkstationGroup (tick 1 min)
+        // -4 : Exécution des programmations horaires WorkstationGroup (tick 1 min)
         // Tick scheduler léger (1 SELECT + N enqueue) → les workers habituels
         // (laravel-queue-general) traitent ensuite les DispatchMachinePowerActionJob.
         // withoutOverlapping(5) : lock de 5 min max si un run dépasse (safety net).
@@ -37,7 +37,7 @@ class Kernel extends ConsoleKernel
                  ->withoutOverlapping(5)
                  ->runInBackground();
 
-        // Story 3.11 : Déclenchement des réinstallations OS dûes (tick 1 min),
+        // Déclenchement des réinstallations OS dûes (tick 1 min),
         // borné par le plafond de concurrence `reinstall.max_concurrent` (D11).
         // Tick léger (SELECT + N enqueue) → les workers habituels traitent les
         // DispatchMachinePowerActionJob (reboot forcé / WOL). withoutOverlapping
@@ -69,7 +69,7 @@ class Kernel extends ConsoleKernel
         // `user-groups:sync-from-ad` pointait une commande jamais créée
         // (NamespaceNotFoundException loggée toutes les 5 min depuis l'origine).
 
-        // Story 49.3 (AC8) — Réconciliation nocturne des DÉPARTS à 01h30.
+        // Réconciliation nocturne des DÉPARTS à 01h30.
         // Balayage AD complet (entrées + retours) puis désactivation des
         // absents, sous garde anti-désactivation en masse. DISTINCTE du tick
         // delta 5 min ci-dessus, qui reste inchangé : lui capte les entrées,
@@ -91,17 +91,17 @@ class Kernel extends ConsoleKernel
                  ->daily()
                  ->runInBackground();
 
-        // Story 4-4 : Purge des runs d'historique de programmations > 30 jours
+        // -4 : Purge des runs d'historique de programmations > 30 jours
         $schedule->command('parc:prune-group-schedule-runs')
                  ->daily()
                  ->runInBackground();
 
-        // Story 3.11 : Purge des réinstallations terminales (done/failed/canceled) > 30 jours
+        // Purge des réinstallations terminales (done/failed/canceled) > 30 jours
         $schedule->command('parc:prune-reinstall-requests')
                  ->daily()
                  ->runInBackground();
 
-        // Story 5.1d : Purge corbeille `/home/trash/*` quotidiennement à 02h00.
+        // Purge corbeille `/home/trash/*` quotidiennement à 02h00.
         // Conditionné par le toggle `quota.trash.purge_auto` (SystemSetting),
         // évalué à chaque tick via `->when(closure)`. Si le toggle est false,
         // la commande n'est pas exécutée — décision admin prise dans
@@ -124,7 +124,7 @@ class Kernel extends ConsoleKernel
                      }
                  });
 
-        // Story 5.1b : Snapshot quotas XFS quotidien à 03h00
+        // Snapshot quotas XFS quotidien à 03h00
         // Parse `xfs_quota -x -c 'report -a -N'` en une passe et alimente
         // users.quota_snapshot. Remplace le cache 5 min supprimé en 5.1a.
         $schedule->command('quota:snapshot')
@@ -132,7 +132,7 @@ class Kernel extends ConsoleKernel
                  ->withoutOverlapping()
                  ->runInBackground();
 
-        // Story 6.1 : Réconciliation imprimantes CUPS ↔ table SER `printers` à 03h30
+        // Réconciliation imprimantes CUPS ↔ table SER `printers` à 03h30
         // Idempotente : ajoute les CUPS détectés hors SER, marque orphan les rows
         // SER absents de CUPS (sans delete pour préserver les rattachements parc),
         // restaure orphan=false à la réintroduction.
@@ -141,9 +141,9 @@ class Kernel extends ConsoleKernel
                  ->withoutOverlapping()
                  ->runInBackground();
 
-        // Story 6.2 : Réconciliation pilotes Windows ↔ table SER `printer_drivers` à 03h35
-        // (5 min après printers:sync — monitoring séparé, D7 6.2). Idempotente.
-        // Skip orphan-marking si Samba injoignable (cohérent fix #12 6.1).
+        // Réconciliation pilotes Windows ↔ table SER `printer_drivers` à 03h35
+        // (5 min après printers:sync — monitoring séparé). Idempotente.
+        // Skip orphan-marking si Samba injoignable.
         $schedule->command('printer-drivers:sync')
                  ->dailyAt('03:35')
                  ->withoutOverlapping()
@@ -161,7 +161,7 @@ class Kernel extends ConsoleKernel
                  ->withoutOverlapping()
                  ->runInBackground();
 
-        // Story 15.5 : Rotation quotidienne des archives brutes des rapports WPKG.
+        // Rotation quotidienne des archives brutes des rapports WPKG.
         // Supprime les fichiers > config('sambaedu.wpkg.reports_archive_retention_days')
         // (90 jours par défaut). Best-effort : si le dossier d'archive est absent,
         // la commande retourne 0 sans erreur.
@@ -170,23 +170,22 @@ class Kernel extends ConsoleKernel
                  ->withoutOverlapping()
                  ->runInBackground();
 
-        // Story 16.11 : Alerte santé migration auto-bootstrap.
+        // Alerte santé migration auto-bootstrap.
         // Calcule le ratio d'échecs des tentatives auto-bootstrap sur 7 jours
         // glissants. Si ratio > 5% → log critical `auth.migration.health.alert`
-        // sur channel `auth-v1`. Henri tail les logs (Phase 3+ : intégration
-        // mail/webhook). Commande informative — exit 0 même en alerte.
+        // sur channel `auth-v1`. Commande informative — exit 0 même en alerte.
         $schedule->command('migration:health-check')
                  ->daily()
                  ->withoutOverlapping()
                  ->runInBackground();
 
-        // Story 16.12 — Archivage daily des logs d'exécution scripts > 90j (timing 04:00 post code-review F1 : éviter collision avec printers:sync 03:30 et wpkg:reports:archive:rotate 03:45)
+        // Archivage daily des logs d'exécution scripts > 90j (timing 04:00 post code-review F1 : éviter collision avec printers:sync 03:30 et wpkg:reports:archive:rotate 03:45)
         $schedule->command('script-logs:archive:rotate')
                  ->dailyAt('04:00')
                  ->withoutOverlapping()
                  ->runInBackground();
 
-        // Story 20.2 — Purge RGPD des identités externes fédérées à 02h30.
+        // Purge RGPD des identités externes fédérées à 02h30.
         // Anonymise (jamais hard-delete) les `external_identities` dont la
         // rétention PII a expiré (last_login_at < now - pii_ttl_days).
         // Conditionnée par le toggle `federated_auth.retention.anonymize_enabled`
@@ -208,20 +207,20 @@ class Kernel extends ConsoleKernel
                      }
                  });
 
-        // Story 24.1 — Purge des données de rapport agent (D3) à 02h35 :
+        // Purge des données de rapport agent à 02h35 :
         // agent_report_events > 14 j et agent_report_history > 30 j
         // (rétentions config/agent.php). Toujours planifiée (pas de ->when
         // sur le flag report_history : la purge history nettoie aussi les
         // résidus d'une phase de debug terminée). Fenêtre nocturne entre
         // trash:purge (02h00) et quota:snapshot (03h00), décalée de
-        // federated:purge-identities (02h30) — review 24.1 #3. Deletes
-        // indexés par created_at, charge négligeable.
+        // federated:purge-identities (02h30). Deletes indexés par created_at,
+        // charge négligeable.
         $schedule->command('agent:reports:prune')
                  ->dailyAt('02:35')
                  ->withoutOverlapping()
                  ->runInBackground();
 
-        // Story 26.3 — Snapshot quotidien des tailles de profils itinérants à 04h30.
+        // Snapshot quotidien des tailles de profils itinérants à 04h30.
         // Scanne `/home/profiles` (`du --max-depth=1 -b`) UNE FOIS par nuit et
         // persiste les tailles par-login (users.profile_snapshot) + la liste des
         // profils orphelins (SystemSetting profiles.orphans). L'UI (tableau
@@ -233,7 +232,7 @@ class Kernel extends ConsoleKernel
                  ->withoutOverlapping()
                  ->runInBackground();
 
-        // Story 16.14 Q2 — Warm-up cache santé GPO daily 22:00.
+        // Warm-up cache santé GPO daily 22:00.
         // Pré-charge `getLinks` + `versionNumber` pour chaque GPO du domaine
         // (TTL 24 h) — évite N appels samba-tool sur le listing admin matinal.
         // `runInBackground` + `withoutOverlapping` : pas de blocage du tick scheduler.

@@ -9,7 +9,7 @@ use App\Models\OidcClient;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
- * Story 55.1 — Fabrique de clients OIDC.
+ * Fabrique de clients OIDC.
  *
  * ⚠️ Le secret **clair** produit par cette fabrique est
  * {@see self::DEFAULT_SECRET} : il est connu des tests pour pouvoir authentifier
@@ -35,7 +35,7 @@ class OidcClientFactory extends Factory
             'client_id' => bin2hex(random_bytes(16)),
             'client_secret_hash' => hash('sha256', self::DEFAULT_SECRET),
             'redirect_uris' => ['https://ext.example.test/callback'],
-            // Story 56.4 — un client de test est PLEINEMENT CONSENTI par
+            // Un client de test est PLEINEMENT CONSENTI par
             // défaut : c'est ce que représentent les clients des suites 55.x
             // (une extension qu'on vient d'installer avec ses deux scopes).
             //
@@ -70,7 +70,7 @@ class OidcClientFactory extends Factory
     }
 
     /**
-     * Story 56.4 — Scopes ACCORDÉS explicites, `[]` compris (fail-closed : le
+     * Scopes ACCORDÉS explicites, `[]` compris (fail-closed : le
      * client n'obtiendra alors que `sub`).
      *
      * @param  list<string>  $scopes

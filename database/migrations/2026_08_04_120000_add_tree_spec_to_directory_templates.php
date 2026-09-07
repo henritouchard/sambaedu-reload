@@ -7,15 +7,15 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 60.1 — « la recette devient un arbre » : vocabulaire d'ARBRE ajouté À CÔTÉ
- * du vocabulaire de rôles de 34.3, jamais à sa place.
+ * « la recette devient un arbre » : vocabulaire d'ARBRE ajouté À CÔTÉ
+ * du vocabulaire de rôles, jamais à sa place.
  *
  * **Pourquoi deux colonnes ADDITIVES et NULLABLES plutôt qu'une refonte de
  * `roles_spec`.** `roles_spec` est consommé par `DirectoryTemplate::roles()`,
- * `role()`, `respectsMountOnlyInvariant()` et le plan d'assignations de 34.3 : le
+ * `role()`, `respectsMountOnlyInvariant()` et le plan d'assignations : le
  * restructurer casserait un socle livré pour zéro gain. L'arbre est un vocabulaire
  * NOUVEAU dont les octrois RÉFÉRENCENT les rôles existants par leur `key`. Les 4
- * recettes seedées 34.3 restent donc des recettes « sans arbre » (`path_pattern`
+ * recettes seedées restent donc des recettes « sans arbre » (`path_pattern`
  * et `nodes_spec` à `null`) : aucune reprise de données, aucun changement de
  * comportement, le seeder n'est pas modifié.
  *
@@ -24,7 +24,7 @@ use Illuminate\Support\Facades\Schema;
  *    `{group.name}` (nom brut, casse préservée) et `{group.bare_name}` (nom
  *    dé-préfixé du préfixe de type, casse préservée — sans lui, on retombe dans
  *    le double préfixe `Classe_Classe_X`). Le motif est RELATIF : la racine
- *    absolue est un savoir de backend (story 60.4), jamais une donnée de recette.
+ * absolue est un savoir de backend, jamais une donnée de recette.
  *
  *  - `nodes_spec` : JSON, liste ORDONNÉE de nœuds. Chaque nœud :
  *      {
@@ -45,13 +45,13 @@ use Illuminate\Support\Facades\Schema;
  *
  * **`plafond` est posé DÈS MAINTENANT alors qu'il ne sera exécuté qu'en 60.6.**
  * Ajouter un champ après coup à des recettes déjà stockées coûte plus cher que de
- * le porter vide : aucun code de cette story ne le lit pour agir, il traverse le
+ * le porter vide : aucun code ne le lit encore pour agir, il traverse le
  * plan et attend son exécutant.
  *
- * **Aucun changement d'exécution.** La matérialisation 34.3, le provisioning
- * générique 34.1 et le chemin figé 5.2 sont INTOUCHÉS ; le résolveur de plan
- * (60.1) n'a pour consommateur que ses tests — ses consommateurs réels arrivent
- * en 60.2/60.3.
+ * **Aucun changement d'exécution.** La matérialisation, le provisioning
+ * générique et le chemin figé sont INTOUCHÉS ; le résolveur de plan
+ *  n'a pour consommateur que ses tests — ses consommateurs réels arrivent
+ * plus tard.
  */
 return new class extends Migration
 {

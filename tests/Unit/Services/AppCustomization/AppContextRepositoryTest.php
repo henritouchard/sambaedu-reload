@@ -10,14 +10,10 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Tests unit — CacheAppContextRepository (AC 9 Story 4.8 / AC7.3 Story 16.15).
+ * Tests unit — CacheAppContextRepository.
  *
  * Vérifie le comportement de dégradation gracieuse quand le cache est vide +
  * la validation du format `id`.
- *
- * Story 16.15 — AC7.3 : méthodes renommées (missing_apcu → missing_cache,
- * valid_apcu → valid_cache), setup utilise Cache::store('app_context')->put
- * au lieu de apcu_store.
  */
 class AppContextRepositoryTest extends TestCase
 {
@@ -25,7 +21,7 @@ class AppContextRepositoryTest extends TestCase
     {
         parent::setUp();
         Cache::store('app_context')->flush();
-        // Isolation cross-driver (Story 16.15 review #4).
+        // Isolation cross-driver.
         if (function_exists('apcu_clear_cache')) {
             apcu_clear_cache();
         }

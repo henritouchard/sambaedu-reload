@@ -7,11 +7,11 @@ namespace App\Services\Agent\Resolvers;
 use App\Models\FileAssociation;
 
 /**
- * Story 27.11 — Résultat de {@see AssociationResolver::resolve()} : la traduction
+ * Résultat de {@see AssociationResolver::resolve} : la traduction
  * d'un choix admin *(extension X, app A)* en cible technique que l'agent applique
- * déjà (provider/handler/hash de 27.3bis INCHANGÉS).
+ * déjà (provider/handler/hash INCHANGÉS).
  *
- * Porte EXACTEMENT les trois colonnes serveur-only que 27.3bis alimente déjà sur
+ * Porte EXACTEMENT les trois colonnes serveur-only que alimente déjà sur
  * `file_associations` (`progid`/`source`/`wpkg_package`) — aucune migration de
  * `file_associations` (le payload aval reste `{identifier, progid, type}`).
  *
@@ -24,7 +24,7 @@ use App\Models\FileAssociation;
  *                    pour `source=wpkg` ; `null` pour `native`.
  * - `generic`      : le ProgId a-t-il été FABRIQUÉ (`Applications\<exe>`) faute de
  *                    ProgId riche déclaré ? Pilote l'auto-enregistrement per-user
- *                    agent (AC6) et l'affichage « best-effort » côté UI.
+ * agent et l'affichage « best-effort » côté UI.
  */
 final class ResolvedAssociation
 {

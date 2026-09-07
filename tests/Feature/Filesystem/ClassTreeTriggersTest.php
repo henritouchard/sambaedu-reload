@@ -20,7 +20,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 60.5 — LES DÉCLENCHEURS de l'arbre NEUF.
+ * LES DÉCLENCHEURS de l'arbre NEUF.
  *
  * Trois entrées, trois propriétés à tenir :
  *  - créer un groupe matérialise son arbre — mais SEULEMENT si son type porte une
@@ -65,10 +65,6 @@ class ClassTreeTriggersTest extends TestCase
     {
         return NetworkShare::where('user_group_id', $group->id)->first();
     }
-
-    // =========================================================================
-    // Créer un groupe matérialise son arbre
-    // =========================================================================
 
     #[Test]
     public function creating_a_class_group_materializes_its_tree_and_queues_the_reconciliation(): void
@@ -172,10 +168,6 @@ class ClassTreeTriggersTest extends TestCase
         $this->assertNull($share->user_group_id, 'le lien est délié, jamais suivi d\'une destruction');
     }
 
-    // =========================================================================
-    // L'appartenance tient l'arbre à jour
-    // =========================================================================
-
     #[Test]
     public function attaching_a_member_queues_the_reconciliation_of_the_existing_tree(): void
     {
@@ -204,7 +196,7 @@ class ClassTreeTriggersTest extends TestCase
     /**
      * **Un rattachement ne CRÉE jamais de partage.** Sans arbre existant, il n'y a
      * rien à réconcilier — et le fabriquer ici serait la matérialisation par
-     * surprise que la story refuse partout ailleurs.
+     * surprise qu'on refuse partout ailleurs.
      */
     #[Test]
     public function a_membership_change_never_creates_a_tree(): void

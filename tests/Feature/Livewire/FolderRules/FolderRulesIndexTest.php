@@ -16,7 +16,7 @@ use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
 /**
- * Story 36.4 (AC4) — page liste + modale de création : listing, 403, création
+ * Page liste + modale de création : listing, 403, création
  * valide/invalide, confirmation deny bloquante.
  */
 class FolderRulesIndexTest extends TestCase

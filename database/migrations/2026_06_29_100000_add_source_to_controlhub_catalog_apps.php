@@ -7,8 +7,8 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 31.3 — Étend le catalogue applicatif amont (controlHub) pour porter la
- * RÉFÉRENCE DE SOURCE (« Option B par-app », D1) du dépôt SambaEdu.
+ * Étend le catalogue applicatif amont (controlHub) pour porter la
+ * RÉFÉRENCE DE SOURCE, par app, du dépôt SambaEdu.
  *
  * Migration ADDITIVE (jamais une réécriture de
  * `2026_06_26_100000_create_controlhub_contract_tables.php`, en review) :
@@ -16,12 +16,11 @@ use Illuminate\Support\Facades\Schema;
  *    SambaEdu, telle que référencée par l'autorité amont enrôlée (de confiance).
  *  - `source_xml_sha` (string nullable) : empreinte attendue de cette recette.
  *
- * Les deux colonnes sont NULLABLES (rétrocompatibilité NFR3 : un contrat sans champ
+ * Les deux colonnes sont NULLABLES (rétrocompatibilité : un contrat sans champ
  * source reste accepté). La CLÉ NATURELLE `(controlhub_contract_id, app_key)` est
- * INCHANGÉE (idempotence 28.2 préservée).
+ * INCHANGÉE (idempotence préservée).
  *
- * ⚠️ GARDE-FOU R3 : aucun mot « central » ; vocabulaire « amont » / `ControlHub*`.
- * [Source: prd-contrat-manage-se5.md#R3]
+ * ⚠️ GARDE-FOU : aucun mot « central » ; vocabulaire « amont » / `ControlHub*`.
  */
 return new class extends Migration
 {

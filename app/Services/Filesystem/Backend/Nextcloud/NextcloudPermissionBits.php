@@ -7,11 +7,10 @@ namespace App\Services\Filesystem\Backend\Nextcloud;
 use App\Services\Filesystem\Plan\PlanGrant;
 
 /**
- * Story 61.3 — LA TRADUCTION DES VERBES, BIT À BIT, ET LE BIT QU'ON N'ACCORDE PAS.
+ * LA TRADUCTION DES VERBES, BIT À BIT, ET LE BIT QU'ON N'ACCORDE PAS.
  *
- * ---------------------------------------------------------------------------
  * **LE MODÈLE TOMBE JUSTE, ET CE N'EST PAS UN HASARD.** Le vocabulaire de verbes
- * du plan (story 62.4) a été découpé sur DEUX plans de fichiers, dont celui-ci :
+ * du plan a été découpé sur DEUX plans de fichiers, dont celui-ci :
  * lire / mettre à jour le contenu / créer une entrée / supprimer une entrée sont
  * quatre permissions SÉPARÉES ici comme là-bas. La traduction est donc une SOMME,
  * pas une interprétation — aucune dégradation, aucun déclin à déclarer, aucune
@@ -24,9 +23,8 @@ use App\Services\Filesystem\Plan\PlanGrant;
  *  | `creer`       | 4         |
  *  | `supprimer`   | 8         |
  *
- * ---------------------------------------------------------------------------
  * **LE CINQUIÈME BIT (16, le RE-PARTAGE) N'EST JAMAIS ACCORDÉ.** C'était la seule
- * question ouverte de la story (« `rw` = 15 ou 31 ? »), et elle se referme par le
+ * question restée ouverte (« `rw` = 15 ou 31 ? »), et elle se referme par le
  * modèle plutôt que par une préférence :
  *
  *  - le plan n'a AUCUN verbe pour le re-partage. L'accorder donnerait un droit que
@@ -38,7 +36,7 @@ use App\Services\Filesystem\Plan\PlanGrant;
  *  - le précédent de production va dans le même sens : le canal historique écrit
  *    `15` pour l'accès complet.
  *
- * `rw` (les quatre verbes) vaut donc **15**, jamais 31. Le spike 60.0 avait relu
+ * `rw` (les quatre verbes) vaut donc **15**, jamais 31. Le spike avait relu
  * `31` parce que c'est ce qu'il avait ÉCRIT : l'instance ne coerce rien (mesuré sur
  * 1, 7, 15 et 31), la valeur est un choix de conception et non une contrainte.
  *
@@ -79,7 +77,7 @@ final class NextcloudPermissionBits
      * disparaître le dossier du listing. Mais un masque de 1 laisse les bits de
      * mutation GOUVERNÉS PAR L'ANCÊTRE : une clôture qui ne referme que la lecture
      * est une clôture à moitié posée, et « à moitié » est précisément la forme que
-     * prend, dans cet epic, le signal qui n'atteint pas son destinataire. Le masque
+     * prend ici le signal qui n'atteint pas son destinataire. Le masque
      * est un sélecteur de bits, pas une sémantique de protocole : l'élargir ne
      * change pas le canal, il change ce que la règle gouverne.
      */

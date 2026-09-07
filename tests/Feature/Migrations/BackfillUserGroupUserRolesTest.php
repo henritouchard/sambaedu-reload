@@ -13,7 +13,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 42.1 — Tests du BACKFILL de la colonne d'arête `role`.
+ * Tests du BACKFILL de la colonne d'arête `role`.
  *
  * On teste l'action invocable {@see BackfillUserGroupUserRoles} (que la
  * migration 2026_07_13 appelle exactement) sur un état SQL monté à la main
@@ -46,7 +46,7 @@ class BackfillUserGroupUserRolesTest extends TestCase
     #[Test]
     public function it_derives_owner_manager_member_from_existing_state(): void
     {
-        // AC2 — owner (PP), manager (prof non-PP), member (élève).
+        // Owner (PP), manager (prof non-PP), member (élève).
         $eleve = $this->mkUser('eleve.un', 'eleve');
         $prof = $this->mkUser('prof.un', 'prof');
         $pp = $this->mkUser('prof.pp', 'prof');
@@ -68,7 +68,7 @@ class BackfillUserGroupUserRolesTest extends TestCase
     #[Test]
     public function owner_precedence_wins_over_manager_for_a_pp_prof(): void
     {
-        // AC2 — précédence owner > manager : un prof PP est owner, pas manager
+        // Précédence owner > manager : un prof PP est owner, pas manager
         // (même s'il est prof, le flag is_head_teacher a la priorité).
         $pp = $this->mkUser('prof.pp', 'prof');
         $g = $this->mkGroup('3A');
@@ -82,7 +82,7 @@ class BackfillUserGroupUserRolesTest extends TestCase
     #[Test]
     public function admin_and_autre_global_roles_fall_back_to_member(): void
     {
-        // AC2 — seul `prof` dérive manager ; admin/autre/null → member.
+        // Seul `prof` dérive manager ; admin/autre/null → member.
         $admin = $this->mkUser('admin.un', 'admin');
         $autre = $this->mkUser('autre.un', 'autre');
         $g = $this->mkGroup('3A');
@@ -98,7 +98,7 @@ class BackfillUserGroupUserRolesTest extends TestCase
     #[Test]
     public function it_is_idempotent_across_two_runs(): void
     {
-        // AC2 — rejouer l'action = même état final, aucune exception.
+        // Rejouer l'action = même état final, aucune exception.
         $eleve = $this->mkUser('eleve.un', 'eleve');
         $prof = $this->mkUser('prof.un', 'prof');
         $pp = $this->mkUser('prof.pp', 'prof');
@@ -146,7 +146,7 @@ class BackfillUserGroupUserRolesTest extends TestCase
     #[Test]
     public function real_migration_up_adds_column_backfills_and_down_drops_it(): void
     {
-        // AC1 — exerce la MIGRATION RÉELLE : up() ajoute la colonne `role`
+        // Exerce la MIGRATION RÉELLE : up ajoute la colonne `role`
         // (string 20, défaut member, rétro-remplie sur les arêtes existantes)
         // PUIS backfille (owner/manager/member) ; down() la retire.
         $pp = $this->mkUser('prof.pp', 'prof');
@@ -178,10 +178,6 @@ class BackfillUserGroupUserRolesTest extends TestCase
         $migration->down();
         $this->assertFalse(Schema::hasColumn('user_group_user', 'role'), 'down() retire la colonne');
     }
-
-    // ------------------------------------------------------------------
-    // Helpers
-    // ------------------------------------------------------------------
 
     private function role(int $groupId, int $userId): string
     {

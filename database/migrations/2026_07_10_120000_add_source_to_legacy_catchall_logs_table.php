@@ -5,14 +5,14 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 38.2 — Observabilité d'extinction (D3).
+ * Observabilité d'extinction.
  *
  * Extension ADDITIVE de `legacy_catchall_logs` : distinguer les hits servis par
  * les tombstones natifs (`source='tombstone'`) des hits encore proxifiés vers le
  * vhost legacy (`source='catchall'`, default DB → le catchall existant reste
  * INCHANGÉ, il ne renseigne pas la colonne). Les colonnes `machine`/`user_login`
  * capturent l'identité poste/utilisateur extraite des paramètres d'appel (non
- * authentifiés) pour agréger l'extinction par poste (critère GO 38.6).
+ * authentifiés) pour agréger l'extinction par poste (critère GO).
  */
 return new class extends Migration
 {

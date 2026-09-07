@@ -18,7 +18,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 43.2 (AC6, D5/D6) — badge de temporalité d'effet sur l'onglet
+ * Badge de temporalité d'effet sur l'onglet
  * « Options / Capacités » d'un WorkstationGroup (liste des overrides + picker).
  *
  * Patron {@see CapabilitiesTabStatusBadgeTest}.

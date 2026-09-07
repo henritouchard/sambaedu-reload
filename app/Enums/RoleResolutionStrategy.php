@@ -5,26 +5,26 @@ declare(strict_types=1);
 namespace App\Enums;
 
 /**
- * Story 60.2 — les QUATRE stratégies de résolution d'un rôle de recette. Enum
+ * Les QUATRE stratégies de résolution d'un rôle de recette. Enum
  * FERMÉE : toute valeur inconnue rencontrée dans une `roles_spec` stockée fait
  * rejeter la recette ({@see \App\Models\DirectoryTemplate::assertValidResolutionSpec()}).
  *
  * Un rôle de recette dit QUI reçoit un octroi. Jusqu'ici, ce « qui » était
- * toujours choisi à la main au moment de matérialiser un partage (story 34.3).
+ * toujours choisi à la main au moment de matérialiser un partage.
  * Une stratégie de résolution, c'est la RÈGLE qui répond à la place de l'humain —
  * et c'est ce qui permet à un groupe de matérialiser son arbre tout seul.
  *
  *  - `self`       : le groupe pour lequel on matérialise, en entier.
  *  - `designated` : la cible est choisie à la matérialisation. C'est le
- *                   comportement 34.3, et c'est le DÉFAUT — l'absence de clé
+ *  comportement, et c'est le DÉFAUT — l'absence de clé
  *                   `resolution` vaut `designated`, ce qui laisse les quatre
  *                   recettes seedées strictement inchangées.
  *  - `pattern`    : un groupe APPARENTÉ, dérivé par motif de nom.
  *  - `edge_role`  : les membres du groupe de matérialisation qui portent tel
  *                   rôle sur l'ARÊTE d'appartenance (`user_group_user.role`).
  *
- * **Pourquoi la stratégie d'arête n'est pas une commodité.** Depuis le fold de la
- * story 4.13, les noms d'annuaire `Classe_X`, `Equipe_X` et `PP_X` se replient en
+ * **Pourquoi la stratégie d'arête n'est pas une commodité.** Depuis le fold, les
+ * noms d'annuaire `Classe_X`, `Equipe_X` et `PP_X` se replient en
  * UNE SEULE ligne `user_groups` au nom nu (`3A`, type `classe`), et le statut de
  * chacun vit sur l'arête : `member` pour l'élève, `manager` pour l'enseignant,
  * `owner` pour le professeur principal. **L'équipe pédagogique n'a donc AUCUNE
@@ -106,7 +106,7 @@ enum RoleResolutionStrategy: string
     /**
      * Vocabulaire de clés FERMÉ de la structure `resolution`, par stratégie.
      *
-     * Fermé pour la même raison que le vocabulaire de nœud (story 60.1) : un champ
+     * Fermé pour la même raison que le vocabulaire de nœud : un champ
      * qu'on ne comprend pas est un champ dont on ne fait rien, et une recette qui
      * en porte un ment sur ce qu'elle fait.
      *

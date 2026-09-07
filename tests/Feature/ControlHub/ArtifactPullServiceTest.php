@@ -17,9 +17,9 @@ use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 /**
- * Story 39.4 — Canal ④ : téléchargement + vérification sha256 SERVEUR + matérialisation locale.
+ * Canal ④ : téléchargement + vérification sha256 SERVEUR + matérialisation locale.
  *
- * Couverture ciblée (AC9) :
+ * Couverture ciblée :
  * - sha256 OK  → WallpaperAsset / AgentTool matérialisé, fichier sur disque, pull_status=downloaded.
  * - sha256 KO  → AUCUNE écriture d'asset, fichier temporaire supprimé, pull_status=error + pull_error.
  * - Précédence locale (par checksum / par clé) → AUCUN appel HTTP (Http::assertNothingSent).
@@ -80,7 +80,7 @@ class ArtifactPullServiceTest extends TestCase
 
     /**
      * PNG 1×1 valide (octets réels) — un wallpaper pullé doit être une vraie image
-     * (review 39.4 #2 : getimagesize/ping en lecture seule avant matérialisation).
+     * (getimagesize/ping en lecture seule avant matérialisation).
      */
     private function minimalPng(): string
     {
@@ -113,7 +113,7 @@ class ArtifactPullServiceTest extends TestCase
         ]);
     }
 
-    // ── sha256 OK → matérialisation ───────────────────────────────────────────
+    // sha256 OK → matérialisation
 
     public function test_sha256_ok_materializes_wallpaper_content_addressed(): void
     {
@@ -239,7 +239,7 @@ class ArtifactPullServiceTest extends TestCase
         $this->assertSame(ControlHubArtifactPullStatus::Downloaded, $item->pull_status);
     }
 
-    // ── sha256 KO → aucune matérialisation ────────────────────────────────────
+    // sha256 KO → aucune matérialisation
 
     public function test_sha256_mismatch_writes_no_asset_and_flags_error(): void
     {
@@ -264,7 +264,7 @@ class ArtifactPullServiceTest extends TestCase
 
     public function test_sha256_ok_but_non_image_wallpaper_is_rejected(): void
     {
-        // Review 39.4 #2 — sha256 concordant mais contenu NON-image (bombe/binaire arbitraire) :
+        // sha256 concordant mais contenu NON-image (bombe/binaire arbitraire) :
         // rejeté en lecture seule AVANT matérialisation, aucun WallpaperAsset créé, tmp supprimé.
         $body = 'NOT-AN-IMAGE-DECOMPRESSION-BOMB-PAYLOAD';
         $checksum = hash('sha256', $body);
@@ -294,7 +294,7 @@ class ArtifactPullServiceTest extends TestCase
         $this->assertSame(ControlHubArtifactPullStatus::Error, $item->pull_status);
     }
 
-    // ── Précédence locale → aucun HTTP ────────────────────────────────────────
+    // Précédence locale → aucun HTTP
 
     public function test_local_wallpaper_precedence_skips_http(): void
     {
@@ -318,7 +318,7 @@ class ArtifactPullServiceTest extends TestCase
 
     public function test_uppercase_upstream_checksum_matches_lowercase_local_asset(): void
     {
-        // Review 39.4 #1 — un checksum amont en MAJUSCULE doit reconnaître l'asset local
+        // Un checksum amont en MAJUSCULE doit reconnaître l'asset local
         // stocké en minuscule (hash_file) : precedence OK, AUCUN pull, AUCUN doublon.
         $lower = str_repeat('a', 60) . 'beef';
         WallpaperAsset::query()->create([
@@ -353,7 +353,7 @@ class ArtifactPullServiceTest extends TestCase
         $this->assertTrue((bool) AgentTool::query()->where('key', 'rainmeter')->value('enabled'));
     }
 
-    // ── Ré-pull au même checksum → no-op ──────────────────────────────────────
+    // Ré-pull au même checksum → no-op
 
     public function test_repull_same_checksum_is_noop(): void
     {

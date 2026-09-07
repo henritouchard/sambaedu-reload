@@ -17,7 +17,7 @@ use Tests\Concerns\IssuesWorkstationJwt;
 use Tests\TestCase;
 
 /**
- * Story 16.12 — AC4.2 (≥6 cas).
+ * (≥6 cas).
  *
  * On teste le component Livewire SFC indirectement via le path Blade
  * `pages::admin.settings.scripts-logs.index` que Livewire/Folio résolvent.
@@ -78,11 +78,11 @@ class ScriptLogsIndexTest extends TestCase
             ->assertSet('sortBy', 'started_at')
             ->assertSet('sortDir', 'desc')
             // Le titre de page est désormais porté par la page hôte à onglets
-            // (/admin/settings/migration) ; le corps embarqué expose ses libellés.
+            // (admin/settings/migration) ; le corps embarqué expose ses libellés.
             // Le bouton de réinitialisation vit désormais dans x-molecules.filter-bar,
             // qui porte un libellé uniforme ; on ancre sur le testid, pas sur le texte.
             ->assertSeeHtml('data-testid="filter-reset"')
-            // Post review Opus-D — vérifier rendu HTML effectif (et pas seulement state).
+            // Le rendu HTML effectif, et pas seulement l'état du composant.
             ->assertSeeHtml('data-testid="logs-table"')
             ->assertSeeHtml('data-testid="dashboard-banner"')
             ->assertSeeHtml('data-testid="filters-panel"')
@@ -111,7 +111,7 @@ class ScriptLogsIndexTest extends TestCase
         $logs = $tested->viewData('logs');
         self::assertSame(3, $logs->total());
 
-        // Post review Opus-D — vérifier que le rendu HTML reflète bien le filtre :
+        // Le rendu HTML doit refléter le filtre :
         // la row failure doit être affichée, et le badge "badge-error" présent.
         $failureUuid = $failures->first()->workstation_uuid;
         $tested
@@ -148,7 +148,7 @@ class ScriptLogsIndexTest extends TestCase
         self::assertSame(2, $logs->total());
         $tested->assertSet('filterFailuresOnly', true);
 
-        // Post review Opus-D — vérifier rendu HTML : bouton actif + libellé.
+        // Rendu HTML : bouton actif + libellé.
         $tested
             ->assertSeeHtml('data-testid="toggle-failures-only"')
             ->assertSee('Tous les logs'); // libellé quand filterFailuresOnly=true
@@ -191,7 +191,7 @@ class ScriptLogsIndexTest extends TestCase
         self::assertSame(50, $logs->perPage());
         self::assertSame(75, $logs->total());
 
-        // Post review Opus-D — bandeau d'indicateurs visible quand il y a des logs.
+        // Bandeau d'indicateurs visible dès qu'il y a des logs.
         $tested->assertSeeHtml('data-testid="failure-rate"');
     }
 }

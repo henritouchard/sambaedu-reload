@@ -14,7 +14,7 @@ use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
- * Story 60.5 — LE POINT D'ENTRÉE UNIQUE de l'arbre NEUF d'un groupe.
+ * LE POINT D'ENTRÉE UNIQUE de l'arbre NEUF d'un groupe.
  *
  * Trois déclencheurs veulent la même chose — la création d'un groupe, un
  * changement d'appartenance, une commande de peuplement — et ils passent tous par
@@ -22,7 +22,6 @@ use Throwable;
  * TOUJOURS matérialisé de la même façon, et qu'il n'existe pas de « second chemin »
  * qui produirait un partage à moitié relié.
  *
- * ---------------------------------------------------------------------------
  * **CE SERVICE N'ÉCRIT RIEN SUR LE DISQUE, ET NE CONNAÎT PAS L'ARBRE HISTORIQUE.**
  *
  * Il crée (ou retrouve) une LIGNE de partage reliée à son groupe et à sa recette,
@@ -33,7 +32,6 @@ use Throwable;
  * conflit possible. C'est pourquoi les deux voies ne doivent surtout pas être
  * « factorisées ».
  *
- * ---------------------------------------------------------------------------
  * **LE DÉCLENCHEUR EST SCOPÉ AUX RECETTES D'ARBRE, ET C'EST LE POINT DÉLICAT.**
  *
  * Deux recettes s'accrochent au type `classe` : l'arbre de partage, et la recette
@@ -43,11 +41,11 @@ use Throwable;
  * l'auto-résolution ; matérialisation automatique = propriété des seules recettes
  * d'ARBRE ({@see DirectoryTemplate::materializesOnGroupCreation()}).
  *
- * **La suppression d'un groupe ne déprovisionne RIEN** (D9 — aucune destruction
- * implicite). La ligne du partage survit, son lien de groupe passe à `null`, et
+ * **La suppression d'un groupe ne déprovisionne RIEN** — aucune destruction
+ * implicite. La ligne du partage survit, son lien de groupe passe à `null`, et
  * l'administrateur décide depuis l'écran des partages. Un arbre qui disparaîtrait
  * du disque parce qu'une ligne de groupe a été supprimée serait exactement le geste
- * que tout l'epic refuse.
+ * que tout le plan de fichiers refuse.
  */
 class ClassTreeShareService
 {
@@ -55,7 +53,7 @@ class ClassTreeShareService
      * Interrupteur de la matérialisation automatique.
      *
      * **Un flag DÉDIÉ, jamais celui d'un autre canal.** Le patron du dépôt est
-     * explicite depuis la story 42.2 : chaque canal son flag. Réutiliser celui de
+     * explicite : chaque canal son flag. Réutiliser celui de
      * la projection d'annuaire suspendrait la matérialisation à chaque
      * synchronisation, c'est-à-dire précisément quand des groupes naissent.
      */
@@ -331,7 +329,7 @@ class ClassTreeShareService
      *
      * Un rattachement n'est pas une demande de partage. Si le groupe n'a pas encore
      * d'arbre, il n'y a rien à réconcilier — et le fabriquer ici serait la
-     * matérialisation par surprise que la story refuse partout ailleurs.
+     * matérialisation par surprise qu'on refuse partout ailleurs.
      */
     public function reconcileExistingQuietly(UserGroup $group): void
     {

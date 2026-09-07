@@ -23,7 +23,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Tests Unit `PrintersStateProvider` — Story 27.2 (AC1, AC2, AC3).
+ * Tests Unit `PrintersStateProvider`.
  *
  * Mailles POSTE (salle physique + parc logique, PAS de relation UserGroup→Printer),
  * union sans précédence, payload v1 (connexion logique, jamais l'URI back-end),
@@ -147,14 +147,14 @@ class PrintersStateProviderTest extends TestCase
         self::assertSame('Desc imp-test', $payload['description']);
         self::assertSame('Loc imp-test', $payload['location']);
         self::assertFalse($payload['is_default']);
-        // L'URI back-end CUPS (socket://…) ne doit JAMAIS apparaître (décision n° 4).
+        // L'URI back-end CUPS (socket://…) ne doit JAMAIS apparaître.
         self::assertStringNotContainsString('socket://', json_encode($payload));
     }
 
     #[Test]
     public function default_logical_wins_over_physical(): void
     {
-        // Story 27.3 (D-Q3) — INVERSION GLOBALE `logique > physique` : deux
+        // INVERSION GLOBALE `logique > physique` : deux
         // imprimantes DISTINCTES, chacune défaut sur sa maille. Le LOGIQUE doit
         // désormais l'emporter (comportement CHANGÉ sciemment, pas régressé).
         $impPhys = Printer::factory()->create(['cups_name' => 'aphys']); // cups_name "petit" exprès

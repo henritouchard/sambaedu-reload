@@ -14,7 +14,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 38.7 — l'observer ne synchronise plus que les groupes PHYSIQUES (OU dans
+ * L'observer ne synchronise plus que les groupes PHYSIQUES (OU dans
  * OU=Computers). Les groupes LOGIQUES sont purement SQL : aucun WorkstationGroupAdSyncJob.
  * La création automatique d'AppProfile a été retirée : un groupe avec
  * `app_profile_name` rempli ne crée AUCUN profil ni lien pivot.
@@ -75,7 +75,7 @@ class WorkstationGroupObserverAdSyncTest extends TestCase
         }
     }
 
-    // ── AC1 : aucune écriture AD pour les groupes logiques ──────────────────
+    // : aucune écriture AD pour les groupes logiques
 
     #[Test]
     public function creating_a_logical_group_dispatches_no_ad_sync_job(): void
@@ -102,7 +102,7 @@ class WorkstationGroupObserverAdSyncTest extends TestCase
         Bus::assertNotDispatched(WorkstationGroupAdSyncJob::class);
     }
 
-    // ── AC2/AC7 : les groupes physiques restent synchronisés (non-régression) ─
+    // ── : les groupes physiques restent synchronisés (non-régression) ─
 
     #[Test]
     public function creating_a_physical_group_dispatches_a_create_job(): void
@@ -144,7 +144,7 @@ class WorkstationGroupObserverAdSyncTest extends TestCase
         Bus::assertDispatched(WorkstationGroupAdSyncJob::class, fn ($job) => $job->action === 'delete');
     }
 
-    // ── AC8 : plus de création automatique d'AppProfile ─────────────────────
+    // : plus de création automatique d'AppProfile
 
     #[Test]
     public function creating_a_group_with_app_profile_name_creates_no_profile_and_no_pivot(): void

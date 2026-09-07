@@ -19,7 +19,7 @@ use ZipArchive;
  *  - une archive `<name>.zip` contenant un `GPT.INI` ;
  *  - un répertoire `<name>/` contenant un `GPT.INI` (forme dépaquetée
  *    `sambaedu-gpo/<name>/` utilisée sur la VM dev — cf. config
- *    `applications_template` D6).
+ *    `applications_template`).
  *
  * Le `displayName` (section `[General]` du `GPT.INI`, fallback basename) est la
  * clé de résolution : une GPO de l'AD est **publiable** ssi son `displayName`
@@ -28,10 +28,10 @@ use ZipArchive;
  * — aucune spécificité `se4_wpkg`, la GPO WPKG n'est qu'une template parmi
  * d'autres.
  *
- * Lecture pure : aucun side effect, aucun `exec`. Story 27.14 : la publication
+ * Lecture pure : aucun side effect, aucun `exec`. : la publication
  * SYSVOL de templates de config (ex-`GpoPublisher`) a été supprimée avec le
  * canal de config legacy ; ce registre subsiste comme RECONNAISSANCE de
- * publiabilité (notamment du bootstrap `se4_agent_bootstrap`, 25.4) —
+ * publiabilité (notamment du bootstrap `se4_agent_bootstrap`)
  * `isPublishable()` reste l'API consommée.
  */
 class GpoTemplateRegistry
@@ -45,9 +45,9 @@ class GpoTemplateRegistry
      * templates effectivement livrées par le paquet `sambaedu-gpo` (review F7),
      * matching insensible à la casse.
      *
-     * Story 27.16 : ajout du préfixe SE5 `se_` pour reconnaître le bootstrap
-     * d'amorçage agent renommé `SE_agent_bootstrap` (ex-`se4_agent_bootstrap`,
-     * 25.4). Le matching est `mb_strtolower` + `str_starts_with`, donc
+     * Ajout du préfixe SE5 `se_` pour reconnaître le bootstrap
+     * d'amorçage agent renommé `SE_agent_bootstrap` (ex-`se4_agent_bootstrap`).
+     * Le matching est `mb_strtolower` + `str_starts_with`, donc
      * `SE_agent_bootstrap` → `se_agent_bootstrap` passe. `se_` ne chevauche PAS
      * `se4_` (`se4_...` lowercasé commence par `se4`, jamais par `se_`) : aucune
      * capture indésirable, la surface restant bornée à `templates_dir`.

@@ -25,12 +25,12 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 27.12 (AC4) — compilation BOUT-EN-BOUT capacité → items de contrat via le
+ * Compilation BOUT-EN-BOUT capacité → items de contrat via le
  * `StateCompiler` INCHANGÉ et les vrais providers capability-first.
  *
  * Prouve que la couture « capability → registry » se branche sur l'exclusive par
  * clé existante SANS modifier le compilateur : override bat défaut (précédence),
- * parc logique bat parc physique (D-Q3), clés distinctes s'accumulent, collision
+ * parc logique bat parc physique, clés distinctes s'accumulent, collision
  * de 2 capacités sur la même clé arbitrée par la récence.
  */
 class CapabilityRegistryCompilationTest extends TestCase
@@ -115,7 +115,7 @@ class CapabilityRegistryCompilationTest extends TestCase
         self::assertSame(1, $registry[0]['payload']['value']);
     }
 
-    // ── Story 35.4 : précédence UserGroup > Broadcast (deux sens) ─────────
+    // : précédence UserGroup > Broadcast (deux sens)
     // Le StateCompiler est INTOUCHÉ : la maille `UserGroup` (rang 1) bat déjà le
     // `Broadcast` (rang 5) via `specificity()`. On prouve ici que quand les DEUX
     // mailles ÉMETTENT une valeur divergente sur la MÊME clé HKCU, l'override
@@ -180,7 +180,7 @@ class CapabilityRegistryCompilationTest extends TestCase
     #[Test]
     public function logical_group_beats_physical_group(): void
     {
-        // D-Q3 : le parc LOGIQUE bat la salle PHYSIQUE pour une même clé.
+        // Le parc LOGIQUE bat la salle PHYSIQUE pour une même clé.
         $cap = $this->makeCapability('a_cap', 'on', [
             ['hive' => 'HKCU', 'path' => 'Software\\X', 'name' => 'Shared', 'type' => 'REG_DWORD', 'value' => ['on' => 0, 'off' => 1, 'mid' => 5]],
         ]);
@@ -215,9 +215,9 @@ class CapabilityRegistryCompilationTest extends TestCase
         self::assertSame(['KeyA', 'KeyB'], $names);
     }
 
-    // ── Story 35.1 : items `ensure:absent` vs items d'écriture ────────────
-    // `exclusiveKey()` est IDENTIQUE pour les deux formes ({hive|path|name}) :
-    // la précédence EXISTANTE du StateCompiler (INTOUCHÉ, D2) arbitre.
+    // Items `ensure:absent` vs items d'écriture : `exclusiveKey()` est IDENTIQUE
+    // pour les deux formes ({hive|path|name}), c'est donc la précédence existante
+    // du StateCompiler qui arbitre.
 
     #[Test]
     public function parc_override_write_beats_broadcast_absent_for_a_key(): void
@@ -277,10 +277,9 @@ class CapabilityRegistryCompilationTest extends TestCase
         self::assertSame('absent', $registry[0]['payload']['ensure']);
     }
 
-    // ── Story 35.3 : ruche HKU — coexistence, précédence, machine-only ─────
-    // `exclusiveKey()` est INCHANGÉE ({hive|path|name} minuscules) : l'identité
-    // `hku|…` est DISTINCTE de la clé HKCU jumelle — les deux items coexistent
-    // (machine + session) via le StateCompiler INTOUCHÉ (D2).
+    // Ruche HKU — coexistence, précédence, machine-only. `exclusiveKey()` reste
+    // {hive|path|name} en minuscules : l'identité `hku|…` est DISTINCTE de la clé
+    // HKCU jumelle, les deux items coexistent (machine + session).
 
     /** La spec numlock bi-ruche (miroir du retrofit 2026_07_03_160000). */
     private const NUMLOCK_KEYS = [
@@ -343,7 +342,7 @@ class CapabilityRegistryCompilationTest extends TestCase
     #[Test]
     public function user_group_override_never_reaches_the_hku_item_in_machine_only_compile(): void
     {
-        // (c) « pas de ciblage par utilisateur » est STRUCTUREL (piège #4) : le
+        // (c) « pas de ciblage par utilisateur » est STRUCTUREL : le
         // service SYSTEM fetch son state SANS ?user (TargetContext::for($ws,
         // null) → userGroupIds = []) — un override UserGroup posé en base
         // n'atteint JAMAIS l'item HKU compilé en machine.
@@ -396,14 +395,14 @@ class CapabilityRegistryCompilationTest extends TestCase
         self::assertSame(20, $registry[0]['payload']['value'], 'la capacité la plus récente gagne');
     }
 
-    // ── Story 43.2 (AC3) — hint `refresh` bout-en-bout via le VRAI StateCompiler ─
+    // ── hint `refresh` bout-en-bout via le VRAI StateCompiler ─
 
     #[Test]
     public function compiled_state_carries_the_refresh_hint_on_the_session_item_but_never_on_the_machine_item(): void
     {
         // Spec MIXTE HKLM+HKCU portant `spec.refresh` : le compilé PORTE le hint
         // sur l'item `session` (compagnon) et NE LE PORTE JAMAIS sur l'item
-        // `machine` (service SYSTEM) — le StateCompiler est INTOUCHÉ (D3), le
+        // `machine` (service SYSTEM) — le StateCompiler n'en sait rien, le
         // double gate mécanisme+portée vit dans le provider.
         $cap = Capability::factory()->create(['key' => 'mixed_refresh_compiled', 'default_value' => 'on']);
         CapabilityProjection::factory()->for($cap)->create([
@@ -433,14 +432,14 @@ class CapabilityRegistryCompilationTest extends TestCase
         self::assertNotEmpty((new StateHasher)->hashItem($session[0]));
     }
 
-    // ── Story 35.7 (AC2) — marqueur `writer` bout-en-bout via le VRAI StateCompiler ─
+    // ── — marqueur `writer` bout-en-bout via le VRAI StateCompiler ─
     // `exclusiveKey()` et le StateCompiler sont INTOUCHÉS : l'identité
     // {hive|path|name} ne change pas, le marqueur voyage AVEC la clé gagnante.
 
     #[Test]
     public function user_group_override_beats_broadcast_and_the_writer_marker_travels_with_the_winning_key(): void
     {
-        // Cible métier réelle (blocked_executables, geste 35.4) : défaut
+        // Cible métier réelle (blocked_executables, geste) : défaut
         // Broadcast `off` (suppression marquée) ; override UserGroup élèves
         // `on` (écriture marquée). La maille UserGroup bat le Broadcast pour
         // CETTE clé et le state PAR-SESSION porte l'item d'écriture 6 clés,

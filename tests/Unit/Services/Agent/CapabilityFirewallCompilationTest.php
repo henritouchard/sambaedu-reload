@@ -25,12 +25,12 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 36.2 — compilation BOUT-EN-BOUT capacité `firewall` → items de contrat
- * via le `StateCompiler` INCHANGÉ (D2). Prouve : (a) précédence broadcast/parc
- * sur identité ÉGALE (dans les DEUX sens) ; (b) deux règles de `rule_id`
- * distincts COEXISTENT ; (c) deux capacités émettant le MÊME `rule_id`
- * collisionnent (la plus spécifique gagne, piège #10) ; (d) override UserGroup
- * sans effet en compile machine-only (piège #15). `exclusiveKey() = rule_id`.
+ * Compilation BOUT-EN-BOUT capacité `firewall` → items de contrat
+ * via le `StateCompiler`, qu'aucune capacité ne modifie. Prouve : (a) précédence
+ * broadcast/parc sur identité ÉGALE (dans les DEUX sens) ; (b) deux règles de
+ * `rule_id` distincts COEXISTENT ; (c) deux capacités émettant le MÊME `rule_id`
+ * collisionnent (la plus spécifique gagne) ; (d) override UserGroup sans effet
+ * en compile machine-only. `exclusiveKey() = rule_id`.
  */
 class CapabilityFirewallCompilationTest extends TestCase
 {
@@ -118,7 +118,7 @@ class CapabilityFirewallCompilationTest extends TestCase
         ]);
     }
 
-    // ── (a) Précédence sur identité ÉGALE — deux sens ─────────────────────
+    // (a) Précédence sur identité ÉGALE — deux sens
 
     #[Test]
     public function parc_on_absent_beats_broadcast_off_present(): void
@@ -144,7 +144,7 @@ class CapabilityFirewallCompilationTest extends TestCase
         self::assertSame('present', $items[0]['payload']['ensure'], 'override parc (off/present) bat broadcast (on/absent)');
     }
 
-    // ── (b) rule_ids distincts COEXISTENT ─────────────────────────────────
+    // (b) rule_ids distincts COEXISTENT
 
     #[Test]
     public function two_rules_with_distinct_rule_ids_coexist(): void
@@ -161,7 +161,7 @@ class CapabilityFirewallCompilationTest extends TestCase
         self::assertSame(['block-proxy', 'internet-block'], $ids);
     }
 
-    // ── (c) Collision inter-capacités : même rule_id (piège #10) ──────────
+    // (c) Collision inter-capacités : même rule_id
 
     #[Test]
     public function two_capabilities_with_the_same_rule_id_collide(): void
@@ -179,7 +179,7 @@ class CapabilityFirewallCompilationTest extends TestCase
         self::assertCount(1, $items, 'un même rule_id inter-capacités collisionne (une seule règle)');
     }
 
-    // ── (d) Compile MACHINE-ONLY : override UserGroup sans effet ──────────
+    // (d) Compile MACHINE-ONLY : override UserGroup sans effet
 
     #[Test]
     public function user_group_override_has_no_effect_on_machine_only_compile(): void

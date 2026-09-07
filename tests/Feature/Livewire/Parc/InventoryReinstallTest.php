@@ -16,7 +16,7 @@ use Livewire\Livewire;
 use Tests\TestCase;
 
 /**
- * Story 3.11 — Réinstallation multi-sélection depuis l'inventaire (AC7/9/11/12).
+ * Réinstallation multi-sélection depuis l'inventaire (9/11/12).
  */
 class InventoryReinstallTest extends TestCase
 {
@@ -104,7 +104,7 @@ class InventoryReinstallTest extends TestCase
 
     public function test_large_selection_bulk_inserts(): void
     {
-        // AC12 — grande sélection, insert bulk, pas de reboot en masse.
+        // Grande sélection, insert bulk, pas de reboot en masse.
         $this->grantInstall();
         $machines = Workstation::factory()->count(120)->create();
 

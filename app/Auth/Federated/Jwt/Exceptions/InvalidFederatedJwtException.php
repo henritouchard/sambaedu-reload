@@ -9,7 +9,6 @@ use RuntimeException;
 use Throwable;
 
 /**
- * Story 20.1.
  *
  * Exception levée par {@see \App\Auth\Federated\Jwt\FederatedJwtVerifier} avec
  * un code stable du catalogue {@see FederatedJwtErrorCodes}. Calquée sur

@@ -13,7 +13,6 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 16.7 — AC3.3.
  *
  * Tests Unit `AdMachineManager` : utilise `Process::fake()` Laravel pour
  * simuler les appels `samba-tool` sans nécessiter Mockery sur `SambaToolRunner`
@@ -54,7 +53,7 @@ class AdMachineManagerTest extends TestCase
         return $repo;
     }
 
-    // ────────────────────────── check() ──────────────────────────
+    // check()
 
     #[Test]
     public function check_returns_true_when_machine_already_exists_in_ldap(): void
@@ -133,13 +132,13 @@ class AdMachineManagerTest extends TestCase
         Process::assertNothingRan();
     }
 
-    // ────────────────────────── registerHardware() ──────────────────────────
+    // registerHardware()
 
     #[Test]
     public function register_hardware_writes_netbootguid_via_ldap(): void
     {
         // Plus de samba-tool pour registerHardware : `computer edit` n'a pas
-        // d'option `--set-attribute` (samba 4.22). On écrit via LdapRecord.
+        // d'option `--set-attribute` (samba). On écrit via LdapRecord.
         Process::fake();
 
         // `$machine->netbootguid = …` route via __set → setAttribute().
@@ -188,7 +187,7 @@ class AdMachineManagerTest extends TestCase
         self::assertFalse($manager->registerHardware('PC-001', '01234567-89ab-cdef-0123-456789abcdef'));
     }
 
-    // ────────────────────────── listRemoteConnexion() ──────────────────────────
+    // listRemoteConnexion()
 
     #[Test]
     public function list_remote_returns_empty_when_guacamole_disabled(): void
@@ -219,7 +218,7 @@ class AdMachineManagerTest extends TestCase
         self::assertSame('', $manager->listRemoteConnexion('PC-001', '; rm -rf /'));
     }
 
-    // ────────────────────────── renameComputer() — Story 3.3 / D14 / AC3.1 ──────────────────────────
+    // renameComputer — / D14 /
 
     #[Test]
     public function rename_computer_runs_delete_then_create_via_samba_tool(): void

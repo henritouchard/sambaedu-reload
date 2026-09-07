@@ -14,7 +14,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Tests Feature — Hooks d'invalidation du cache santé (Story 16.14 Q2).
+ * Tests Feature — Hooks d'invalidation du cache santé.
  *
  * Vérifie qu'une mutation via `GpoService::setLink/removeLink/setInheritance`
  * invalide bien les entrées correspondantes dans `CachedGpoLookups`.

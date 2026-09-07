@@ -11,16 +11,16 @@ use Livewire\Component;
 use Livewire\WithFileUploads;
 
 /**
- * Story 25.6 — Section « Tools » du catalogue d'outils agent (AC2, AC3, AC6).
+ * Section « Tools » du catalogue d'outils agent.
  *
  * Surface d'administration du catalogue `agent_tools` (aujourd'hui : le portable
  * Rainmeter). Façade UI sur le SEUL écrivain de la table
  * {@see AgentToolService} : ce composant n'appelle JAMAIS `save()`/
  * `updateOrCreate()` directement — il délègue `upload()` (ingestion validée :
  * extension/MIME/taille, structure ZIP `Rainmeter.exe` + `Skins/`, SHA-256
- * CALCULÉ SERVEUR, filename dérivé serveur anti-traversal — D5 mono-version) et
- * `toggle()` (bascule GLOBALE `enabled` — D3 ; désactivé → no-op côté agent,
- * SANS désinstaller — D4).
+ * CALCULÉ SERVEUR, filename dérivé serveur anti-traversal, une seule version à
+ * la fois) et `toggle()` (bascule GLOBALE `enabled` ; désactivé → no-op côté
+ * agent, SANS désinstaller).
  *
  * Chaque méthode mutante (upload, toggle) est gardée
  * `Gate::authorize('server.admin')` : le middleware `can:server.admin`
@@ -95,8 +95,8 @@ return new class extends Component {
     }
 
     /**
-     * Bascule l'activation GLOBALE du tool (D3). Activé → exposé au manifest et
-     * déployé ; désactivé → no-op côté agent, SANS désinstaller (D4).
+     * Bascule l'activation GLOBALE du tool. Activé → exposé au manifest et
+     * déployé ; désactivé → no-op côté agent, SANS désinstaller.
      */
     public function toggle(): void
     {
@@ -121,7 +121,7 @@ return new class extends Component {
 ?>
 
 <div class="flex flex-col gap-6">
-    {{-- Catalogue : l'outil de rendu Rainmeter (mono-version, D5) --}}
+    {{-- Catalogue : l'outil de rendu Rainmeter (une seule version à la fois) --}}
     <div>
         <div class="flex items-center justify-between mb-2">
             <h2 class="text-lg font-semibold">Outil de rendu (overlay)</h2>

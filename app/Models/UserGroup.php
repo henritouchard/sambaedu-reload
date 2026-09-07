@@ -42,32 +42,28 @@ class UserGroup extends Model implements Wireable
         'type',
         'ad_dn',
         'ad_guid',
-        // Story 49.1 (AC1) — profil de droits PORTÉ par ce groupe (FK
+        // Profil de droits PORTÉ par ce groupe (FK
         // `roles.id`, nullable ; le cas normal est l'absence de lien).
         // L'appartenance au groupe matérialise ce rôle Spatie chez ses membres.
         'rights_profile_id',
     ];
 
-    // ========================================================================
-    // RELATIONS
-    // ========================================================================
-
     /**
      * Relation N:N avec les utilisateurs
      *
-     * Story 5.2 (D5=A) — `->using(UserGroupUserPivot::class)` active les events
+     * `->using(UserGroupUserPivot::class)` active les events
      * Eloquent sur les rows pivot pour l'Observer
      * `UserGroupUserPivotObserver` qui synchronise les ACLs FS lors d'un
      * changement de classe d'élève.
      *
-     * Story 4.14 — `->withPivot('is_head_teacher')` : SANS ce withPivot, Laravel
+     * `->withPivot('is_head_teacher')` : SANS ce withPivot, Laravel
      * IGNORE l'attribut d'arête lors d'un `sync([$id => ['is_head_teacher' => …]])`
      * (il ne le persiste pas). C'est la relation d'ÉCRITURE du fold de 4.13.
-     * Story 42.2 (D5) — le flag n'est PLUS écrit par le chemin vivant (le
+     * Le flag n'est PLUS écrit par le chemin vivant (le
      * read-back ne pose que `role`) : colonne STALE, `withPivot` conservé
      * (fixtures de tests, bases brownfield) jusqu'à la migration destructive
      * post-42.4. `withPivot` n'introduit pas de timestamps (le pivot custom
-     * 5.2 reste `$timestamps=false`).
+     * reste `$timestamps=false`).
      */
     public function users(): BelongsToMany
     {
@@ -78,16 +74,16 @@ class UserGroup extends Model implements Wireable
             'user_id'
         )
             ->using(\App\Models\Pivot\UserGroupUserPivot::class)
-            // Story 42.1/42.2 — `'role'` est l'attribut d'arête VIVANT (le
-            // miroir booléen 4.14 n'est plus écrit). SANS ce withPivot,
+            // `'role'` est l'attribut d'arête VIVANT (le
+            // miroir booléen n'est plus écrit). SANS ce withPivot,
             // `sync([$id => ['role'=>…]])` IGNORE silencieusement l'attribut
             // d'arête. `withPivot` n'introduit pas de timestamps (le pivot
-            // custom 5.2 reste `$timestamps=false`).
+            // custom reste `$timestamps=false`).
             ->withPivot('is_head_teacher', 'role');
     }
 
     /**
-     * Story 49.1 (AC1) — profil de droits porté par ce groupe (rôle Spatie).
+     * Profil de droits porté par ce groupe (rôle Spatie).
      *
      * Référencé par **id**, jamais par nom : les profils custom sont
      * renommables depuis `/app/rights-management/profiles/[id]`, un nom stocké
@@ -105,7 +101,7 @@ class UserGroup extends Model implements Wireable
     }
 
     /**
-     * Story 34.1 — répertoires réseau assignés à ce groupe d'utilisateurs.
+     * Répertoires réseau assignés à ce groupe d'utilisateurs.
      * Maille `UserGroup` : la lettre s'affiche pour ses membres ET l'ACL POSIX
      * réelle est dérivée (`group:<unix>` rx/rwx selon `access`). Porte le pivot
      * `access`.
@@ -121,10 +117,6 @@ class UserGroup extends Model implements Wireable
         )->withPivot('access')->withTimestamps();
     }
 
-    // ========================================================================
-    // SCOPES
-    // ========================================================================
-
     public function scopeByType(Builder $query, string $type): Builder
     {
         return $query->where('type', $type);
@@ -139,7 +131,7 @@ class UserGroup extends Model implements Wireable
     }
 
     /**
-     * Story 49.1 — groupes PORTEURS d'un profil de droits (section principale
+     * Groupes PORTEURS d'un profil de droits (section principale
      * de l'onglet Profils). Le complément (`whereNull`) est le cas normal.
      */
     public function scopeCarryingProfile(Builder $query): Builder
@@ -147,12 +139,8 @@ class UserGroup extends Model implements Wireable
         return $query->whereNotNull('rights_profile_id');
     }
 
-    // ========================================================================
-    // HELPERS
-    // ========================================================================
-
     /**
-     * Story 49.1 — ce groupe porte-t-il un profil de droits ?
+     * Ce groupe porte-t-il un profil de droits ?
      *
      * C'est l'information « qualifiant vs regroupement », DÉRIVÉE : aucune
      * colonne de nature, aucune constante.
@@ -171,10 +159,6 @@ class UserGroup extends Model implements Wireable
     {
         return $this->display_name ?? $this->name;
     }
-
-    // ========================================================================
-    // WIREABLE (Livewire)
-    // ========================================================================
 
     public function toLivewire(): array
     {

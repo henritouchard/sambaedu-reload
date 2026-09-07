@@ -102,12 +102,6 @@ class HomeDirServiceTest extends TestCase
         $this->assertFalse($this->service->hasArchivedHome('nonexistent.user'));
     }
 
-    // =========================================================================
-    // Story 5.1d Q3 (2026-04-29) — Cache::lock per-login dans archive/restore.
-    // Si une opération concurrente détient déjà `trash:action:<login>`, les
-    // méthodes doivent retourner false sans toucher au filesystem.
-    // =========================================================================
-
     #[Test]
     public function it_returns_false_when_restore_is_locked(): void
     {

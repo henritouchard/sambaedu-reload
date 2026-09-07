@@ -41,10 +41,6 @@ class AppStoreService
         $this->syncTimeout = (int) config('sambaedu.wpkg.sync_timeout', 30);
     }
 
-    // ========================================
-    // SYNCHRONISATION DU CATALOGUE (delegue)
-    // ========================================
-
     /**
      * Synchronise le catalogue d'applications depuis tous les depots actifs
      *
@@ -65,24 +61,20 @@ class AppStoreService
         return $this->depotSyncService->syncDepot($depot);
     }
 
-    // ========================================
-    // MATERIALISATION DEPUIS LA SOURCE (Story 31.3 — sans install serveur)
-    // ========================================
-
     /**
-     * Story 31.3 — Matérialise UNIQUEMENT la ligne d'inventaire `Application` à partir
-     * des champs de SOURCE par-app (« Option B », D1) portés par le catalogue amont
+     * Matérialise UNIQUEMENT la ligne d'inventaire `Application` à partir
+     * des champs de SOURCE par-app portés par le catalogue amont
      * (controlHub), SANS télécharger ni installer côté serveur.
      *
      * Contrairement à {@see self::installApplication()} (qui enchaîne download + parse +
      * install serveur), cette méthode N'appelle AUCUN pipeline d'install : elle pose la
      * recette WPKG (`xml_url`/`xml_sha`) sur une `Application` en statut `Available`. La
-     * pose RÉELLE sur le poste reste à l'agent + WPKG (FR21, « un tuyau, deux outils »).
+     * pose RÉELLE sur le poste reste à l'agent + WPKG.
      *
      * Aucune dépendance au pipeline de dépôt (`DepotSyncService`/`Depot`/`DepotApplication`) :
      * la matérialisation est DIRECTE depuis `$source`. Idempotent par construction —
      * `firstOrCreate` sur `app_id` : une `Application` locale préexistante (même `app_id`)
-     * est INTOUCHÉE (status/métadonnées préservés — AC3).
+     * est INTOUCHÉE (status et métadonnées préservés).
      *
      * @param  string  $appId  Identifiant technique (== `applications.app_id` == catalogue `app_key`)
      * @param  array{name?: string|null, xml_url?: string|null, xml_sha?: string|null, version?: string|null, category?: string|null}  $source
@@ -100,12 +92,12 @@ class AppStoreService
                 // Statut « Available » (PAS Downloading) : aucune install serveur déclenchée
                 // (ne JAMAIS appeler installApplication() ici).
                 'status' => ApplicationStatus::Available,
-                // Story 32.1 (Q2 — report review 31.3 #B) : TRACE D'ORIGINE. Une app
+                // TRACE D'ORIGINE. Une app
                 // matérialisée depuis le catalogue amont est marquée « gérée par
                 // controlHub » (la colonne existe déjà — $fillable + cast bool). Posé
                 // UNIQUEMENT à la CRÉATION (firstOrCreate) : une `Application` locale
-                // préexistante n'est jamais touchée (AC3). À la rupture du lien
-                // (32.1), ce flag est CONSERVÉ comme marqueur d'origine historique —
+                // préexistante n'est jamais touchée. À la rupture du lien
+                // , ce flag est CONSERVÉ comme marqueur d'origine historique
                 // l'enforcement, lui, vient de `active()` (déjà neutralisé). En UI il
                 // se traduit par un libellé FR (« Origine : controlHub »), jamais le
                 // nom brut de colonne.
@@ -113,10 +105,6 @@ class AppStoreService
             ]
         );
     }
-
-    // ========================================
-    // INSTALLATION D'APPLICATION
-    // ========================================
 
     /**
      * Installe une application depuis le depot distant vers le catalogue local
@@ -207,7 +195,6 @@ class AppStoreService
         ?string $version,
         string $initiatedBy,
     ): InstallationLog {
-        // Creer le log d'installation
         $log = InstallationLog::create([
             'application_id' => $application->id,
             'status' => InstallationStatus::Pending,
@@ -315,13 +302,13 @@ class AppStoreService
      * Regenere le catalogue module (packages.xml local) PUIS le bundle WPKG servi
      * au poste — point unique d'évolution du catalogue (ajout/retrait d'app).
      *
-     * Story 27.6 (Bug A / AC3, D3) : SOURCE UNIQUE. Le catalogue module est l'unique
+     * SOURCE UNIQUE. Le catalogue module est l'unique
      * source de vérité ; le bundle (lu réellement par le poste) en est la projection.
      * On chaîne donc la régénération du bundle (`WpkgBundleGenerator::generate()`,
      * qui source le catalogue module) directement après `regenerate()` — sinon une
      * app ajoutée via l'UI n'atteindrait jamais le poste (bug terrain « windeboule »).
      *
-     * D4 — RÉSILIENCE : un échec de régénération du bundle (ex. garde structurelle
+     * RÉSILIENCE : un échec de régénération du bundle (ex. garde structurelle
      * déclenchée par un catalogue module malformé) est LOGGÉ sur `wpkg-deploy` mais
      * ne casse PAS l'ajout au catalogue. Le catalogue module reste écrit (atomique) ;
      * le bundle, lui aussi atomique (tmp+rename), n'est jamais servi à demi écrit et
@@ -332,7 +319,7 @@ class AppStoreService
      */
     public function updateLocalPackagesXml(): void
     {
-        // Story 8.2.7 (AC8) — SÉRIALISATION sous charge parallèle. Plusieurs
+        // SÉRIALISATION sous charge parallèle. Plusieurs
         // InstallApplicationJob peuvent finaliser quasi-simultanément et
         // appeler cette méthode en concurrence. L'écriture fichier est DÉJÀ
         // atomique (`.tmp` + `rename`, PackagesXmlService L104-108) ; le lock
@@ -363,10 +350,6 @@ class AppStoreService
             }
         });
     }
-
-    // ========================================
-    // DESINSTALLATION
-    // ========================================
 
     /**
      * Desinstalle une application (supprime les fichiers locaux, remet le statut a available)
@@ -425,10 +408,6 @@ class AppStoreService
         // 4. Régénérer le catalogue WPKG local sans cette application
         $this->updateLocalPackagesXml();
     }
-
-    // ========================================
-    // CONSULTATION DU CATALOGUE DISTANT
-    // ========================================
 
     /**
      * Retourne la liste des depots, tries par principal d'abord puis par nom
@@ -503,9 +482,6 @@ class AppStoreService
         ];
     }
 
-    /**
-     * Retourne les categories distinctes d'un depot
-     */
     public function getDepotCategories(int $depotId): array
     {
         return DepotApplication::where('depot_id', $depotId)
@@ -517,9 +493,6 @@ class AppStoreService
             ->toArray();
     }
 
-    /**
-     * Retourne les branches distinctes d'un depot
-     */
     public function getDepotBranches(int $depotId): array
     {
         return DepotApplication::where('depot_id', $depotId)
@@ -530,10 +503,6 @@ class AppStoreService
             ->pluck('branch')
             ->toArray();
     }
-
-    // ========================================
-    // STATISTIQUES
-    // ========================================
 
     /**
      * Retourne les statistiques du magasin d'applications
@@ -554,10 +523,6 @@ class AppStoreService
                 ->count(),
         ];
     }
-
-    // ========================================
-    // UTILITAIRES
-    // ========================================
 
     /**
      * Retourne le chemin de stockage local pour une application

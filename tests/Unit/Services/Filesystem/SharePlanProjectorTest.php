@@ -24,12 +24,12 @@ use Tests\TestCase;
 use Tests\Unit\Services\Filesystem\Plan\PlanNeutralityMarkers;
 
 /**
- * Story 60.3 — un répertoire réseau PLAT projeté en plan NEUTRE.
+ * Un répertoire réseau PLAT projeté en plan NEUTRE.
  *
  * Deux propriétés à tenir, et elles tirent dans des sens opposés : le plan doit
  * décrire fidèlement les assignations réelles (donc lire le pivot polymorphe) ET
  * ne dériver aucun nom système (donc ne rien emprunter à la couche d'exécution).
- * C'est exactement la coupe de l'epic, appliquée au cas le plus simple.
+ * C'est exactement la coupe, appliquée au cas le plus simple.
  */
 class SharePlanProjectorTest extends TestCase
 {

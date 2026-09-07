@@ -16,7 +16,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 60.1 — le helper de nommage du plan, et son ÉQUIVALENCE avec ce qui
+ * Le helper de nommage du plan, et son ÉQUIVALENCE avec ce qui
  * existe déjà sous la ligne de contrat.
  *
  * Le namespace du plan n'importe aucun service d'exécution — c'est verrouillé par
@@ -30,9 +30,6 @@ use Tests\TestCase;
  */
 class GroupNameNormalizerTest extends TestCase
 {
-    // =========================================================================
-    // Équivalences ÉPINGLÉES (le prix de la coupe)
-    // =========================================================================
 
     /**
      * @return list<array{0:string}>
@@ -80,7 +77,7 @@ class GroupNameNormalizerTest extends TestCase
     }
 
     /**
-     * Story 62.1 — l'ÉQUIVALENCE ÉPINGLÉE a changé de nature, pas d'objet.
+     * L'ÉQUIVALENCE ÉPINGLÉE a changé de nature, pas d'objet.
      *
      * Le vocabulaire de rôle d'arête n'est plus une constante recopiée : c'est un
      * catalogue administrable, et le plan le reçoit par injection. Ce qui reste à
@@ -119,7 +116,7 @@ class GroupNameNormalizerTest extends TestCase
     }
 
     /**
-     * Story 62.1 — un rôle NOUVEAU du catalogue traverse le plan sans rejet, dès
+     * Un rôle NOUVEAU du catalogue traverse le plan sans rejet, dès
      * lors que le résolveur runtime est installé.
      */
     #[Test]
@@ -156,15 +153,15 @@ class GroupNameNormalizerTest extends TestCase
     }
 
     /**
-     * Story 62.4 — L'ÉPINGLE RETOURNÉE.
+     * L'ÉPINGLE RETOURNÉE.
      *
-     * Elle affirmait, depuis 60.1, que le plan RÉUTILISAIT le vocabulaire binaire
+     * Elle affirmait, depuis, que le plan RÉUTILISAIT le vocabulaire binaire
      * des assignations. Ce n'est plus vrai, et la supprimer aurait laissé le
      * nouveau monde sans témoin : elle affirme donc désormais l'inverse, et la
      * propriété qui le rend tenable.
      *
      *  - les deux vocabulaires sont DISJOINTS : le plan parle verbes, l'assignation
-     *    parle deux niveaux, et aucune valeur de l'un n'est une valeur de l'autre —
+     *  parle deux niveaux, et aucune valeur de l'un n'est une valeur de l'autre
      *    une confusion de vocabulaire ne peut plus passer inaperçue ;
      *  - la traduction est TOTALE dans les deux sens : toute valeur d'un côté a une
      *    image de l'autre. C'est ce qui garantit qu'aucune valeur ne « tombe »
@@ -224,10 +221,6 @@ class GroupNameNormalizerTest extends TestCase
         return $out;
     }
 
-    // =========================================================================
-    // Comportement propre du helper
-    // =========================================================================
-
     #[Test]
     public function a_type_prefix_is_stripped_case_insensitively_and_case_is_preserved(): void
     {
@@ -274,11 +267,6 @@ class GroupNameNormalizerTest extends TestCase
         }
     }
 
-    // =========================================================================
-    // Story 60.3 — la RACINE devient un chemin de nœud valide, et rien d'autre
-    // ne change
-    // =========================================================================
-
     #[Test]
     public function the_root_token_is_a_valid_node_path(): void
     {
@@ -323,10 +311,6 @@ class GroupNameNormalizerTest extends TestCase
         $this->assertFalse(GroupNameNormalizer::isKnownEdgeRole(null));
         $this->assertFalse(GroupNameNormalizer::isKnownEdgeRole(42));
     }
-
-    // =========================================================================
-    // Story 60.2 — la décomposition « matière × classe »
-    // =========================================================================
 
     #[Test]
     public function a_matiere_classe_name_decomposes_into_two_safe_segments(): void

@@ -17,7 +17,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 15.5 / AC1.4 + AC6.1 — Tests Feature de la corrélation `deployment_id`
+ * + — Tests Feature de la corrélation `deployment_id`
  * lors de l'ingestion d'un rapport.
  *
  * Couvre :

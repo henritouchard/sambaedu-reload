@@ -9,12 +9,12 @@ use App\Services\Extensions\ExtensionHealthService;
 use Illuminate\Console\Command;
 
 /**
- * Story 56.5 (AC1, FR34) — `php artisan ext:health:check {key?}`.
+ * `php artisan ext:health:check {key?}`.
  *
  * Sonde le backend de chaque extension `app` installée
  * (`http://127.0.0.1:<installed_port>/`) et PERSISTE ce qu'elle observe. C'est
  * le SEUL chemin automatique de mesure : la navbar, la bibliothèque et la fiche
- * LISENT l'état persisté (NFR9 — aucune requête sortante au rendu d'une page).
+ * LISENT l'état persisté : aucune requête sortante au rendu d'une page.
  *
  * Planifiée toutes les 5 minutes (`routes/console.php`).
  *
@@ -31,7 +31,7 @@ use Illuminate\Console\Command;
  * inconnue) : là, l'opérateur s'est trompé, et un silence l'induirait en erreur.
  *
  * Aucun acteur : la santé n'écrit RIEN au journal d'audit (télémétrie, pas un
- * acte — décision n° 2 de la story).
+ * acte).
  */
 class ExtensionHealthCheck extends Command
 {
@@ -88,7 +88,7 @@ class ExtensionHealthCheck extends Command
 
         if (($result['failed'] ?? 0) > 0) {
             // Une extension dont l'état n'a pas pu être PERSISTÉ : les autres ont
-            // été mesurées quand même (NFR6). Le détail est dans les logs.
+            // été mesurées quand même. Le détail est dans les logs.
             $this->warn(sprintf(
                 '%d extension(s) n\'ont pas pu être enregistrées — voir storage/logs (« Sonde de santé NON PERSISTÉE »).',
                 $result['failed'],

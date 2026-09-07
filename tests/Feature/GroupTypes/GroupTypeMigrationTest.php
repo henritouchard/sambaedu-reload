@@ -13,7 +13,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 62.2 — LE TEST PIVOT : la migration de reprise.
+ * LE TEST PIVOT : la migration de reprise.
  *
  * `user_groups.type` est une chaîne LIBRE depuis quatre ans. La reprise doit donc
  * faire deux choses à la fois, et ce fichier vérifie qu'elle fait EXACTEMENT ces
@@ -28,7 +28,7 @@ use Tests\TestCase;
  *
  * La contre-épreuve est aussi importante que la reprise : **aucune ligne de
  * `user_groups` ne bouge**. C'est la matérialisation exécutable du garde-fou
- * d'epic « aucune valeur perdue NI RENOMMÉE ».
+ * « aucune valeur perdue NI RENOMMÉE ».
  */
 class GroupTypeMigrationTest extends TestCase
 {
@@ -140,7 +140,7 @@ class GroupTypeMigrationTest extends TestCase
         $this->assertSame(0, DB::table('group_types')->where('key', '')->count());
 
         // Le libellé de secours est `ucfirst` — le repli exact des `match`
-        // d'affichage remplacés par cette story.
+        // d'affichage que le catalogue remplace.
         $this->assertSame('Class', DB::table('group_types')->where('key', 'class')->value('label'));
         $this->assertSame('Autre', DB::table('group_types')->where('key', 'autre')->value('label'));
         $this->assertNull(DB::table('group_types')->where('key', 'class')->value('icon'));

@@ -7,15 +7,13 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 26.1 — AC2 (la nature du poste devient une donnée du domaine, FR28).
- *
  * Greffe la colonne `environment` sur `workstation_groups` : un parc (logique
  * OU physique) déclare si ses postes sont partagés / personnels / nomades. Lue
  * par le `WorkstationEnvironmentResolver` (résolution serveur, précédence
  * `nomade > personal_local > shared_local`), elle sera consommée par les
- * handlers de l'Epic 27. AUCUN retrofit legacy (note de transition 26.1).
+ * handlers de l'agent. AUCUN retrofit legacy.
  *
- *  - `environment` VARCHAR(32) **NULL** — null = « non déclaré ». Décision D2 :
+ *  - `environment` VARCHAR(32) **NULL** — null = « non déclaré ».
  *    PAS de default SQL `'shared_local'`, le défaut est résolu côté service. On
  *    distingue ainsi « parc non encore configuré » de « parc explicitement
  *    partagé », et on évite une migration de backfill.

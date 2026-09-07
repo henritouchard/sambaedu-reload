@@ -128,7 +128,7 @@ return [
             'replace_placeholders' => true,
         ],
 
-        // Channel dédié pipeline déploiement WPKG (Story 15.1).
+        // Channel dédié pipeline déploiement WPKG.
         // Niveau ajustable sans redeploy via WPKG_DEPLOY_LOG_LEVEL.
         'wpkg-deploy' => [
             'driver' => 'daily',
@@ -138,7 +138,7 @@ return [
             'replace_placeholders' => true,
         ],
 
-        // Story 8.1 — Channel dédié réseau (DHCP + DNS futur). Aligné sur
+        // Channel dédié réseau (DHCP + DNS futur). Aligné sur
         // `wpkg-deploy` (driver daily, rotation 7j par défaut). Niveau
         // ajustable sans redeploy via NETWORK_LOG_LEVEL.
         'network' => [
@@ -149,11 +149,11 @@ return [
             'replace_placeholders' => true,
         ],
 
-        // Channel dédié module GPO (Story 16.1 — Epic 16).
+        // Channel dédié module GPO.
         // Couvre toutes les actions GPO (lecture, écriture, sync, audit, déploiement)
-        // — channel « large » : décision Henri 2026-05-11, pas `gpo-deploy` trop étroit.
+        // — channel « large », et non un `gpo-deploy` trop étroit.
         // Verbosité élevée volontaire (`debug` par défaut) en phase de transition
-        // Epic 16. Sera bumpée à `info` une fois l'epic stabilisé.
+        // sera bumpée à `info` une fois le domaine stabilisé.
         // Convention de logging par `action_type` documentée dans app/Gpo/README.md.
         'gpo' => [
             'driver' => 'daily',
@@ -163,10 +163,10 @@ return [
             'replace_placeholders' => true,
         ],
 
-        // Channel dédié canal agent desired-state (Story 23.2 — Epic 23).
+        // Channel dédié canal agent desired-state.
         // Couvre le cycle de vie du token agent (agent.token.issued/rotated/
         // rotation_confirmed/revoked/clone_detected/hostname_mismatch) puis
-        // les futurs state/report (23.5, 24.1). Convention `action_type`
+        // les futurs state/report. Convention `action_type`
         // namespacé `agent.*`, contexte `workstation_id`.
         // ⚠️ AUCUN secret : le token clair (et même son hash) ne transitent
         // JAMAIS par ce channel (iso-convention auth-v1).
@@ -179,7 +179,7 @@ return [
         ],
 
         // Channel dédié plateforme auth v1 — JWT + PKI + middlewares
-        // (Story 16.10 — Epic 16 Phase 2). Couvre toutes les actions
+        // (Phase 2). Couvre toutes les actions
         // d'authentification poste↔serveur local : émission/refresh/révocation
         // JWT, init CA, bootstrap, replay detection. Verbosité élevée volontaire
         // (`debug` par défaut) pour faciliter le diagnostic des bascules de
@@ -202,7 +202,7 @@ return [
             'replace_placeholders' => false,
         ],
 
-        // Story 20.1 — Channel dédié auth fédérée (Epic 20). Couvre la
+        // Channel dédié auth fédérée. Couvre la
         // vérification du JWT fédéré (émetteur externe de confiance), le login
         // fédéré et la réconciliation du guard de session pour les externes.
         // Calqué sur `auth-v1`.
@@ -224,7 +224,7 @@ return [
             'replace_placeholders' => false,
         ],
 
-        // Story 55.1 — Channel dédié au FOURNISSEUR OIDC (Epic 55, SSO des
+        // Channel dédié au FOURNISSEUR OIDC (SSO des
         // extensions). Troisième pilier d'authentification après `auth-v1`
         // (SE5 émetteur pour les postes) et `federated-auth` (SE5 consommateur) :
         // ici SE5 émet des id_token pour des NAVIGATEURS, au profit de clients
@@ -236,7 +236,7 @@ return [
         //   loggables : `client_id`, `kid`, `jti`, `exp`, le code d'erreur
         //   normalisé ({@see \App\Auth\Oidc\Support\OidcErrorCodes}) et, si une
         //   corrélation est nécessaire, un `*_hash_prefix` de 8 caractères
-        //   (patron `WorkstationJwtVerifier::logRejection()`).
+        //  (patron `WorkstationJwtVerifier::logRejection()`).
         //
         // Catalogue `action_type` (documenté dans app/Auth/Oidc/README.md) :
         //  - oidc.keys.init.start / .success / .skipped
@@ -254,11 +254,11 @@ return [
             'replace_placeholders' => false,
         ],
 
-        // Story 16.12 — Channel dédié logs d'exécution scripts centralisés.
+        // Channel dédié logs d'exécution scripts centralisés.
         // Couvre : ingestion endpoint, idempotence, archivage job daily,
         // rendu du wrapper. Pas de secret loggé (jamais d'access_token,
         // jamais de stdout/stderr complets — uniquement des counts/metadata).
-        // Convention de events documentée dans story 16.12 D8 :
+        // Événements émis :
         //  - scriptsos.ingest.success
         //  - scriptsos.ingest.idempotent_skip
         //  - scriptsos.ingest.idempotent_skip_race
@@ -274,11 +274,11 @@ return [
             'replace_placeholders' => true,
         ],
 
-        // Story 3.1 — D7 — Channel dédié iPXE (boot réseau + déploiement OS).
+        // Channel dédié iPXE (boot réseau + déploiement OS).
         // Couvre toutes les actions du domaine iPXE : handshake, résolution
         // poste (known/unknown), erreurs de rendu Blade, insert
         // MachineBootLog. Verbosité élevée volontaire (`debug` par défaut)
-        // en phase de transition Epic 3 ; bumper à `info` une fois l'epic
+        // En phase de transition ; bumper à `info` une fois le domaine
         // stabilisé.
         // Convention de logging par `action_type` documentée — catalogue :
         // ipxe.boot.handshake, ipxe.boot.known_workstation,
@@ -287,7 +287,7 @@ return [
         // Décision DO-12 : `replace_placeholders => false` (iso pattern
         // auth-v1) — évite l'injection si une string contrôlable (product
         // hardware) contient `{placeholder}`. Pas de secret loggé : MAC/UUID/
-        // product tronqués à 6-8 chars (D7 + AC7.3).
+        // product tronqués à 6-8 caractères.
         'ipxe' => [
             'driver' => 'daily',
             'path' => storage_path('logs/ipxe/ipxe.log'),

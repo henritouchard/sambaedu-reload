@@ -21,17 +21,15 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * CORRECTION DE REVUE 61.3 #1, **RECADRÉE PAR LA STORY 63.4** — CE QUI NE SE
- * RÉSOUT PAS NE SE DEVINE PAS.
+ * CE QUI NE SE RÉSOUT PAS NE SE DEVINE PAS.
  *
- * ---------------------------------------------------------------------------
  * **CE QUI ÉTAIT FAUX.** Le plafond d'un compte de l'instance se choisissait d'après
  * un « profil » déduit de `users.role` — une colonne qui ne garde rien dans ce
  * produit — avec un repli MUET vers le plus bas. Et les groupes passés au calcul
  * étaient toujours vides, ce qui rendait toute règle de quota par GROUPE
  * inatteignable pour un compte de l'instance.
  *
- * **LE PROFIL LUI-MÊME A DISPARU** (63.4) : le plafond par défaut est d'INSTANCE, et
+ * **LE PROFIL LUI-MÊME A DISPARU** : le plafond par défaut est d'INSTANCE, et
  * ce qu'on demande encore à l'annuaire, ce sont les GROUPES. La doctrine, elle,
  * survit transposée : un annuaire MUET n'est pas un compte sans groupe, et ne fait
  * jamais retomber personne sur le défaut.
@@ -40,7 +38,6 @@ use Tests\TestCase;
  * s'applique. Ces tests épinglent les deux directions — ce qui ne s'écrit pas, et ce
  * qui s'écrit maintenant qu'il peut être résolu — plus le COÛT, qui est le troisième
  * défaut possible et le seul qui ne se voit qu'en production.
- * ---------------------------------------------------------------------------
  */
 class NextcloudQuotaProfileTest extends TestCase
 {
@@ -136,16 +133,12 @@ class NextcloudQuotaProfileTest extends TestCase
         return $sent;
     }
 
-    // =====================================================================
-    // (a) NE JAMAIS DEVINER
-    // =====================================================================
-
     /**
      * **LE TEST CENTRAL DE LA CORRECTION.** L'annuaire ne répond pas pour ce compte :
      * ses appartenances sont INDÉTERMINABLES. Aucun plafond n'est écrit, et le cas
      * est COMPTÉ.
      *
-     * ⚠️ La doctrine a survécu à la story 63.4, transposée : un annuaire muet ne
+     * ⚠️ La doctrine tient, transposée : un annuaire muet ne
      * fait **JAMAIS** retomber un compte sur le défaut d'instance. Il pourrait être
      * couvert par une règle de groupe plus large — écrire le défaut rétrécirait son
      * plafond sans que rien ne le signale.
@@ -211,12 +204,8 @@ class NextcloudQuotaProfileTest extends TestCase
         self::assertCount(NextcloudProvisioningReport::MAX_SAMPLED_QUOTA_LOGINS, $report->quotaUnresolvedLogins());
     }
 
-    // =====================================================================
-    // (b) UNE SEULE SOURCE DE VÉRITÉ — L'ANNUAIRE
-    // =====================================================================
-
     /**
-     * ⚠️ **CE SCÉNARIO A CHANGÉ DE SENS, ET C'EST LE POINT DE LA STORY 63.4.**
+     * ⚠️ **CE SCÉNARIO A CHANGÉ DE SENS, ET C'EST LE POINT DE LA.**
      *
      * Il épinglait qu'un enseignant et un élève, sans règle nominative ni règle de
      * groupe, recevaient des plafonds DIFFÉRENTS — chacun celui de son « profil ».
@@ -313,10 +302,6 @@ class NextcloudQuotaProfileTest extends TestCase
         self::assertSame([], self::quotaWrites());
         self::assertSame(0, $report->userCounters()['quotas_indetermines']);
     }
-
-    // =====================================================================
-    // LE COÛT — la régression qui ne se voit qu'en production
-    // =====================================================================
 
     /**
      * **AUCUNE RÈGLE DE QUOTA ⇒ ZÉRO ALLER-RETOUR D'ANNUAIRE, quelle que soit la

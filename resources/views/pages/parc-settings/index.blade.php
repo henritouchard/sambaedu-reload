@@ -95,7 +95,7 @@ new #[Title('Paramètres du Parc - SE4FS')] class extends Component
                         </button>
                     </li>
                 @elseif ($tab === 'depot')
-                    {{-- Story 51.1 (AC8, review #7) — Sous contrat amont actif, seuls
+                    {{-- Sous contrat amont actif, seuls
                          l'AJOUT et la DÉSACTIVATION de dépôt sont masqués (le canal dépôts
                          est imposé par l'autorité amont) ; la SYNCHRONISATION reste
                          accessible (AC8 : syncCurrentDepot reste fonctionnel). Les gardes

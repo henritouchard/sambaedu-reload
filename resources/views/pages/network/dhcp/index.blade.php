@@ -19,7 +19,6 @@ use Livewire\WithPagination;
 new #[Title('Réservations DHCP — SE4FS')] class extends Component {
     use WithPagination, WithToasts;
 
-    // === État UI ===
     #[Url(keep: true)]
     public string $tab = 'reservations';
 
@@ -30,7 +29,6 @@ new #[Title('Réservations DHCP — SE4FS')] class extends Component {
     public bool $editing = false;
     public ?int $editingId = null;
 
-    // === Sous-réseaux (VLAN) — Story 8.3 ===
     public bool $subnetModalOpen = false;
     public bool $subnetEditing = false;
     public ?int $subnetEditingId = null;
@@ -46,18 +44,15 @@ new #[Title('Réservations DHCP — SE4FS')] class extends Component {
     public ?int $subnetDeleteId = null;
     public ?string $subnetDeleteLabel = null;
 
-    // === Form fields ===
     public string $name = '';
     public string $mac = '';
     public string $ip = '';
     public ?string $description = null;
     public ?int $workstation_id = null;
 
-    // === State system ===
     public array $serviceStatus = ['active' => false, 'details' => 'inconnu'];
     public bool $leasesAvailable = true;
 
-    // === Delete confirm ===
     public bool $deleteOpen = false;
     public ?int $deleteId = null;
     public ?string $deleteLabel = null;
@@ -158,8 +153,6 @@ new #[Title('Réservations DHCP — SE4FS')] class extends Component {
      * Pré-remplit la modale depuis l'index d'un bail dans la collection courante
      * (recalculée côté serveur). Évite l'injection HTML dans `wire:click` quand
      * le `hostname` du bail contient un caractère spécial (apostrophe, etc.).
-     *
-     * Cf. review code 8.1 #2.
      */
     public function preFillFromLeaseByIndex(int $idx): void
     {
@@ -219,7 +212,7 @@ new #[Title('Réservations DHCP — SE4FS')] class extends Component {
             $this->addError('form', $e->getMessage());
             $this->toastError($e->getMessage());
         } catch (DhcpCommandException $e) {
-            // AC6 — Mode dégradé : la mutation DB est faite (export file +
+            // Mode dégradé : la mutation DB est faite (export file +
             // reload échoués). La réservation est persistée mais le reload
             // a planté.
             Log::channel('network')->error('DhcpService: reload échoué', [
@@ -277,10 +270,6 @@ new #[Title('Réservations DHCP — SE4FS')] class extends Component {
             $this->deleteLabel = null;
         }
     }
-
-    // ====================================================================
-    // Sous-réseaux (VLAN) — Story 8.3
-    // ====================================================================
 
     private function resetSubnetForm(): void
     {
@@ -379,7 +368,7 @@ new #[Title('Réservations DHCP — SE4FS')] class extends Component {
             $this->addError('subnetForm', $e->getMessage());
             $this->toastError($e->getMessage());
         } catch (DhcpCommandException $e) {
-            // AC5 — Mode dégradé : SQL + fichier conservés, seul le reload a échoué.
+            // Mode dégradé : SQL + fichier conservés, seul le reload a échoué.
             Log::channel('network')->error('DhcpSubnetService: reload échoué', [
                 'context' => 'page dhcp/index saveSubnet',
                 'error' => $e->getMessage(),
@@ -610,7 +599,7 @@ new #[Title('Réservations DHCP — SE4FS')] class extends Component {
         </x-slot:footer>
     </x-molecules.modal>
 
-    {{-- Modale création / édition sous-réseau (VLAN) — Story 8.3 --}}
+    {{-- Modale création / édition sous-réseau (VLAN) — --}}
     <x-molecules.modal wire:model="subnetModalOpen"
         :title="$subnetEditing ? 'Modifier le sous-réseau (VLAN)' : 'Nouveau sous-réseau (VLAN)'"
         size="max-w-2xl"

@@ -15,7 +15,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Epic 34 — Tests du classifieur {@see AclInspectionService}.
+ * Tests du classifieur {@see AclInspectionService}.
  *
  * Le point le plus délicat couvert ici : le mapping INVERSE nom Unix disque →
  * UserGroup via forward-projection, y compris avec suffixe établissement fédéré

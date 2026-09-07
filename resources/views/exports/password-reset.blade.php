@@ -1,6 +1,6 @@
 @php
 /**
- * Export PDF — cartouches multi-users post-bulk-reset (story 2.6).
+ * Export PDF — cartouches multi-users post-bulk-reset.
  *
  * Tri : établissement → classe → nom → prénom (fait en amont côté service).
  * Saut de page sur changement d'établissement puis de classe.

@@ -7,7 +7,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 29.5 (NFR5) — Audit append-only des overrides de capacité par parc.
+ * Audit append-only des overrides de capacité par parc.
  *
  * `saveOverride()` / `removeOverride()` (capabilities-tab) écrivaient
  * `capability_assignments` SANS aucune trace. Cette table consigne chaque pose /
@@ -24,8 +24,8 @@ use Illuminate\Support\Facades\Schema;
  *  - le hardening append-only (UPDATE interdit) vit côté modèle Eloquent
  *    {@see \App\Models\CapabilityOverrideAuditLog}.
  *
- * ⚠️ GARDE-FOU R3 : aucun mot « central ». Vocabulaire « amont » / `Upstream` /
- * `ControlHub*`. [Source: prd-contrat-manage-se5.md#R3]
+ * ⚠️ GARDE-FOU : aucun mot « central ». Vocabulaire « amont » / `Upstream` /
+ * `ControlHub*`.
  */
 return new class extends Migration
 {

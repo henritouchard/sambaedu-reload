@@ -55,13 +55,13 @@ enum SambaRole: string
             self::ShareAdmin => [
                 SambaPermission::ShareView,
                 SambaPermission::ShareRefresh,
-                // Story 5.2 (D2=A) — ShareAdmin gère les partages classes
+                // ShareAdmin gère les partages classes
                 // (création, ACLs, toggle échange). Le bit legacy
                 // `SE_SHARE_REFRESH` couvrait l'ensemble du périmètre dans
                 // `partages/rep_classes.php`, donc ShareAdmin reçoit la
                 // permission Spatie `share.manage` par défaut.
                 SambaPermission::ShareManage,
-                // Story 34.2 (Q5) — l'admin partages gère aussi les lecteurs
+                // L'admin partages gère aussi les lecteurs
                 // réseau gérés (module SE5-natif).
                 SambaPermission::NetworkShareView,
                 SambaPermission::NetworkShareManage,
@@ -75,11 +75,11 @@ enum SambaRole: string
                 SambaPermission::UserDelegate,
                 SambaPermission::ShareView,
                 SambaPermission::ShareRefresh,
-                // Story 5.2 (D2=A) — UserAdmin gère aussi les partages
+                // UserAdmin gère aussi les partages
                 // classes (cohérent : un changement de classe d'élève via
                 // la page utilisateur peut nécessiter un sync ACLs partage).
                 SambaPermission::ShareManage,
-                // Story 34.2 (Q5) — l'admin utilisateurs gère aussi les lecteurs
+                // L'admin utilisateurs gère aussi les lecteurs
                 // réseau gérés (module SE5-natif).
                 SambaPermission::NetworkShareView,
                 SambaPermission::NetworkShareManage,
@@ -95,13 +95,13 @@ enum SambaRole: string
                 SambaPermission::UserCreateTemp,
                 SambaPermission::ComputerView,
                 SambaPermission::ComputerInstall,
-                // Story 34.2 (Q5) — le Référent Numérique pilote les lecteurs
-                // réseau gérés de son établissement (cœur de la story 34.2). Il
+                // Le Référent Numérique pilote les lecteurs
+                // réseau gérés de son établissement. Il
                 // n'a AUCUNE permission `share.*` (partages de classe) : d'où la
                 // permission DÉDIÉE `networkshare.*`.
                 SambaPermission::NetworkShareView,
                 SambaPermission::NetworkShareManage,
-                // Story 36.4 (D6) — le Référent Numérique crée les règles d'accès
+                // Le Référent Numérique crée les règles d'accès
                 // aux dossiers de son établissement (formulaire fs_acl). Contrôle
                 // PAR PARC dans le service (délégation scopée).
                 SambaPermission::FolderRuleView,
@@ -116,11 +116,11 @@ enum SambaRole: string
                 SambaPermission::WpkgAdd,
                 SambaPermission::WpkgCreate,
                 SambaPermission::AppCustomize,
-                // Story 36.4 (D6) — l'admin machines gère aussi les règles d'accès
+                // L'admin machines gère aussi les règles d'accès
                 // aux dossiers (mécanisme fs_acl de portée machine).
                 SambaPermission::FolderRuleView,
                 SambaPermission::FolderRuleManage,
-                // Story 7.3 (décision Henri 2026-04-25 — option C) : RDP est
+                // RDP est
                 // une élévation de `ComputerControl`. Le ComputerAdmin doit
                 // l'avoir par défaut pour préserver la couverture fonctionnelle
                 // de la migration legacy `rdp_<parc>`.
@@ -144,16 +144,15 @@ enum SambaRole: string
      * Indique si un nom de rôle fait partie des rôles "seedés" par le socle
      * d'application (profils livrés par défaut, source = cet enum).
      *
-     * Story 7.2 : utilisé par :
+     * Utilisé par :
      *  - `PermissionSeeder` pour distinguer les rôles à re-synchroniser
      *    (seulement ceux-là) des profils custom créés à l'UI ou rapatriés
      *    depuis la branche LDAP `rights_rdn`.
-     *  - L'onglet "Profils" (/app/rights-management) pour afficher le badge
+     *  - L'onglet "Profils" (app/rights-management) pour afficher le badge
      *    `seeded` vs `custom` et désactiver renommage / suppression sur les
      *    rôles seedés.
      *
-     * Cette méthode est la source de vérité : pas de colonne DB `origin` ajoutée
-     * (décision produit 0.9 du 2026-04-23).
+     * Cette méthode est la source de vérité : pas de colonne DB `origin` ajoutée.
      */
     public static function isSeeded(string $roleName): bool
     {

@@ -12,11 +12,11 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Story 62.4 — LE VOCABULAIRE DES QUATRE VERBES, et le contrat sémantique qui le
+ * LE VOCABULAIRE DES QUATRE VERBES, et le contrat sémantique qui le
  * rend utilisable.
  *
  * `TestCase` PUR, aucune base : le plan se teste sans rien autour, et c'est ce qui
- * rend ses tests rapides et sa sortie rejouable (régime établi en 60.1).
+ * rend ses tests rapides et sa sortie rejouable (régime établi).
  */
 class PlanVerbVocabularyTest extends TestCase
 {
@@ -25,10 +25,6 @@ class PlanVerbVocabularyTest extends TestCase
         return new PlanGrant('equipe', PlanSubject::group(1), $verbs);
     }
 
-    // =========================================================================
-    // AC1 — le vocabulaire
-    // =========================================================================
-
     #[Test]
     public function the_vocabulary_is_exactly_four_verbs_in_declaration_order(): void
     {
@@ -36,7 +32,7 @@ class PlanVerbVocabularyTest extends TestCase
 
         // L'ordre canonique n'est PAS l'ordre alphabétique — et c'est le point :
         // il est celui de la déclaration, choisi pour être lisible, et figé parce
-        // que le déterminisme octet pour octet de la story 60.1 en dépend.
+        // que le déterminisme octet pour octet de la en dépend.
         $alphabetical = PlanGrant::VERBS;
         sort($alphabetical);
         self::assertNotSame($alphabetical, PlanGrant::VERBS);
@@ -136,10 +132,6 @@ class PlanVerbVocabularyTest extends TestCase
         );
     }
 
-    // =========================================================================
-    // AC1 — LE CONTRAT SÉMANTIQUE Q2, ÉPINGLÉ AU DOCBLOCK
-    // =========================================================================
-
     /**
      * **Pourquoi un test de DOCUMENTATION.**
      *
@@ -187,10 +179,6 @@ class PlanVerbVocabularyTest extends TestCase
             );
         }
     }
-
-    // =========================================================================
-    // AC2 — la sérialisation, et le refus NOMMÉ de l'ancien monde
-    // =========================================================================
 
     #[Test]
     public function the_plan_format_version_moved_to_two(): void

@@ -10,17 +10,17 @@ import (
 	"sambaedu/agent/shared"
 )
 
-// Primitives Windows de l'auto-update (Story 25.2, décision n° 2). Ce fichier
+// Primitives Windows de l'auto-update. Ce fichier
 // est Windows-only (build tag _windows.go) : il N'EST PAS compilé ni testé sur
 // l'hôte Linux. La logique de décision/download/vérif-hash/orchestration vit
-// dans shared/update.go (testée Linux avec des stubs de ces fonctions, NFR8) ;
+// dans shared/update.go (testée Linux avec des stubs de ces fonctions) ;
 // seules la vérif de signature réelle et le swap+restart-SCM réel sont ici,
 // validés au SMOKE sur poste de lab.
 //
-// ─── Choix Authenticode : WinVerifyTrust (x/sys/windows) ─────────────────────
+// Choix Authenticode : WinVerifyTrust (x/sys/windows)
 // La vérification de signature utilise WinVerifyTrustEx de golang.org/x/sys/
 // windows (déjà au go.mod, AUCUNE dépendance neuve) plutôt qu'un shell-out
-// `Get-AuthenticodeSignature`. Rationale (tranché en dev, décision n° 3) :
+// `Get-AuthenticodeSignature`. Raisons :
 //   - x/sys/windows EXPOSE nativement WinVerifyTrustEx + WINTRUST_ACTION_
 //     GENERIC_VERIFY_V2 + WinTrustData/WinTrustFileInfo + les constantes WTD_*
 //     (zéro FFI manuel à écrire, zéro struct Win32 à redéclarer) : le risque
@@ -35,11 +35,11 @@ import (
 // terrain — non retenu ici car l'API native couvre exactement le besoin.
 
 // verifyAuthenticode vérifie la signature Authenticode du fichier `path`
-// (binaire STAGÉ, jamais le fichier en place — décision n° 5). nil = signé +
-// chaîne de confiance valide ; erreur = à JETER sans installer (porte 2,
-// AC1/AC3). WTD_REVOKE_NONE : pas de check de révocation en ligne (un poste de
+// (binaire STAGÉ, jamais le fichier en place). nil = signé +
+// chaîne de confiance valide ; erreur = à JETER sans installer (porte 2).
+// WTD_REVOKE_NONE : pas de check de révocation en ligne (un poste de
 // salle peut être hors-ligne au moment de l'update ; la confiance de la chaîne
-// jusqu'à la CA interne machine suffit, brief #31).
+// jusqu'à la CA interne machine suffit).
 func verifyAuthenticode(path string) error {
 	pathUTF16, err := windows.UTF16PtrFromString(path)
 	if err != nil {
@@ -77,7 +77,7 @@ func verifyAuthenticode(path string) error {
 }
 
 // swapExitCode : code de sortie non-graceux après un swap réussi (Option A,
-// décision review 25.2). NON nul : un service qui sort avec un code ≠ 0 est vu
+// décision review). NON nul : un service qui sort avec un code ≠ 0 est vu
 // par le SCM comme une terminaison ANORMALE (le svc.Handler n'a PAS signalé
 // SERVICE_STOPPED via un arrêt gracieux), ce qui déclenche les RecoveryActions
 // (ServiceRestart ×3, install_windows.go) → relance avec le binaire vN+1.
@@ -85,8 +85,8 @@ func verifyAuthenticode(path string) error {
 // SERVICE_STOPPED « propre », il compte un échec et applique la recovery.
 const swapExitCode = 42
 
-// swapAndRestart : swap atomique anti-brique + sortie NON-GRACIEUSE (Story
-// 25.2, Option A). Côté windows/, ce wrapper ne porte QUE les spécificités OS :
+// swapAndRestart : swap atomique anti-brique + sortie NON-GRACIEUSE. Côté
+// windows/, ce wrapper ne porte QUE les spécificités OS :
 //   - résolution du chemin RÉEL du binaire en place (os.Executable, Program
 //     Files) ;
 //   - le déclencheur de redémarrage = sortie non-gracieuse os.Exit(≠0), injecté
@@ -140,7 +140,7 @@ func cleanupOldBinary() {
 	_ = os.Remove(exe + ".new")
 }
 
-// setUpdateACL : ACL du répertoire de staging update\ (Story 25.2) — SYSTEM F
+// SetUpdateACL : ACL du répertoire de staging update\ — SYSTEM F
 // + Administrators F UNIQUEMENT, PAS de Users:R (un binaire stagé n'est pas un
 // asset affiché, contrairement à assets\). Réutilise setAgentACL (le canal
 // agent : SYSTEM + Admins, héritage retiré).

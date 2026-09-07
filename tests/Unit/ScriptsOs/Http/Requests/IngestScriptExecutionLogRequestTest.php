@@ -13,7 +13,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 16.12 — AC2.2 (≥6 cas).
+ * (≥6 cas).
  */
 class IngestScriptExecutionLogRequestTest extends TestCase
 {
@@ -134,10 +134,10 @@ class IngestScriptExecutionLogRequestTest extends TestCase
     }
 
     /**
-     * Story 16.12 post-review Q3 (Opus-A) — `correlation_id` est désormais
-     * required (mitigation replay JWT — l'attaquant qui modifie le
-     * correlation_id casse l'idempotence du wrapper légitime → forcé à
-     * réutiliser celui capturé → dédupliqué par UNIQUE pgsql).
+     * `correlation_id` est obligatoire, ce qui borne le rejeu d'un JWT capturé :
+     * en le modifiant, l'attaquant sort de l'idempotence du wrapper légitime ;
+     * en le réutilisant tel quel, il se fait dédupliquer par la contrainte
+     * UNIQUE de PostgreSQL.
      */
     #[Test]
     public function missing_correlation_id_fails(): void

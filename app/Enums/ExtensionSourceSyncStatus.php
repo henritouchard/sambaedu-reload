@@ -5,27 +5,27 @@ declare(strict_types=1);
 namespace App\Enums;
 
 /**
- * Story 56.1 — État de la dernière synchronisation d'une source d'extensions.
+ * État de la dernière synchronisation d'une source d'extensions.
  *
- * **Le registre EST le cache local (NFR7)** : il n'y a pas de fichier de
+ * **Le registre EST le cache local** : il n'y a pas de fichier de
  * catalogue à côté des tables. Les lignes `extensions` en base sont le dernier
  * catalogue **vérifié** de la source ; ce statut dit ce qu'on a le droit d'en
  * faire.
  *
  * | statut         | cause                          | `available` proposées ? | `integrated` | prune ? |
  * |----------------|--------------------------------|-------------------------|--------------|---------|
- * | `Ok`           | dernière synchro vérifiée      | oui                     | intactes     | oui (borné, invariants 54.1) |
+ * | `Ok` | dernière synchro vérifiée | oui | intactes | oui (borné, invariants) |
  * | `Unreachable`  | réseau / HTTP / 3xx            | **oui** (dernier index vérifié) | intactes, tuiles intactes | **jamais** |
  * | `Error`        | signature ou contenu invalide  | **non** (fail-closed)   | intactes, signalées | **jamais** |
  *
- * La distinction `Unreachable` / `Error` est la traduction de NFR7 vs NFR2 :
+ * La distinction `Unreachable` / `Error` porte à conséquence :
  * un dépôt momentanément injoignable ne doit RIEN changer pour l'admin (le
  * dernier catalogue vérifié reste bon), alors qu'un contenu dont la signature
  * ne se vérifie plus ne doit plus rien proposer du tout.
  *
  * `enabled = false` (choix admin) masque les `available` comme `Error`, sans
  * toucher les `integrated` : désactiver, c'est GELER une source, jamais
- * dé-intégrer ce qui a été installé (invariant 54.1 #4).
+ * dé-intégrer ce qui a été installé.
  *
  * Convention de libellé : le libellé nomme le SUJET dans son ÉTAT, jamais une
  * action à faire.
@@ -69,7 +69,7 @@ enum ExtensionSourceSyncStatus: string
     /**
      * Une source dans cet état peut-elle encore PROPOSER ses extensions
      * `available` ? (fail-closed : seul `Error` masque — un dépôt injoignable
-     * garde son dernier catalogue vérifié, NFR7.)
+     * garde son dernier catalogue vérifié.)
      */
     public function proposesAvailableExtensions(): bool
     {

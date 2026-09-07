@@ -24,9 +24,9 @@ use Tests\TestCase;
 use Tests\Traits\CreatesPermissionSchema;
 
 /**
- * Story 29.1 — Defense-in-depth : enforcement WPKG en couche service.
+ * Defense-in-depth : enforcement WPKG en couche service.
  *
- * Couvre AC #6 :
+ * Couvre :
  *  - sous actingAs(délégué de A) : addApplicationsToWorkstationGroup(A) OK,
  *    addApplicationsToWorkstationGroup(B) lève AuthorizationException ;
  *  - sans utilisateur authentifié (Auth::check()===false) : aucune exception,
@@ -90,7 +90,7 @@ class AppProfileServiceWpkgScopingTest extends TestCase
                 $table->primary(['application_id', 'workstation_group_id'], 'awg_primary');
             });
         }
-        // MANQUÉ-1 (review 29.1) : schéma minimal pour le chemin profil→poste.
+        // MANQUÉ-1 (review) : schéma minimal pour le chemin profil→poste.
         if (!Schema::hasTable('workstations')) {
             Schema::create('workstations', function (Blueprint $table) {
                 $table->id();
@@ -219,7 +219,7 @@ class AppProfileServiceWpkgScopingTest extends TestCase
     #[Test]
     public function delegate_of_a_can_attach_profile_to_workstation_in_a(): void
     {
-        // MANQUÉ-1 (review 29.1) : le chemin profil→poste matérialise une assignation
+        // MANQUÉ-1 (review) : le chemin profil→poste matérialise une assignation
         // WPKG par-poste, scopée sur la salle physique du poste.
         $delegate = $this->makeUser('delegate');
         $salleA = $this->makeGroup('salle_a');
@@ -271,7 +271,7 @@ class AppProfileServiceWpkgScopingTest extends TestCase
     #[Test]
     public function unauthenticated_caller_is_not_blocked(): void
     {
-        // AC#6 — appelant non-web (console/agent/seed) : Auth::check()===false →
+        // Appelant non-web (console/agent/seed) : Auth::check()===false →
         // aucun contrôle, la mutation s'exécute (non-régression).
         $salleB = $this->makeGroup('salle_b');
         $app = $this->makeApp('firefox');

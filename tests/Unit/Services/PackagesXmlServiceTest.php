@@ -221,7 +221,7 @@ class PackagesXmlServiceTest extends TestCase
     }
 
     /**
-     * Story 27.6 (Bug B / AC1, AC5) — recipes à racine <packages> WRAPPER × N →
+     * Recipes à racine <packages> WRAPPER × N →
      * le catalogue régénéré DOIT être à plat : UNE seule racine <packages> et N
      * <package> ENFANTS DIRECTS de la racine. Sur le code buggé (import du wrapper
      * <packages>), ce test échouerait : la racine contiendrait N <packages>
@@ -274,7 +274,7 @@ class PackagesXmlServiceTest extends TestCase
     }
 
     /**
-     * Story 27.6 (AC1) — un recipe à racine <package> DIRECTE est aussi importé à
+     * Un recipe à racine <package> DIRECTE est aussi importé à
      * plat (cas (b) de la discrimination de racine).
      */
     #[Test]
@@ -307,7 +307,7 @@ class PackagesXmlServiceTest extends TestCase
     }
 
     /**
-     * Story 27.6 (AC1) — le strip des nœuds SambaEdu reste appliqué PAR <package>,
+     * Le strip des nœuds SambaEdu reste appliqué PAR <package>,
      * y compris quand le recipe est un wrapper <packages> (le strip opère sur le
      * <package> importé, pas sur le wrapper).
      */
@@ -349,7 +349,7 @@ class PackagesXmlServiceTest extends TestCase
     }
 
     /**
-     * Story 27.6 (AC1, AC5 — lacune relevée en review #4) — un SEUL recipe à
+     * Un SEUL recipe à
      * wrapper <packages> contenant PLUSIEURS <package> → tous remontés à plat sous
      * l'unique racine. Exerce la collecte des <package> ENFANTS DIRECTS du wrapper
      * (et non `getElementsByTagName('package')` récursif, qui ramasserait des
@@ -390,7 +390,7 @@ class PackagesXmlServiceTest extends TestCase
     }
 
     /**
-     * Story 27.6 (AC1) — un recipe valide mais SANS <package> (ex. wrapper ne
+     * Un recipe valide mais SANS <package> (ex. wrapper ne
      * contenant que des <check>) est skippé+loggé sans casser la génération des
      * autres apps.
      */
@@ -429,12 +429,10 @@ class PackagesXmlServiceTest extends TestCase
         $this->assertEquals(1, $dom->getElementsByTagName('packages')->length);
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // Story 27.19 — Livraison FULL HTTP des payloads. Transformation chirurgicale
+    // Livraison FULL HTTP des payloads. Transformation chirurgicale
     // du catalogue : seules les recettes %SOFTWARE% sont réécrites pour télécharger
     // en HTTP (download natif, target=%TEMP%) ; exclusion des archives extraites
     // serveur (untar/unzip) ; recettes sans %SOFTWARE% inchangées.
-    // ─────────────────────────────────────────────────────────────────────────
 
     /**
      * @return \DOMElement le <package> régénéré (premier de la racine)
@@ -579,14 +577,14 @@ class PackagesXmlServiceTest extends TestCase
         // extrait sera attendu sous %TEMP%, cohérent avec les autres downloads).
         $install = $package->getElementsByTagName('install')->item(0);
         $this->assertStringNotContainsString('%SOFTWARE%', $install->getAttribute('cmd'));
-        // review #7 : vérifier la substitution effective (pas une simple cmd vidée).
+        // On vérifie la substitution effective, pas une simple cmd vidée.
         $this->assertStringContainsString('%TEMP%', $install->getAttribute('cmd'));
     }
 
     #[Test]
     public function http_delivery_appends_temp_purge_after_install(): void
     {
-        // review #M2 — le payload téléchargé dans %TEMP% doit être supprimé APRÈS une
+        // Le payload téléchargé dans %TEMP% doit être supprimé APRÈS une
         // install réussie. Une <install> de purge est appendue EN DERNIER : le moteur
         // avorte le package au 1er install en échec, donc la purge ne tourne qu'après
         // succès. `cmd /c … & exit /b 0` ⇒ ne fait jamais échouer le package.
@@ -661,7 +659,7 @@ class PackagesXmlServiceTest extends TestCase
     #[Test]
     public function http_delivery_strips_download_when_saveto_outside_packages_tree(): void
     {
-        // review #3 — l'alias Apache /wpkg/files ne sert QUE `.../install/packages`.
+        // L'alias Apache /wpkg/files ne sert QUE `.../install/packages`.
         // Un saveto hors `packages/` (déposé verbatim par PackageInstaller/Importer,
         // ex. `softwares/...`) n'est PAS atteignable → réécrire l'URL produirait un
         // 404 silencieux. On strippe le <download> (pas d'URL morte) ; l'install

@@ -12,8 +12,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Tests Unit du contrat v1 figé `se5.desired-state/v1` — Story 23.1 (AC1, AC2,
- * AC3, AC5).
+ * Tests Unit du contrat v1 figé `se5.desired-state/v1`.
  *
  * Garde-fous de régression sur les **golden files** normatifs
  * `tests/Fixtures/Agent/{state,report}.v1.json` : structure, énumérations,
@@ -29,297 +28,21 @@ class ContractV1Test extends TestCase
      * file ou de la canonicalisation doit mettre cette valeur à jour
      * sciemment (+ bump de version, cf. règle d'évolution du contrat).
      */
-    // Bumpé SCIEMMENT par la Story 27.1 (évolution MINEURE du contrat, §9) :
-    // le payload `shortcuts` du golden est passé du squelette illustratif
-    // (`{name, target, location}`) au payload v1 RÉEL owné par
-    // `ShortcutsStateProvider` (`{name, target, args, icon, place,
-    // desktop_path}`). Champ/payload ajouté = forward-compatible, pas un major.
+    // Le jumeau Go `agent/shared/hasher_test.go::frozenStateHash` doit porter la
+    // MÊME valeur : c'est le test croisé qui prouve que les deux
+    // canonicalisations (PHP et Go) produisent des octets identiques.
     //
-    // Re-bumpé SCIEMMENT (mode debug du poste, §9) : ajout du champ d'enveloppe
-    // `debug` (bool) à côté de `ttl_seconds`. Champ ajouté = forward-compatible
-    // (l'agent ignore les champs d'enveloppe inconnus) ; il entre dans le hash
-    // pour que le toggle franchisse le cache 304.
+    // Le contrat v1 n'évolue qu'en ADDITIF : un agent plus ancien ignore en
+    // silence un type ou un champ de payload inconnu, sans rien remonter au
+    // rapport. Une addition ne casse donc rien, mais elle reste sans effet tant
+    // que la release agent qui la lit n'est pas publiée : on publie AVANT de
+    // retrofiter les données. `report.v1.json` ne bouge pas pour autant — les
+    // items de rapport `{type, status, hash[, detail]}` ne portent aucun payload,
+    // seul `Rule::in(RESOURCE_TYPES)` d'ingestion s'ouvre au nouveau type.
     //
-    // Re-bumpé SCIEMMENT par la Story 27.2 (évolution MINEURE du contrat, §9) :
-    // ajout de DEUX items réels en portée `session` — `printers` (payload v1
-    // `{cups_name, connection, description, location, is_default}` owné par
-    // PrintersStateProvider) et `drives` (payload v1 `{letter, unc, label}` owné
-    // par DrivesStateProvider). Types DÉJÀ figés §7 ; payloads ajoutés =
-    // forward-compatible, pas un major. Le jumeau Go (hasher_test.go) est bumpé
-    // à la même valeur (test croisé NFR13).
-    //
-    // Re-bumpé SCIEMMENT par la Story 27.7 (évolution MINEURE du contrat, §9) :
-    // le payload `shortcuts` du golden gagne `{icon_asset, icon_checksum}`
-    // (icône UPLOADÉE content-addressed, AC2/AC6) ET illustre une icône uploadée
-    // (nom nu `icon`). Champs AJOUTÉS = forward-compatible, pas un major. Le
-    // jumeau Go (hasher_test.go::frozenStateHash) est bumpé à la même valeur
-    // (test croisé NFR13).
-    //
-    // Re-bumpé SCIEMMENT par la Story 27.8 (§9) : la clé `mode` est RETIRÉE de
-    // chaque item d'état (item 5 clés → 4 : type/semantics/payload/hash —
-    // convergence STRICT inconditionnelle). Le hash de chaque item ET le hash
-    // d'état changent. Bumpé à l'IDENTIQUE côté Go (hasher_test.go::frozenStateHash).
-    //
-    // Re-bumpé SCIEMMENT par la Story 27.10 (§9) : la SALLE passe de la portée
-    // session (ancien item identity `{kind, login, fullname, room}`) à la portée
-    // MACHINE — nouvel item overlay `{kind:"machine", room}` (cache persistant,
-    // préchargement poste+salle au logon). L'item identity session perd `room`.
-    //
-    // Re-bumpé SCIEMMENT par la Story 27.3 (évolution MINEURE du contrat, §9) :
-    // ajout d'UN item `registry` en portée `session` — payload v1 réel
-    // `{hive, path, name, type, value}` owné par les providers registry
-    // (RegistryMachineStateProvider HKLM / RegistryUserStateProvider HKCU). Type
-    // DÉJÀ figé §7 ; payload ajouté = forward-compatible, pas un major.
-    //
-    // Rebase 27.3 sur main (27.10 inclus) : le golden combine désormais l'item
-    // overlay machine-scope (room) ET l'item registry session → 7 items, hash
-    // d'état RECALCULÉ. Le jumeau Go (hasher_test.go::frozenStateHash) porte la
-    // même valeur (test croisé NFR13 — canonicalisation équivalente PHP↔Go).
-    //
-    // Re-bumpé SCIEMMENT par la Story 27.3bis (évolution MINEURE du contrat, §9) :
-    // ajout d'UN item `associations` en portée `session` — payload v1 réel
-    // `{identifier, progid, type}` owné par AssociationsStateProvider. Le hash
-    // UserChoice anti-tamper N'EST JAMAIS au payload (calculé 100 % côté agent à
-    // partir du SID/temps/experience du poste). Type DÉJÀ figé §7 ; payload
-    // ajouté = forward-compatible, pas un major → 8 items, hash d'état RECALCULÉ.
-    // Le jumeau Go porte la même valeur (test croisé NFR13).
-    //
-    // Re-bumpé SCIEMMENT par la Story 27.4 (évolution MINEURE du contrat, §9) :
-    // ajout d'UN item `app_config` (aggregate) — payload v1 réel
-    // `{app_kind, policies}` owné par AppConfigStateProvider (projection des
-    // policies résolues `policies.json` Firefox/Thunderbird, story 4.8). Les
-    // policies sont CONCRÈTES (jamais un id de scope/customization), sans float
-    // (§4.1). Type DÉJÀ figé §7 ; payload ajouté = forward-compatible, pas un
-    // major → 9 items, hash d'état RECALCULÉ. Le jumeau Go
-    // (hasher_test.go::frozenStateHash) porte la même valeur (test croisé NFR13).
-    //
-    // Correctif post-review 2026-06-17 (review #1) : l'item `app_config` passe de
-    // la portée `session` à la portée `machine` — `policies.json` est
-    // machine-wide (admin-write, écrit par le service SYSTEM), résolu PAR PARC
-    // (niveaux 1-4, `$user = null`). Le par-user de Firefox = le profil
-    // (Mécanisme B / roaming, hors 27.4). Le déplacement de portée RECALCULE le
-    // hash d'état (machine = 2 items, session = 6) ; le jumeau Go porte la même
-    // valeur (test croisé NFR13).
-    //
-    // Re-bumpé SCIEMMENT par la Story 27.5 (évolution MINEURE du contrat, §9) :
-    // ajout d'UN item `applications` (aggregate) en portée `machine` — payload
-    // v1 réel `{app_id, name}` owné par ApplicationsStateProvider (projection de
-    // l'ensemble cible WPKG, WorkstationPackagesResolver::computePackages NON
-    // CACHÉE). app_id/name CONCRETS (jamais un id de catalogue/pivot/scope),
-    // strings only (§4.1). Type DÉJÀ figé §7 ; payload ajouté =
-    // forward-compatible, pas un major → machine = 3 items, 10 items au total,
-    // hash d'état RECALCULÉ. Le jumeau Go (hasher_test.go::frozenStateHash) porte
-    // la même valeur (test croisé NFR13 — canonicalisation équivalente PHP↔Go).
-    //
-    // Re-bumpé (lecteurs réseau natifs, décision Henri 2026-06-29) : le
-    // `DrivesStateProvider` n'émet plus un lecteur de CLASSE sur K: (qui écrasait
-    // le home natif AD) mais le jeu standard FIXE {K: home `\\<se4fs>\users\<user>\`,
-    // H: classes `\\<se4fs>\classes\`}. Le golden passe d'UN à DEUX items `drives`
-    // (session = 7 items, 11 items au total) → hash de chaque item drives ET hash
-    // d'état RECALCULÉS. Bumpé à l'IDENTIQUE côté Go (hasher_test.go::frozenStateHash).
-    //
-    // Re-bumpé SCIEMMENT par la Story 35.1 (évolution MINEURE du contrat, §9) :
-    // champ additif `ensure ∈ present|absent` sur les items `registry` — le golden
-    // gagne UN item de SUPPRESSION en portée `machine` (payload 4 clés
-    // `{hive, path, name, ensure:"absent"}`, clé DNSClient\EnableMulticast de
-    // `llmnr_disabled`, ni `type` ni `value`). Champ OPTIONNEL dont l'absence vaut
-    // `present` : les items d'écriture existants restent BYTE-IDENTIQUES (le
-    // serveur n'émet jamais `ensure:"present"` explicite) → forward-compatible,
-    // pas un major. `report.v1.json` est INCHANGÉ : les items de rapport
-    // `{type, status, hash[, detail]}` ne portent aucun payload — le verbe
-    // `ensure` n'y a pas de surface. machine = 4 items, 12 items au total, hash
-    // d'état RECALCULÉ. Le jumeau Go (hasher_test.go::frozenStateHash) porte la
-    // même valeur (test croisé NFR13).
-    //
-    // Re-bumpé SCIEMMENT par la Story 35.2 (évolution MINEURE du contrat, §9) :
-    // NOUVEAU type `registry_list` (D1, listes registre à sous-valeurs indexées
-    // `\1..\N`) — le golden gagne UN item en portée `machine` (conteneur
-    // Forcelist Chrome de `pix_extension_forced`, payload EXACTEMENT 4 clés
-    // `{hive, path, entry_type, values}`, `values` = liste ORDONNÉE de chaînes —
-    // l'ordre est porteur de sens, la canonicalisation NE trie PAS les listes
-    // §4). Type AJOUTÉ (constante RESOURCE_TYPES additive) = forward-compatible,
-    // pas un major : un agent ≤ 2.3.0 IGNORE le type EN SILENCE (§8 — aucun
-    // statut au rapport), d'où publication de release 2.4.0 obligatoire.
-    // `report.v1.json` est INCHANGÉ : les items de rapport
-    // `{type, status, hash[, detail]}` ne portent aucun payload et le nouveau
-    // type entre dans ReportRequest via Rule::in(RESOURCE_TYPES) — zéro autre
-    // changement d'ingestion. machine = 5 items, 13 items au total, hash
-    // d'état RECALCULÉ. Le jumeau Go (hasher_test.go::frozenStateHash) porte la
-    // même valeur (test croisé NFR13).
-    //
-    // Re-bumpé SCIEMMENT par la Story 36.1 (évolution MINEURE du contrat, §9) :
-    // NOUVEAU type `fs_acl` (D1, mécanisme HORS-REGISTRE — ACE NTFS gérées,
-    // chirurgie DACL, portée Machine) — le golden gagne UN item en portée
-    // `machine` (`deny list_folder folder_only` sur `C:\Program Files` pour le
-    // trustee `Eleves`, payload EXACTEMENT 6 clés `{path, trustee, ace_type,
-    // rights, applies_to, ensure}` — enums fermés de mots métier, aucun masque
-    // brut ni SDDL). Type AJOUTÉ (constante RESOURCE_TYPES additive) =
-    // forward-compatible, pas un major : un agent ≤ 2.5.0 IGNORE le type EN
-    // SILENCE (§8 — aucun statut au rapport), d'où publication de release 2.6.0
-    // obligatoire. `report.v1.json` est INCHANGÉ : les items de rapport
-    // `{type, status, hash[, detail]}` ne portent aucun payload et le nouveau
-    // type entre dans ReportRequest via Rule::in(RESOURCE_TYPES). machine = 6
-    // items, 14 items au total, hash d'état RECALCULÉ. Le jumeau Go
-    // (hasher_test.go::frozenStateHash) porte la même valeur (test croisé NFR13).
-    //
-    // Re-bumpé SCIEMMENT par la Story 36.2 (évolution MINEURE du contrat, §9) :
-    // NOUVEAU type `firewall` (D1, mécanisme HORS-REGISTRE — règles pare-feu
-    // possédées par groupe, portée Machine) — le golden gagne UN item en portée
-    // `machine` (`internet-block` : `out block internet any present`, payload
-    // EXACTEMENT 6 clés `{rule_id, direction, action, remote_scope, protocol,
-    // ensure}` — enums fermés de mots métier, aucune syntaxe netsh/SDDL, pas de
-    // `remote_addresses`/`ports` ici). Type AJOUTÉ (constante RESOURCE_TYPES
-    // additive) = forward-compatible, pas un major : un agent ≤ 2.6.0 IGNORE le
-    // type EN SILENCE (§8 — aucun statut au rapport), d'où publication de release
-    // 2.7.0 obligatoire (qui livre AUSSI la 2.6.0 fs_acl jamais publiée).
-    // `report.v1.json` est INCHANGÉ : les items de rapport
-    // `{type, status, hash[, detail]}` ne portent aucun payload et le nouveau
-    // type entre dans ReportRequest via Rule::in(RESOURCE_TYPES). machine = 7
-    // items, 15 items au total, hash d'état RECALCULÉ. Le jumeau Go
-    // (hasher_test.go::frozenStateHash) porte la même valeur (test croisé NFR13).
-    //
-    // Re-bumpé SCIEMMENT par la Story 35.6 (évolution MINEURE du contrat, §9) :
-    // NOUVEAU type `privilege` (D1, mécanisme HORS-REGISTRE — droits de logon
-    // LSA `SeDeny*` gérés, réconciliation de CONTENEUR sans store, portée
-    // Machine) — le golden gagne UN item en portée `machine`
-    // (`SeDenyRemoteInteractiveLogonRight` refusé au groupe `Eleves`, payload
-    // EXACTEMENT 2 clés `{privilege, accounts}` — enum FERMÉ des 5 SeDeny*,
-    // `accounts` = liste TRIÉE de noms Windows, jamais de SID/LUID). Type
-    // AJOUTÉ (constante RESOURCE_TYPES additive) = forward-compatible, pas un
-    // major : un agent ≤ 2.7.0 IGNORE le type EN SILENCE (§8 — aucun statut au
-    // rapport), d'où publication de release 2.8.0 obligatoire (qui livre AUSSI
-    // les 2.6.0 fs_acl et 2.7.0 firewall jamais publiées). `report.v1.json`
-    // est INCHANGÉ : les items de rapport `{type, status, hash[, detail]}` ne
-    // portent aucun payload et le nouveau type entre dans ReportRequest via
-    // Rule::in(RESOURCE_TYPES). machine = 8 items, 16 items au total, hash
-    // d'état RECALCULÉ. Le jumeau Go (hasher_test.go::frozenStateHash) porte la
-    // même valeur (test croisé NFR13).
-    //
-    // Re-bumpé SCIEMMENT par la Story 38.3 (évolution MINEURE du contrat, §9) :
-    // NOUVEAU type `legacy_cleanup` (D1, nettoyage des crochets legacy SE4 du
-    // poste — suppression idempotente par SCAN sans store du catalogue
-    // d'artefacts legacy LOCAUX versionné DANS l'agent, portée Machine) — le
-    // golden gagne UN item en portée `machine` (payload EXACTEMENT 1 clé
-    // `{mozilla: "vanilla"}` — enum FERMÉ 1 valeur, trace contractuelle de la
-    // décision Q5-a : traitement VANILLA des paires profiles.ini/installs.ini
-    // référençant `sambaedu.default`, aucun profil forcé posé). Type AJOUTÉ
-    // (constante RESOURCE_TYPES additive) = forward-compatible, pas un major :
-    // un agent ≤ 2.8.0 IGNORE le type EN SILENCE (§8 — aucun statut au
-    // rapport), d'où publication de release 2.9.0 obligatoire (qui livre AUSSI
-    // les 2.6.0 fs_acl, 2.7.0 firewall et 2.8.0 privilege jamais publiées).
-    // `report.v1.json` est INCHANGÉ : les items de rapport
-    // `{type, status, hash[, detail]}` ne portent aucun payload (le `detail`
-    // « artefacts supprimés » de l'AC5 utilise le champ EXISTANT du §6, déjà
-    // illustré au golden) et le nouveau type entre dans ReportRequest via
-    // Rule::in(RESOURCE_TYPES). machine = 9 items, 17 items au total, hash
-    // d'état RECALCULÉ. Le jumeau Go (hasher_test.go::frozenStateHash) porte la
-    // même valeur (test croisé NFR13).
-    //
-    // Re-bumpé SCIEMMENT par la Story 43.3 (ttl_seconds volatil, §9) : le
-    // champ `ttl_seconds` de l'enveloppe entre désormais dans
-    // `StateHasher::VOLATILE_STATE_KEYS` (AC3, D6) — il dépend du CONTEXTE
-    // compilé (bascule sensible ou non, {@see \App\Services\Agent\AgentTtlResolver})
-    // et un changement de TTL seul ne doit pas invalider l'ETag. Le golden
-    // `state.v1.json` lui-même est INCHANGÉ (le champ reste dans l'enveloppe,
-    // seulement exclu du hash) : seule l'exclusion recalcule le hash d'état.
-    // 17 items au total (inchangé). Le jumeau Go
-    // (hasher_test.go::frozenStateHash) porte la même valeur (test croisé
-    // NFR13) — AUCUN bump de `agent/shared/version.go` (HashState Go sans
-    // appelant runtime, cf. Dev Agent Record de la story).
-    //
-    // Re-bumpé SCIEMMENT par la Story 43.2 (hint `refresh` au payload, §7.1/
-    // §7.6, §9) : champ additif OPTIONNEL `refresh` (vocabulaire fermé
-    // shell_notify|policy_broadcast|explorer_restart), recopié UNIQUEMENT sur
-    // les payloads émis en portée session/machine_user (jamais machine/HKU) —
-    // (a) l'item session `registry` existant (HideFileExt) gagne
-    // `"refresh": "shell_notify"` (D7, cohérent avec le retrofit conservateur
-    // D4) ; (b) AJOUT d'UN item session `registry_list` (conteneur
-    // `…\Policies\Explorer\DisallowRun`, `"refresh": "policy_broadcast"`) — la
-    // portée session n'avait AUCUN item registry_list avant cette story.
-    // Champ additif + type DÉJÀ figé (registry_list existait depuis 35.2) =
-    // forward-compatible, pas un major : un agent ≤ 2.9.0 ignore le champ
-    // inconnu SANS ERREUR (§9, champ ajouté). session = 8 items, 18 items au
-    // total, hash d'état RECALCULÉ. Le jumeau Go
-    // (hasher_test.go::frozenStateHash) porte la même valeur (test croisé
-    // NFR13) — AUCUN bump de `agent/shared/version.go` (le mécanisme agent
-    // 2.10.0 qui LIT `payload["refresh"]` est déjà livré par la 43.1 mergée ;
-    // seul le hash gelé de TEST bouge, cf. Dev Agent Record de la story).
-    //
-    // Re-bumpé SCIEMMENT par la Story 35.7 (champ `writer` au payload, §7.1/
-    // §7.6, §9) : champ additif OPTIONNEL `writer` (enum fermé, seule valeur
-    // publiée `"system"`) déclarant que l'item est appliqué par le SERVICE
-    // SYSTEM dans `HKU\<SID>` de la session du contexte — jamais par le
-    // compagnon (trees `HKCU\…\Policies\*` en lecture seule pour l'utilisateur
-    // standard sur poste joint au domaine). Les DEUX items session concernés
-    // sont MODIFIÉS (jamais ajoutés — comptages 9/8/1 préservés) : (a) l'item
-    // `registry` session devient le flag `…\Policies\Explorer!DisallowRun = 1`
-    // marqué `writer: "system"` (la forme réelle émise post-retrofit
-    // 2026_07_13_100000) ; (b) l'item `registry_list` session (conteneur
-    // `…\Policies\Explorer\DisallowRun`) gagne `writer: "system"`. Les deux
-    // PERDENT leur hint `refresh` (exclusion mutuelle refresh/writer, piège
-    // n°6 de la story : `refresh` n'est émis QUE sur les items appliqués par
-    // le compagnon) — la couverture de la forme `refresh` vit dans les tests
-    // dédiés providers/handlers (43.1/43.2), plus dans le golden. Champ
-    // additif = forward-compatible, pas un major : un agent ≤ 2.11.x IGNORE
-    // le marqueur EN SILENCE (compagnon : « Accès refusé » statu quo ;
-    // service : rien d'appliqué) → publier la release 2.12.0 AVANT le
-    // retrofit. `report.v1.json` INCHANGÉ (le rapport ne porte pas `writer`).
-    // 18 items au total (inchangé), hash d'état RECALCULÉ. Le jumeau Go
-    // (hasher_test.go::frozenStateHash) porte la même valeur (test croisé
-    // NFR13).
-    // Re-bumpé SCIEMMENT par la Story 36.5 (évolution MINEURE du contrat, §9) :
-    // AJOUT d'UN item `app_profile` (§7.11, mécanisme HORS-REGISTRE — redirection
-    // du profil applicatif Firefox vers le home réseau, aggregate) en portée
-    // SESSION → session = 9 items, 19 items au total, hash d'état RECALCULÉ. Type
-    // AJOUTÉ (constante RESOURCE_TYPES additive) = forward-compatible, pas un
-    // major : un binaire ≤ 2.12.4 IGNORE le type EN SILENCE (§8 — aucun statut au
-    // rapport), d'où publication de release 2.13.0 obligatoire. Le type entre dans
-    // ReportRequest via Rule::in(RESOURCE_TYPES). Le jumeau Go
-    // (hasher_test.go::frozenStateHash) porte la même valeur (test croisé NFR13).
-    // Re-bumpé SCIEMMENT par la Story 27.21 (arbitrage « option A » de la review,
-    // champ additif `desktop_sweep_paths` au payload `shortcuts`, §7/§9) :
-    // l'unique item `shortcuts` (portée machine_user) gagne la LISTE des
-    // emplacements Bureau que l'agent doit BALAYER — notion DISTINCTE de
-    // `desktop_path` (où il POSE). Le golden illustre un parc `shared_local`,
-    // seul environnement à porter les DEUX emplacements
-    // (`[\\<se4fs>\users\<user>\Bureau\, %USERPROFILE%\Desktop\]`) ; un parc
-    // perdir/nomade n'en porterait qu'un (le local) — il n'a aucune autorité sur
-    // le Bureau réseau, PARTAGÉ entre tous les postes de l'utilisateur.
-    // Champ additif = forward-compatible, pas un major : un agent ≤ 2.13.0
-    // IGNORE le champ inconnu SANS ERREUR (§9) et conserve son balayage LOCAL
-    // (au pire des fantômes bénins à l'ancien emplacement). ATTENTION : la
-    // 2.14.0 est une EXCEPTION — son « balayage précédent » est le balayage
-    // réseau INCONDITIONNEL du finding #1 (guerre de suppression inter-postes),
-    // d'où sa répudiation (jamais construire ni publier, cf. version.go). La
-    // cible est 2.15.0. 19 items au total (INCHANGÉ, le
-    // champ est ajouté à un item existant), hash d'item RECALCULÉ
-    // (1ff7dadf… → e3fa179d…) et hash d'état RECALCULÉ. Le jumeau Go
-    // (hasher_test.go::frozenStateHash) porte la même valeur (test croisé NFR13).
-    // Re-bumpé SCIEMMENT par la Story 58.1 (évolution MINEURE du contrat, §9) :
-    // AJOUT d'UN item `folders` (§7.12 — REDIRECTION du dossier shell Bureau,
-    // `HKCU\…\Explorer\User Shell Folders`, exclusive) en portée MACHINE_USER →
-    // machine_user = 2 items, 20 items au total, hash d'état RECALCULÉ. Le golden
-    // illustre le MÊME parc `shared_local` que l'item `shortcuts` voisin, donc le
-    // MÊME chemin (`\\<se4fs>\users\<user>\Bureau\`) : c'est l'invariant de la
-    // story — l'endroit où l'agent POSE les `.lnk` et celui vers lequel il
-    // REDIRIGE le shell sont un seul chemin, résolu une seule fois
-    // (DesktopPathResolver). Les voir diverger dans ce golden serait le signe que
-    // la panne de juillet 2026 est de retour : des raccourcis déposés dans un
-    // dossier que le shell ne regarde pas.
-    // Type AJOUTÉ (constante RESOURCE_TYPES additive) = forward-compatible, pas un
-    // major : un binaire ≤ 2.15.0 IGNORE le type EN SILENCE (§8 — aucun statut au
-    // rapport) et se comporte exactement comme aujourd'hui, d'où publication de
-    // release 2.16.0 obligatoire. Le type entre dans ReportRequest via
-    // Rule::in(RESOURCE_TYPES). Le jumeau Go (hasher_test.go::frozenStateHash)
-    // porte la même valeur (test croisé NFR13).
-    // Amendement 58.1 (même story, agent 2.16.0 NON encore publiée — le champ
-    // est donc fondu dans la même version) : le payload `folders` gagne
-    // `quick_access` (3 clés), qui fait SUIVRE l'entrée d'Accès rapide. Windows
-    // épingle les dossiers standards en enregistrant le CHEMIN résolu à la
-    // création du profil, pas un KNOWNFOLDERID : rediriger ensuite laisse une
-    // entrée « Bureau » qui mène à l'ancien emplacement — la même panne que
-    // celle qu'on répare, en plus discret. Champ additif §9 (absent =
-    // `unmanaged`), hash d'item et hash d'état RECALCULÉS.
+    // `generated_at` et `ttl_seconds` sont exclus du hash
+    // ({@see StateHasher::VOLATILE_STATE_KEYS}) : le TTL dépend du contexte
+    // compilé, et un TTL qui change seul ne doit pas invalider l'ETag.
     private const FROZEN_STATE_HASH = '8940e34ff63824c37bad3b2e22d9151016d1661f90a099cc6736977690ac4e7e';
 
     private StateHasher $hasher;
@@ -352,7 +75,7 @@ class ContractV1Test extends TestCase
             $this->assertTrue(array_is_list($state[$scope]), "portée {$scope} : doit être une liste, pas une map");
         }
 
-        // Story 27.10 — la portée `machine` porte désormais l'item overlay
+        // La portée `machine` porte désormais l'item overlay
         // `{kind:"machine", room}` (salle préchargée au logon) : elle n'est plus
         // le « tableau vide » illustratif. Le contrat tolère toujours une portée
         // vide (les trois sont des listes, éventuellement vides — vérifié
@@ -372,8 +95,8 @@ class ContractV1Test extends TestCase
             foreach ($state[$scope] as $item) {
                 $itemCount++;
 
-                // AC1 — exactement les 4 clés du contrat, ni plus ni moins
-                // (Story 27.8 : la clé `mode` est retirée — STRICT inconditionnel).
+                // Exactement les 4 clés du contrat, ni plus ni moins : pas de
+                // clé `mode`, la convergence est STRICTE et inconditionnelle.
                 $this->assertSame(
                     ['type', 'semantics', 'payload', 'hash'],
                     array_keys($item),
@@ -445,14 +168,14 @@ class ContractV1Test extends TestCase
             $this->assertNotNull($status, "statut inconnu: {$item['status']}");
             $statuses[$item['status']] = true;
 
-            // AC3 — un statut `error` doit porter un `detail` non vide.
+            // Un statut `error` doit porter un `detail` non vide.
             if ($status === AgentResourceStatus::Error) {
                 $this->assertArrayHasKey('detail', $item);
                 $this->assertNotSame('', $item['detail']);
             }
         }
 
-        // AC3 — les trois statuts sont illustrés (Story 27.8 : `drifted_allowed`
+        // Les trois statuts sont illustrés ( : `drifted_allowed`
         // retiré → compliant, drift, error).
         foreach (AgentResourceStatus::cases() as $case) {
             $this->assertArrayHasKey(

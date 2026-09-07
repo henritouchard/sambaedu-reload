@@ -11,16 +11,16 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
- * Story 55.1 — Un CLIENT CONFIDENTIEL du fournisseur OIDC de SE5.
+ * Un CLIENT CONFIDENTIEL du fournisseur OIDC de SE5.
  *
  * Le registre des clients est un PROLONGEMENT du registre d'extensions
  * (`extension_id` nullable + `extension_key` dénormalisée) : une extension de
  * type `app` disposera de son client, provisionné automatiquement à
- * l'installation par l'Epic 56. En 55.1 les clients sont déclarés à la main
+ * l'installation. Aujourd'hui les clients sont déclarés à la main
  * (`php artisan oidc:client:register`) — le canal d'installation n'existe pas
  * encore.
  *
- * ⚠️ **NFR3 — `client_secret_hash` est dans `$hidden`** : ni le secret ni son
+ * ⚠️ **`client_secret_hash` est dans `$hidden`** : ni le secret ni son
  * hash ne doivent sortir en JSON, en log ou en UI. Le secret CLAIR n'est jamais
  * stocké : il est affiché UNE SEULE FOIS par la commande d'enregistrement, puis
  * n'existe plus que chez l'intégrateur.
@@ -67,7 +67,7 @@ class OidcClient extends Model
     ];
 
     /**
-     * NFR3 : le hash du secret ne sort JAMAIS d'une sérialisation. Il n'est
+     * Le hash du secret ne sort JAMAIS d'une sérialisation. Il n'est
      * comparé qu'en mémoire, par `hash_equals`, dans le registre.
      *
      * @var list<string>
@@ -130,7 +130,7 @@ class OidcClient extends Model
     }
 
     /**
-     * Story 56.4 — Les scopes ACCORDÉS à ce client, normalisés.
+     * Les scopes ACCORDÉS à ce client, normalisés.
      *
      * Normalisation : chaînes non vides, dédupliquées, triées — de sorte que
      * l'affichage de la fiche, l'audit et l'intersection ci-dessous ne dépendent
@@ -138,7 +138,7 @@ class OidcClient extends Model
      *
      * ⚠️ **`openid` n'y figure JAMAIS.** C'est le plancher du protocole (le
      * `sub` du SSO) : il n'est ni accordé, ni révocable. Révoquer l'identité,
-     * c'est désinstaller l'extension (FR10), pas révoquer un scope (FR23).
+     * c'est désinstaller l'extension, pas révoquer un scope.
      *
      * ⚠️ Cette méthode NE filtre PAS sur le catalogue de scopes : la garde de
      * vocabulaire vit à l'OCTROI
@@ -181,9 +181,8 @@ class OidcClient extends Model
     }
 
     /**
-     * Story 56.4 — **LE POINT UNIQUE du scope EFFECTIF** (FR23).
+     * **LE POINT UNIQUE du scope EFFECTIF.**
      *
-     * ══════════════════════════════════════════════════════════════════════
      *  UNE RÈGLE, UN SEUL ÉNONCÉ, TROIS CONSOMMATEURS
      *
      *  scope effectif = scope DU JETON ∩ (`granted_scopes` + `openid`)
@@ -198,22 +197,18 @@ class OidcClient extends Model
      *  Recalculé à CHAQUE usage : c'est ce qui rend une révocation immédiate
      *  sur les jetons DÉJÀ ÉMIS, sans purge ni ré-émission. Un seul de ces
      *  trois points qui lirait le scope stocké ferait mentir la révocation —
-     *  d'où l'énoncé unique ici plutôt que trois intersections recopiées
-     *  (leçon review 56.1 #3).
-     * ══════════════════════════════════════════════════════════════════════
+     *  d'où l'énoncé unique ici plutôt que trois intersections recopiées.
      *
      * **L'ORDRE DU SCOPE DEMANDÉ EST PRÉSERVÉ**, et le résultat n'est PAS
      * retrié : quand tout est accordé, l'effectif est alors identique CARACTÈRE
-     * POUR CARACTÈRE au scope demandé — ce qui garantit que cette story
-     * n'introduit aucune différence observable pour un client pleinement
+     * POUR CARACTÈRE au scope demandé — ce qui garantit qu'aucune différence
+     * observable n'apparaît pour un client pleinement
      * consenti (l'ordre d'un `scope` OAuth n'est pas significatif, mais il est
-     * observé : `oidc_access_tokens.scope` est asserté verbatim par les suites
-     * 55.x).
+     * observé : `oidc_access_tokens.scope` est asserté verbatim par les tests).
      *
      * ⚠️ Un scope demandé HORS catalogue n'arrive jamais ici : il est refusé
-     * `invalid_scope` à l'autorisation (invariant README #11). Le non-accordé,
-     * lui, n'est pas refusé — il est RÉDUIT (décision 56.4 n° 3 : révoquer une
-     * donnée ne doit pas provoquer une panne de SSO).
+     * `invalid_scope` à l'autorisation. Le non-accordé, lui, n'est pas refusé —
+     * il est RÉDUIT : révoquer une donnée ne doit pas provoquer une panne de SSO.
      */
     public function effectiveScopeFor(string $requestedScope): string
     {

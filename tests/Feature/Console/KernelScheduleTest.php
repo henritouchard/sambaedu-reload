@@ -17,7 +17,7 @@ class KernelScheduleTest extends TestCase
 
     protected function tearDown(): void
     {
-        // Story 5.1d — code review #8 : éviter qu'un SystemSetting `quota.trash`
+        // Éviter qu'un SystemSetting `quota.trash`
         // posé par un test perturbe les autres tests si l'ordre est aléatoire.
         // DatabaseTransactions rollback les rows, mais on appelle aussi
         // `SystemSetting::forget()` pour purger d'éventuels caches statiques
@@ -143,10 +143,6 @@ class KernelScheduleTest extends TestCase
         );
     }
 
-    // =========================================================================
-    // Story 5.1d — trash:purge à 02h00 + ->when() conditionné par SystemSetting
-    // =========================================================================
-
     #[Test]
     public function it_schedules_trash_purge_daily_at_02h(): void
     {
@@ -199,14 +195,6 @@ class KernelScheduleTest extends TestCase
             'Avec purge_auto=false, la closure ->when() doit retourner false (event non exécuté).',
         );
     }
-
-    // =========================================================================
-    // Story 16.11 — migration:health-check schedulé daily
-    // =========================================================================
-
-    // =========================================================================
-    // Story 20.2 — federated:purge-identities à 02h30 + ->when() toggle config
-    // =========================================================================
 
     #[Test]
     public function it_schedules_federated_purge_identities_daily_at_0230(): void
@@ -295,10 +283,6 @@ class KernelScheduleTest extends TestCase
         );
     }
 
-    // =========================================================================
-    // Story 16.12 — script-logs:archive:rotate schedulé daily 04:00 (post review F1)
-    // =========================================================================
-
     #[Test]
     public function it_schedules_script_logs_archive_rotate_daily_at_0400(): void
     {
@@ -351,10 +335,6 @@ class KernelScheduleTest extends TestCase
         );
         // Cleanup : assuré par tearDown() + DatabaseTransactions rollback.
     }
-
-    // =========================================================================
-    // Story 26.3 — profiles:snapshot à 04h30
-    // =========================================================================
 
     #[Test]
     public function it_schedules_profiles_snapshot_daily_at_0430(): void

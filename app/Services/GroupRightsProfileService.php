@@ -13,15 +13,13 @@ use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
 
 /**
- * Story 49.1 — matérialisation des profils de droits PORTÉS par les groupes.
+ * Matérialisation des profils de droits PORTÉS par les groupes.
  *
  * Modèle : un `UserGroup` peut porter au plus un profil (`rights_profile_id`,
  * FK nullable vers `roles`). **L'appartenance au groupe EST l'attribution du
  * profil** : un utilisateur détient l'UNION des profils portés par ses groupes.
  *
- * ─────────────────────────────────────────────────────────────────────────────
  * INVARIANT CENTRAL — `syncRoles` est **INTERDIT** dans ce service.
- * ─────────────────────────────────────────────────────────────────────────────
  * `syncRoles` est RETRANCHANT : il détache TOUS les rôles avant de rattacher
  * ceux qu'on lui passe. L'employer ici effacerait, sur tout le parc, les
  * **délégations manuelles** posées au drawer de droits (`user-admin`,
@@ -30,7 +28,7 @@ use Spatie\Permission\PermissionRegistrar;
  *
  *  - on ASSIGNE les profils portés manquants ;
  *  - on RETIRE uniquement les rôles appartenant à l'ensemble « portés »
- *    (`carriedRoleIds()`, lu en base) que l'appartenance ne justifie plus ;
+ *  (`carriedRoleIds()`, lu en base) que l'appartenance ne justifie plus ;
  *  - tout rôle porté par AUCUN groupe est **INTACT** — c'est une délégation.
  *
  * Un test-verrou (`GroupRightsProfileServiceTest`) échoue si quelqu'un
@@ -39,7 +37,7 @@ use Spatie\Permission\PermissionRegistrar;
  * `FederatedLoginController` (externe mono-rôle) et `UserSyncService`
  * (compte protégé `admin`).
  *
- * ### Périmètre borné (AC3 / D5)
+ * ### Périmètre borné
  *
  * Seuls les comptes `users.source = 'ad'` sont réconciliés. Les comptes
  * `source='federated'` n'appartiennent à aucun groupe et leur login fait
@@ -48,7 +46,7 @@ use Spatie\Permission\PermissionRegistrar;
  * externe. Le compte protégé `admin` est sauté AVANT tout appel — son
  * `removeRole()` surchargé lève `ProtectedAdminRightsException`.
  *
- * ### Classification DÉRIVÉE (D3)
+ * ### Classification DÉRIVÉE
  *
  * « Rôle porté » = profil référencé par au moins un groupe, `distinct` LU EN
  * BASE. Aucune constante, aucune colonne d'origine sur `model_has_roles`,
@@ -57,7 +55,7 @@ use Spatie\Permission\PermissionRegistrar;
  *
  * ### Limite connue — écritures pivot hors Eloquent
  *
- * Les writes bruts `DB::table('user_group_user')` (backfill 42.1,
+ * Les writes bruts `DB::table('user_group_user')` (backfill,
  * `MergeLegacyUserGroups`) ne passent PAS par l'observer pivot : ce sont des
  * actions de migration, couvertes par le filet `reprojectAll()`
  * (`php artisan users:reproject-group-profiles`).
@@ -69,7 +67,7 @@ use Spatie\Permission\PermissionRegistrar;
  * qu'un groupe porteur est supprimé, son profil sort de `carriedRoleIds()` et
  * devient indistinguable d'une délégation manuelle : la réconciliation
  * générique ne le retire plus — sur AUCUNE passe, y compris répétée. C'est le
- * même piège que le dernier porteur (D4), et il se traite de la même façon :
+ * même piège que le dernier porteur, et il se traite de la même façon :
  * l'appelant capture l'information AVANT la suppression et la passe en rôles
  * révocables additionnels APRÈS. Deux appelants le font :
  * {@see self::setProfile()} (retrait/changement) et
@@ -99,8 +97,8 @@ class GroupRightsProfileService
     }
 
     /**
-     * Groupes portant un profil donné — messages d'intégrité (AC6) et raisons
-     * affichées dans les deux drawers (AC8).
+     * Groupes portant un profil donné — messages d'intégrité et raisons
+     * affichées dans les deux drawers.
      *
      * @return Collection<int, UserGroup>
      */
@@ -153,8 +151,8 @@ class GroupRightsProfileService
      *
      * @param  User  $user
      * @param  int[] $extraRevocableRoleIds Rôles additionnels rendus révocables
-     *         pour CETTE passe. Passé UNIQUEMENT par {@see self::setProfile()}
-     *         (piège du dernier porteur, D4) — jamais par l'observer ni par la
+     *         pour CETTE passe. Passé UNIQUEMENT par {@see self::setProfile()},
+     *         pour le piège du dernier porteur — jamais par l'observer ni par la
      *         commande.
      * @return array{assigned:int, removed:int, skipped:bool}
      */
@@ -238,9 +236,9 @@ class GroupRightsProfileService
 
     /**
      * Pose / change / retire le profil porté par un groupe, et re-projette ses
-     * membres DANS LE MÊME GESTE (AC4).
+     * membres DANS LE MÊME GESTE.
      *
-     * **Piège du dernier porteur (D4).** Si ce groupe était le DERNIER porteur
+     * **Piège du dernier porteur.** Si ce groupe était le DERNIER porteur
      * de l'ancien profil, celui-ci sort de l'ensemble `carriedRoleIds()` juste
      * après l'écriture : la réconciliation générique ne le retirerait plus et
      * il resterait orphelin sur tous les membres, indistinguable d'une
@@ -323,7 +321,7 @@ class GroupRightsProfileService
     }
 
     /**
-     * Re-projection idempotente du parc entier (AC4) : backfill au déploiement,
+     * Re-projection idempotente du parc entier : backfill au déploiement,
      * filet des chemins qui n'émettent pas d'events pivot, réparation.
      *
      * Une erreur sur un utilisateur n'arrête JAMAIS la boucle : chaque user est
@@ -387,10 +385,6 @@ class GroupRightsProfileService
 
         return $stats;
     }
-
-    // ========================================================================
-    // INTERNES
-    // ========================================================================
 
     /**
      * Réconciliation fail-soft d'un user, dans sa propre transaction imbriquée
@@ -494,7 +488,7 @@ class GroupRightsProfileService
     }
 
     /**
-     * Périmètre de la réconciliation (AC3 / AC10).
+     * Périmètre de la réconciliation.
      *
      * `source` null est traité comme `'ad'` : c'est le DÉFAUT de la colonne
      * (migration `2026_06_01_120100`), les lignes antérieures n'ont pas d'autre

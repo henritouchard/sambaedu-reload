@@ -16,7 +16,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 60.5 — la VOIE DE PEUPLEMENT de l'arbre neuf.
+ * La VOIE DE PEUPLEMENT de l'arbre neuf.
  *
  * Ce que la commande doit tenir : peupler le parc EXISTANT (la création de groupe
  * ne couvre que l'avenir), s'exécuter en DIRECT (une commande est hors requête, son
@@ -182,7 +182,7 @@ class MaterializeClassTreesCommandTest extends TestCase
 
     /**
      * **L'arbre HISTORIQUE n'est jamais touché.** Aucune commande émise ne vise sa
-     * racine — c'est la promesse de la story, éprouvée sur les processus réellement
+     * racine — c'est la promesse, éprouvée sur les processus réellement
      * lancés plutôt que sur une intention.
      */
     #[Test]

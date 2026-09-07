@@ -7,12 +7,12 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 25.5 — AC4 (greffe persistance de la version rapportée par l'agent).
+ * (greffe persistance de la version rapportée par l'agent).
  *
- * `agent_version` arrive dans CHAQUE rapport (contrat 23.1), est validé
+ * `agent_version` arrive dans CHAQUE rapport (contrat), est validé
  * (`ReportRequest`) puis aujourd'hui SILENCIEUSEMENT jeté : aucune colonne ne
- * le persiste, la surface « progression du déploiement » (25.5) est donc
- * impossible sans cette greffe. Décision actée (option A, Henri 2026-06-13) :
+ * le persiste, la surface « progression du déploiement » est donc
+ * impossible sans cette greffe. D'où
  * deux colonnes `agent_*` sur `workstations` (la frontière `agent_*` héberge
  * déjà `agent_token_hash`, `agent_last_checkin_at`, `agent_sync_requested_at`…).
  *
@@ -23,7 +23,7 @@ use Illuminate\Support\Facades\Schema;
  *    récence pour distinguer convergé / en retard / silencieux).
  *
  * Écriture UNIQUE : `ReportController::store()`, APRÈS `ingest()`, hors
- * transaction D3 (iso `syncRequests->fulfill()` et le check-in middleware —
+ * transaction (iso `syncRequests->fulfill()` et le check-in middleware —
  * une écriture `agent_*` idempotente, indépendante du stockage des items).
  * `ReportIngestService` reste volontairement read-only sur `workstations`.
  * Hors `$fillable` du modèle (anti mass-assignment, iso colonnes `agent_*`).

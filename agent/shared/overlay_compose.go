@@ -5,19 +5,19 @@ import (
 	"unicode"
 )
 
-// Composition du document overlay.json (Story 24.6 — portage byte-compatible
-// du sérialiseur PS 24.4, handlers/Overlay.ps1).
+// Composition du document overlay.json (portage byte-compatible
+// du sérialiseur PS, handlers/Overlay.ps1).
 //
 // L'agent EST le fetch du POC overlay : il compose et écrit
 // `%LOCALAPPDATA%\SambaEdu\Agent\overlay.json` — per-user par construction.
 // Le render (Rainmeter/Conky, resources/overlay/ INTOUCHÉ) lit ce fichier.
 //
-// ⚠️ Sérialiseur à STRUCTURE FIXE, jamais encoding/json (piège n° 10) : la
+// ⚠️ Sérialiseur à STRUCTURE FIXE, jamais encoding/json : la
 // regex WebParser de la skin Rainmeter exige `": "` (un espace simple après
 // les deux-points), un ordre de clés littéral stable et l'Unicode BRUT
 // UTF-8 — encoding/json émet compact `":"` sans espace (et ConvertTo-Json
-// PS 5.1 mettait DEUX espaces + \uXXXX : les deux cassent le render). Le
-// format ci-dessous reproduit BYTE-À-BYTE celui du PS 24.4 (golden de
+// PS mettait DEUX espaces + \uXXXX : les deux cassent le render). Le
+// format ci-dessous reproduit BYTE-À-BYTE celui du PS (golden de
 // non-régression : overlay_compose_test.go) — tout octet compte, le `test`
 // du handler est une comparaison de contenu.
 //
@@ -37,7 +37,7 @@ const (
 )
 
 // sanitizeOverlayText : aplatissement iso `OverlayService::sanitizeText`
-// (et Format-OverlayText PS 24.4) — retours ligne / espaces multiples → UN
+// (et Format-OverlayText PS) — retours ligne / espaces multiples → UN
 // espace, trim, clamp en runes. Protège le parsing regex mono-ligne du
 // render. NB : le `\s+` du PS était la classe .NET (espaces Unicode inclus)
 // — unicode.IsSpace reproduit cette couverture.
@@ -47,7 +47,7 @@ func sanitizeOverlayText(value string, maxLength int) string {
 	return truncateRunes(flat, maxLength)
 }
 
-// escapeOverlayJSONString : échappement JSON minimal iso PS 24.4 —
+// escapeOverlayJSONString : échappement JSON minimal iso PS
 // backslash, guillemet, contrôles résiduels → espace. L'Unicode reste BRUT
 // (UTF-8) : lisible par le render, jamais de \uXXXX.
 func escapeOverlayJSONString(value string) string {
@@ -81,11 +81,11 @@ type overlayAlert struct {
 //
 //   - item `kind: "identity"` (enrichissement serveur OverlayStateProvider,
 //     portée SESSION) → identity.fullname/login — le compagnon ne connaît pas
-//     localement le fullname, et le critère Keycloak (NFR7) interdit tout
-//     appel AD côté poste. Un seul bloc identité (le serveur n'en émet qu'un —
+//     localement le fullname, et le critère de sortie d'AD interdit tout
+//     appel AD côté poste. Un seul bloc identité (le serveur n'en émet qu'un
 //     défense : le PREMIER gagne, ordre serveur) ;
-//   - item `kind: "machine"` (OverlayMachineStateProvider, portée MACHINE,
-//     Story 27.10) → machine.room — la salle est une propriété STABLE du
+//   - item `kind: "machine"` (OverlayMachineStateProvider, portée MACHINE)
+//     → machine.room — la salle est une propriété STABLE du
 //     poste, préchargée au logon depuis le cache machine SANS attendre le
 //     fetch per-user (premier gagne, défense) ;
 //   - machine.name = COMPUTERNAME LOCAL (jamais demandé au serveur) ;
@@ -93,7 +93,7 @@ type overlayAlert struct {
 //
 // Champs absents (machine-only sans identity, ou session sans cache machine) =
 // chaînes vides, jamais omis : la regex du render exige la présence des clés.
-// C'est le CŒUR du préchargement (Story 27.10) : `machine.room` peut être
+// C'est le CŒUR du préchargement : `machine.room` peut être
 // rempli (item machine) alors qu'`identity` est vide (cache session absent).
 func ComposeOverlayDocument(items []StateItem, computerName string) string {
 	var identity map[string]any
@@ -143,14 +143,14 @@ func ComposeOverlayDocument(items []StateItem, computerName string) string {
 		}
 	}
 	// La salle vient de l'item MACHINE (portée machine, cache persistant) —
-	// jamais de l'item identity (Story 27.10, D1).
+	// Jamais de l'item identity.
 	if machine != nil {
 		if v, ok := machine["room"].(string); ok {
 			room = sanitizeOverlayText(v, overlayIdentityMaxLength)
 		}
 	}
 
-	// Structure LITTÉRALE fixe — byte-compatible PS 24.4 (lignes jointes par
+	// Structure LITTÉRALE fixe — byte-compatible PS (lignes jointes par
 	// \n, indentation 4 espaces, `": "` simple, pas de \n final).
 	lines := []string{
 		"{",

@@ -10,7 +10,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 15.1 / AC4.1 — couvre la logique de détection ET de création
+ * Couvre la logique de détection ET de création
  * automatique du check démarrage (méthode `ensurePaths()`). Le `boot()`
  * reste skippé en environnement `testing`, donc on teste la méthode
  * extraite directement.

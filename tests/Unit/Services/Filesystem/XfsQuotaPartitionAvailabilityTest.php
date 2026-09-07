@@ -19,10 +19,9 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 63.4 — **TROIS ÉTATS, TROIS ISSUES. Plus jamais un booléen pour trois
+ * **TROIS ÉTATS, TROIS ISSUES. Plus jamais un booléen pour trois
  * situations qui ne demandent pas le même geste.**
  *
- * ---------------------------------------------------------------------------
  * La lecture d'état existante avalait son propre code de retour : une partition qui
  * ne porte pas de quota, une partition saine dont l'application est éteinte, et une
  * élévation de privilège cassée rendaient TOUTES la même valeur. L'exploitant ne
@@ -34,7 +33,6 @@ use Tests\TestCase;
  *
  * Ils passent par la couture `protected` : sans elle, aucune assertion ne serait
  * possible sur l'hôte, où l'outil n'existe pas.
- * ---------------------------------------------------------------------------
  */
 class XfsQuotaPartitionAvailabilityTest extends TestCase
 {
@@ -122,10 +120,6 @@ class XfsQuotaPartitionAvailabilityTest extends TestCase
         };
     }
 
-    // =========================================================================
-    // Les trois issues
-    // =========================================================================
-
     #[Test]
     public function an_enforced_partition_is_available_without_any_reason(): void
     {
@@ -164,7 +158,6 @@ class XfsQuotaPartitionAvailabilityTest extends TestCase
     /**
      * **LA TROISIÈME ISSUE : « JE NE SAIS PAS », ET SURTOUT PAS UN CONSTAT.**
      *
-     * ---------------------------------------------------------------------------
      * Un code de retour non nul recouvre DEUX réalités disjointes : la partition ne
      * porte réellement pas de quota, ou bien on n'a pas pu le mesurer (élévation
      * refusée, outil absent, chemin d'exécution du serveur d'application). Trancher
@@ -174,7 +167,6 @@ class XfsQuotaPartitionAvailabilityTest extends TestCase
      *
      * C'est la distinction que le contrat de backend a apprise : « conforme » et
      * « non mesurable » ne se confondent jamais.
-     * ---------------------------------------------------------------------------
      */
     #[Test]
     public function a_failing_command_says_it_could_not_measure_never_that_there_is_no_quota(): void
@@ -229,10 +221,6 @@ class XfsQuotaPartitionAvailabilityTest extends TestCase
         $this->assertStringNotContainsString('/var/sambaedu', $reason);
         $this->assertStringContainsString('not found', $reason);
     }
-
-    // =========================================================================
-    // La garde REJOUÉE côté service — la soumission forgée
-    // =========================================================================
 
     /**
      * *Une garde qui ne vit que dans l'écran protège l'étourderie, pas la requête
@@ -306,13 +294,11 @@ class XfsQuotaPartitionAvailabilityTest extends TestCase
      * ⚠️ **LA GARDE NE VAUT PAS SUR UN ESPACE QUI N'EST PLUS SERVI PAR LE SERVEUR DE
      * FICHIERS** (correction de revue).
      *
-     * ---------------------------------------------------------------------------
      * Quand l'espace personnel vit au cloud, cette même règle est ce que le
      * provisionnement lit pour poser le plafond du compte sur l'instance. Laisser un
      * système de fichiers local hors sujet fermer cette écriture fermerait le SEUL
      * écran où se règle le plafond du cloud — un refus exact, appliqué à la mauvaise
      * question.
-     * ---------------------------------------------------------------------------
      */
     #[Test]
     public function the_guard_steps_aside_when_the_space_no_longer_lives_on_the_file_server(): void

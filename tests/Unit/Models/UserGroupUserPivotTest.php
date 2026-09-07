@@ -13,16 +13,16 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 42.1 → 62.1 — vocabulaire + helpers du pivot d'arête.
+ * → — vocabulaire + helpers du pivot d'arête.
  *
  * SQLite ne borne pas les varchar : la garde applicative `assertValidRole` est la
- * SEULE frontière du vocabulaire côté SE5 (AC4 de 42.1). Ce qui a changé en 62.1,
+ * SEULE frontière du vocabulaire côté SE5. Ce qui a changé,
  * c'est la SOURCE : le vocabulaire n'est plus une constante fermée, c'est le
  * catalogue `group_roles` — mais il contient TOUJOURS au moins les trois clés
  * historiques, quel que soit l'état de la base.
  *
- * Le défaut au rattachement, lui, ne bouge pas : il dérive du rôle GLOBAL (AC5 de
- * 42.1) et écrit des littéraux.
+ * Le défaut au rattachement, lui, ne bouge pas : il dérive du rôle GLOBAL et
+ * écrit des littéraux.
  */
 class UserGroupUserPivotTest extends TestCase
 {
@@ -44,7 +44,7 @@ class UserGroupUserPivotTest extends TestCase
     }
 
     /**
-     * Le point de bascule de la story : le vocabulaire n'est plus fermé.
+     * Le point de bascule : le vocabulaire n'est plus fermé.
      */
     #[Test]
     public function a_role_added_to_the_catalog_becomes_valid_on_an_edge(): void

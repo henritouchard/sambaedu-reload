@@ -15,9 +15,9 @@ use Tests\Concerns\IssuesFederatedJwt;
 use Tests\TestCase;
 
 /**
- * Story 20.2 — Unit du `ExternalIdentityLifecycleService`.
+ * Unit du `ExternalIdentityLifecycleService`.
  *
- * Couvre AC2-13, AC16 : reconcile (création/réutilisation/sync profil D-3),
+ * Couvre-13 : reconcile (création/réutilisation/sync profil D-3),
  * gardes révocation/anonymisation (403, D-4), deactivate, softDeleteWithReason,
  * anonymize (PII vidée, external_sub→anon:<sha256>, idempotent, jamais
  * hard-delete, User lié désactivé).
@@ -166,7 +166,7 @@ class ExternalIdentityLifecycleServiceTest extends TestCase
             $this->assertSame(403, $e->getStatusCode());
         }
 
-        // Toujours résolvable via withTrashed() (audit 20.4).
+        // Toujours résolvable via withTrashed() (audit).
         $this->assertNotNull(ExternalIdentity::withTrashed()->where('external_sub', 'ext-sd')->first()->deleted_at);
     }
 
@@ -207,7 +207,7 @@ class ExternalIdentityLifecycleServiceTest extends TestCase
     #[Test]
     public function hash_sub_is_salted_not_raw_sha256(): void
     {
-        // P-4 (review 20.2) : le hash est un HMAC salé, pas un sha256 nu — un sub
+        // P-4 (review) : le hash est un HMAC salé, pas un sha256 nu — un sub
         // à faible entropie ne doit pas être ré-identifiable par rainbow table.
         $this->assertNotSame(hash('sha256', 'ext-x'), $this->service->hashSub('ext-x'));
         $this->assertSame(64, mb_strlen($this->service->hashSub('ext-x')), 'HMAC-SHA256 = 64 hexdigits');
@@ -216,7 +216,7 @@ class ExternalIdentityLifecycleServiceTest extends TestCase
     #[Test]
     public function deactivate_truncates_overlong_reason_to_column_length(): void
     {
-        // P-8 (review 20.2) : `deactivated_reason` est varchar(255). SQLite ne
+        // P-8 (review) : `deactivated_reason` est varchar(255). SQLite ne
         // contraint pas, MySQL prod lèverait. Le motif est tronqué côté service.
         $identity = $this->service->reconcileOnLogin($this->claims(['sub' => 'ext-long']));
 
@@ -272,7 +272,7 @@ class ExternalIdentityLifecycleServiceTest extends TestCase
     {
         $identity = $this->service->reconcileOnLogin($this->claims(['sub' => 'ext-user']));
         // `source` / `external_identity_id` ne sont pas mass-assignable (parité
-        // 20.1 provisionUser) → on les pose en attributs directs.
+        // `provisionUser`) → on les pose en attributs directs.
         $user = new User();
         $user->login = 'ext:ext-user';
         $user->source = 'federated';
@@ -304,7 +304,7 @@ class ExternalIdentityLifecycleServiceTest extends TestCase
     #[Test]
     public function logs_carry_no_pii_in_lifecycle_actions(): void
     {
-        // AC16 : on capture les logs du channel et on vérifie qu'aucune PII
+        // On capture les logs du channel et on vérifie qu'aucune PII
         // (name/email/login clair) n'y figure, seulement id + hash de sub.
         $identity = $this->service->reconcileOnLogin($this->claims(['sub' => 'ext-log', 'name' => 'Secret Nom', 'email' => 'secret@x.fr', 'login' => 'secretlogin']));
 

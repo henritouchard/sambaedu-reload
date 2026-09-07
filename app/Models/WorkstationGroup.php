@@ -35,9 +35,9 @@ use App\Enums\LockReason;
  * @property bool $is_active
  * @property string|null $locked Raison du verrouillage (si non-null, empêche modification/suppression)
  * @property bool $managed_by_control_hub
- * @property string|null $controlhub_label Nom du label de contrat amont (free) rattaché à ce parc (Story 30.2) — null = aucun label ; rattachement par nom, pas de FK dure
- * @property \App\Enums\WorkstationEnvironment|null $environment Nature des postes du parc (Story 26.1) — null = non déclaré
- * @property \DateTimeInterface|null $archived_at Archivage logique (Story 15.3, AC3.4)
+ * @property string|null $controlhub_label Nom du label de contrat amont (free) rattaché à ce parc — null = aucun label ; rattachement par nom, pas de FK dure
+ * @property \App\Enums\WorkstationEnvironment|null $environment Nature des postes du parc — null = non déclaré
+ * @property \DateTimeInterface|null $archived_at Archivage logique
  * @property \DateTime|null $created_at
  * @property \DateTime|null $updated_at
  */
@@ -139,7 +139,6 @@ class WorkstationGroup extends Model implements Wireable
         $this->save();
     }
 
-
     /**
      * Relation avec le groupe parent
      */
@@ -172,7 +171,7 @@ class WorkstationGroup extends Model implements Wireable
     /**
      * Membres « postes » du groupe.
      *
-     * Story 4.11 — appartenance unifiée : salles physiques ET parcs logiques
+     * Appartenance unifiée : salles physiques ET parcs logiques
      * vivent dans le même pivot `workstation_group_workstation`. Cet accessor
      * délègue donc trivialement à {@see workstations()} ; l'ancien aiguillage
      * FK (salle) / pivot (parc) a disparu avec la colonne `physical_room_id`.
@@ -200,8 +199,7 @@ class WorkstationGroup extends Model implements Wireable
     /**
      * Ajoute une ou plusieurs machines au groupe.
      *
-     * Note Story 4.9 (D4) : les hooks pivot audit-only ont été supprimés
-     * (code mort depuis 2026-05-20).
+     * Aucun hook pivot d'audit : le pivot SQL est la source de vérité.
      */
     public function attachWorkstations(int|array $workstationIds): void
     {
@@ -212,7 +210,7 @@ class WorkstationGroup extends Model implements Wireable
     /**
      * Retire une ou plusieurs machines du groupe.
      *
-     * Note Story 4.9 (D4) : voir {@see attachWorkstations()}.
+     * Voir {@see attachWorkstations}.
      */
     public function detachWorkstations(int|array $workstationIds): void
     {
@@ -223,7 +221,7 @@ class WorkstationGroup extends Model implements Wireable
     /**
      * Synchronise les machines du groupe.
      *
-     * Note Story 4.9 (D4) : voir {@see attachWorkstations()}.
+     * Voir {@see attachWorkstations}.
      *
      * @param array $workstationIds IDs des machines à synchroniser
      * @return array Les changements effectués
@@ -251,7 +249,7 @@ class WorkstationGroup extends Model implements Wireable
         )->withTimestamps();
     }
     /**
-     * Story 34.1 — répertoires réseau assignés à ce parc/salle (MONTAGE-SEUL :
+     * Répertoires réseau assignés à ce parc/salle (MONTAGE-SEUL :
      * la lettre s'affiche sur les postes du groupe, mais l'ACL POSIX réelle
      * vient des grants user/group, pas du WG). Porte le pivot `access`.
      */
@@ -279,7 +277,7 @@ class WorkstationGroup extends Model implements Wireable
     }
 
     /**
-     * Story 15.2 — Apps WPKG rattachées directement à ce parc (pivot
+     * Apps WPKG rattachées directement à ce parc (pivot
      * `application_workstation_group`, équivalent legacy
      * `applications_profile.type_entite='parc'`).
      */
@@ -411,7 +409,7 @@ class WorkstationGroup extends Model implements Wireable
     }
 
     /**
-     * Story 15.3 / AC3.4 — Scope pour exclure les groupes archivés.
+     * Scope pour exclure les groupes archivés.
      */
     public function scopeNotArchived(Builder $query): Builder
     {
@@ -445,12 +443,8 @@ class WorkstationGroup extends Model implements Wireable
         return $query->where('managed_by_control_hub', true);
     }
 
-    // ========================================
-    // LABEL DE CONTRAT AMONT (Story 30.2)
-    // ========================================
-
     /**
-     * Story 30.2 — Indique si ce groupe porte un label de contrat amont.
+     * Indique si ce groupe porte un label de contrat amont.
      *
      * Style des helpers existants ({@see isLocked()}, {@see hasAppProfile()}).
      */
@@ -460,7 +454,7 @@ class WorkstationGroup extends Model implements Wireable
     }
 
     /**
-     * Story 30.2 — Nom du label de contrat amont porté par ce groupe (ou null).
+     * Nom du label de contrat amont porté par ce groupe (ou null).
      */
     public function controlHubLabel(): ?string
     {
@@ -468,10 +462,10 @@ class WorkstationGroup extends Model implements Wireable
     }
 
     /**
-     * Story 30.2 — Scope « tous les groupes portant ce label de contrat amont ».
+     * Scope « tous les groupes portant ce label de contrat amont ».
      *
-     * Rattachement par nom (cf. décision de design 30.2 : pas de FK dure).
-     * Livré ici car réutilisé par la résolution-par-label de la Story 30.4
+     * Rattachement par nom (cf. décision de design : pas de FK dure).
+     * Livré ici car réutilisé par la résolution-par-label de la
      * (`label:<nom>` → propagation à tous les groupes portant le label).
      */
     public function scopeCarryingControlHubLabel(Builder $query, string $name): Builder
@@ -506,8 +500,8 @@ class WorkstationGroup extends Model implements Wireable
     /**
      * Retourne le nombre de postes dans ce groupe.
      *
-     * Alias historique de {@see getMembersCountAttribute} — depuis la story
-     * 4.11 (pivot global unifié), tout délègue à `workstations()`.
+     * Alias historique de {@see getMembersCountAttribute} — depuis le pivot
+     * global unifié, tout délègue à `workstations()`.
      */
     public function getWorkstationCountAttribute(): int
     {

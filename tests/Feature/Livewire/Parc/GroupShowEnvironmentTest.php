@@ -15,8 +15,8 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * La fiche de présentation d'un groupe AFFICHE l'environnement (nature des postes,
- * Story 26.1) en lecture seule dans sa carte d'identité — l'édition se fait
+ * La fiche de présentation d'un groupe AFFICHE l'environnement (nature des postes)
+ * en lecture seule dans sa carte d'identité — l'édition se fait
  * ailleurs (formulaire « Modifier » + action groupée). Garde anti-régression :
  * la carte d'identité vit dans `index.blade.php` et non dans un partial ; poser
  * un fait du groupe ailleurs le rendrait invisible sans qu'aucun test ne tombe.

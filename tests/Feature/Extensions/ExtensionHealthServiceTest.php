@@ -15,10 +15,9 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 56.5 (AC1) — `ExtensionHealthService` : la sonde, ses transitions et sa
+ * `ExtensionHealthService` : la sonde, ses transitions et sa
  * persistance.
  *
- * ══════════════════════════════════════════════════════════════════════════
  *  CE QUE CE FICHIER VERROUILLE
  *
  *  1. « Joignable » = une RÉPONSE HTTP, quelle qu'elle soit (4xx/5xx compris) ;
@@ -28,7 +27,6 @@ use Tests\TestCase;
  *  3. Le retour du backend CONSERVE l'incident : c'est sa raison d'être.
  *  4. ZÉRO ligne d'audit : la santé est de la télémétrie, pas un acte.
  *  5. Aucune catégorie d'incident ne porte d'URL ni de message Guzzle brut.
- * ══════════════════════════════════════════════════════════════════════════
  */
 class ExtensionHealthServiceTest extends TestCase
 {
@@ -39,7 +37,7 @@ class ExtensionHealthServiceTest extends TestCase
     /**
      * LE répondeur de la boucle locale, mutable en cours de test.
      *
-     * ⚠️ Piège connu (leçon 56.1) : `Http::fake()` FUSIONNE ses stubs et le
+     * ⚠️ Piège connu (leçon) : `Http::fake()` FUSIONNE ses stubs et le
      * PREMIER motif enregistré gagne — un second `Http::fake(['127.0.0.1:*' =>
      * …])` ne remplace donc rien, et un scénario « le service redémarre » resterait
      * silencieusement bloqué sur la première réponse. Un fake UNIQUE, posé au
@@ -93,9 +91,7 @@ class ExtensionHealthServiceTest extends TestCase
         $this->respondWith(static fn (): mixed => Http::failedConnection($message));
     }
 
-    // ══════════════════════════════════════════════════════════════════════
-    // AC1 — transitions
-    // ══════════════════════════════════════════════════════════════════════
+    // Transitions
 
     #[Test]
     public function a_dead_backend_is_marked_unreachable_with_a_dated_incident(): void
@@ -213,9 +209,7 @@ class ExtensionHealthServiceTest extends TestCase
         Carbon::setTestNow();
     }
 
-    // ══════════════════════════════════════════════════════════════════════
-    // AC1 — « toute réponse HTTP prouve la joignabilité »
-    // ══════════════════════════════════════════════════════════════════════
+    // « toute réponse HTTP prouve la joignabilité »
 
     #[Test]
     public function a_backend_answering_404_is_reachable(): void
@@ -254,9 +248,7 @@ class ExtensionHealthServiceTest extends TestCase
         Http::assertNotSent(fn ($request): bool => str_contains($request->url(), 'evil.example.test'));
     }
 
-    // ══════════════════════════════════════════════════════════════════════
     // Sécurité — la catégorie d'incident ne fuit rien
-    // ══════════════════════════════════════════════════════════════════════
 
     #[Test]
     public function the_incident_category_carries_neither_url_nor_raw_guzzle_message(): void
@@ -278,9 +270,7 @@ class ExtensionHealthServiceTest extends TestCase
         );
     }
 
-    // ══════════════════════════════════════════════════════════════════════
-    // AC1 — la santé n'est JAMAIS auditée (décision n° 2, pas un oubli)
-    // ══════════════════════════════════════════════════════════════════════
+    // La santé n'est JAMAIS auditée : c'est délibéré, pas un oubli.
 
     #[Test]
     public function probing_never_writes_a_single_audit_line(): void
@@ -301,9 +291,7 @@ class ExtensionHealthServiceTest extends TestCase
         );
     }
 
-    // ══════════════════════════════════════════════════════════════════════
-    // AC1 — périmètre de la sonde
-    // ══════════════════════════════════════════════════════════════════════
+    // Périmètre de la sonde
 
     #[Test]
     public function links_and_non_installed_apps_are_never_probed(): void
@@ -346,7 +334,7 @@ class ExtensionHealthServiceTest extends TestCase
     }
 
     /**
-     * NFR6 — une extension qui échoue ne prive PAS les autres de leur mesure.
+     * Une extension qui échoue ne prive PAS les autres de leur mesure.
      * Sans cette isolation, un premier élément fautif laisserait tout le reste du
      * parc avec un état périmé, donc des tuiles muettes.
      */
@@ -435,9 +423,7 @@ class ExtensionHealthServiceTest extends TestCase
         self::assertSame(Extension::HEALTH_UNREACHABLE, $extension->refresh()->health_status);
     }
 
-    // ══════════════════════════════════════════════════════════════════════
-    // AC2 — fraîcheur : la règle unique du badge
-    // ══════════════════════════════════════════════════════════════════════
+    // Fraîcheur : la règle unique du badge
 
     #[Test]
     public function a_fresh_unreachable_state_is_flagged_but_a_stale_one_is_not(): void

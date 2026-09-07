@@ -52,10 +52,6 @@ class OpenCloudDeploymentTest extends TestCase
         return $this->app->make(OpenCloudDeploymentService::class);
     }
 
-    // =========================================================================
-    // Le déploiement
-    // =========================================================================
-
     #[Test]
     public function a_first_deployment_generates_the_secret_stores_it_encrypted_and_never_shows_it(): void
     {
@@ -114,7 +110,6 @@ class OpenCloudDeploymentTest extends TestCase
     }
 
     /**
-     * ═══════════════════════════════════════════════════════════════════════
      * **UN SECRET PERDU SUR UNE INSTANCE DÉJÀ INITIALISÉE EST UN REFUS NOMMÉ, PAS
      * UN NOUVEAU SECRET.**
      *
@@ -127,7 +122,6 @@ class OpenCloudDeploymentTest extends TestCase
      *
      * Le cas est réel : restauration de base sans la table des secrets, ou oubli
      * volontaire du secret suivi d'un redéploiement.
-     * ═══════════════════════════════════════════════════════════════════════
      */
     #[Test]
     public function a_lost_secret_on_an_already_initialised_instance_is_refused_by_name_never_regenerated(): void
@@ -253,10 +247,6 @@ class OpenCloudDeploymentTest extends TestCase
         self::assertStringContainsString('NE PAS ré-initialiser', implode(' ', $report->steps));
     }
 
-    // =========================================================================
-    // Ce que le déploiement REFUSE de faire
-    // =========================================================================
-
     /**
      * **LA CAPACITÉ N'EST JAMAIS ACTIVÉE.** Le déploiement pré-remplit deux
      * réglages non secrets, et rien d'autre : activer la capacité, confirmer la
@@ -311,9 +301,8 @@ class OpenCloudDeploymentTest extends TestCase
 
     /**
      * **AUCUN OBJET DU SYSTÈME D'EXTENSIONS N'EST CRÉÉ, ET LE CANAL D'INSTALLATION
-     * NE BOUGE PAS.** C'est la décision de cadre, épinglée : Q3 est tranchée dans
-     * une TROISIÈME direction — ni paquet maison, ni canal de conteneur dans le
-     * système d'extensions.
+     * NE BOUGE PAS.** Le déploiement ne passe ni par un paquet maison, ni par un
+     * canal de conteneur du système d'extensions.
      */
     #[Test]
     public function no_extension_object_is_created_and_the_install_channel_is_untouched(): void

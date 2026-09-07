@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace App\Ipxe\Support;
 
 /**
- * Story 3.5 — D6 / AC1.3.
- *
  * Catalogue des placeholders `###_<KEY>_###` injectés dans le template
  * unattend.xml + helper de sanitization defense-in-depth pour les flows XML
  * Windows et shell-arg de l'install.bat WinPE.
@@ -42,7 +40,7 @@ final class WindowsXmlPlaceholders
      * (lecture du modèle Workstation).
      *
      * @return array<string, string>  Mapping `placeholder_key (uppercase
-     *                                 SANS `###_..._###`) → chemin config()`.
+     *  SANS `###_..._###`) → chemin config()`.
      */
     public static function catalog(): array
     {
@@ -134,8 +132,6 @@ final class WindowsXmlPlaceholders
     }
 
     /**
-     * Story 3.8 — D9 / AC8.1.
-     *
      * Sanitize une valeur avant injection dans un cmd batch Windows
      * (`.cmd`/`.bat`). Stratégie 0-trust : tout caractère d'injection cmd.exe
      * lève {@see \App\Ipxe\Exceptions\BatPlaceholderInjectionException}.
@@ -204,7 +200,7 @@ final class WindowsXmlPlaceholders
      *  - Newlines (`\n`, `\r`) → remplacés par espace (éviterait CommandLine multi-ligne).
      *  - Chars non-printables (`\x00-\x1F` sauf `\x09`) → remplacés par espace.
      *
-     * Defense-in-depth post-review #3.
+     * Defense in depth.
      *
      * @param  string|int|null  $value  Valeur brute.
      * @return string                   Valeur safe pour `textContent =`.

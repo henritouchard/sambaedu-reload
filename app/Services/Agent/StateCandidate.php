@@ -7,18 +7,18 @@ namespace App\Services\Agent;
 use App\Enums\StateMaille;
 
 /**
- * Candidat brut retourné par un `StateProvider` (Story 23.4 — décision n° 4) :
- * un payload étiqueté par maille, PAS un item final du contrat. Le
- * `StateCompiler` applique D2 (spécificité, union, conflit) sur ces candidats
- * puis assemble les items `{type, semantics, payload, hash}`.
+ * Candidat brut retourné par un `StateProvider` : un payload étiqueté par
+ * maille, PAS un item final du contrat. Le `StateCompiler` applique la
+ * spécificité, l'union et l'arbitrage de conflit sur ces candidats puis
+ * assemble les items `{type, semantics, payload, hash}`.
  *
  * `updatedAt` + `sourceId` portent la règle de récence du conflit intra-maille
- * (décision n° 2 : `updated_at` desc puis `id` desc — le tiebreak garantit le
- * déterminisme du hash quand deux règles partagent le même `updated_at`).
- * `sourceId` est aussi l'id loggé dans `agent.state.conflict` et l'ordre
- * stable des items aggregate (décision n° 9).
+ * (`updated_at` desc puis `id` desc — le tiebreak garantit le déterminisme du
+ * hash quand deux règles partagent le même `updated_at`). `sourceId` est aussi
+ * l'id loggé dans `agent.state.conflict` et l'ordre stable des items
+ * aggregate.
  *
- * Story 27.8 : le mécanisme `mode` strict/default est SUPPRIMÉ (STRICT
+ * Le mécanisme `mode` strict/default est SUPPRIMÉ (STRICT
  * inconditionnel) — le candidat ne porte plus de mode, l'agent réapplique
  * toujours l'état cible.
  *

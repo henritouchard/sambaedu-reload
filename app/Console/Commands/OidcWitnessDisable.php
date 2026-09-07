@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
- * Story 55.3 — `php artisan oidc:witness:disable`
+ * `php artisan oidc:witness:disable`
  *
  * Retire l'app-témoin : révoque son client OIDC et supprime son fichier de
  * credentials. **IDEMPOTENTE** : rejouer sur une instance déjà nettoyée est un

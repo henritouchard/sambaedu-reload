@@ -22,12 +22,12 @@ use ReflectionMethod;
 use Tests\TestCase;
 
 /**
- * Story 54.3 (AC1, AC2, AC3, NFR9, FR14) — composant Livewire du lanceur
+ * Composant Livewire du lanceur
  * `app-launcher` : tuiles filtrées par rôle métier, ensemble exact des
- * intégrées de type `link`, état vide propre, et la frontière NFR9 (1
- * requête SQL, zéro HTTP).
+ * intégrées de type `link`, état vide propre, et la frontière de coût : 1
+ * requête SQL, zéro HTTP.
  *
- * ⚠️ Leçon 54.2 : le DOM contient des textes partagés — on asserte sur les
+ * ⚠️ Leçon : le DOM contient des textes partagés — on asserte sur les
  * `data-testid` (`assertSeeHtml`/`assertDontSeeHtml`), jamais sur du texte.
  */
 class AppLauncherTest extends TestCase
@@ -43,7 +43,7 @@ class AppLauncherTest extends TestCase
         (new PermissionSeeder())->run();
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────
+    // Helpers
 
     private function makeUser(string $role): User
     {
@@ -82,7 +82,7 @@ class AppLauncherTest extends TestCase
             ]);
     }
 
-    // ── AC1 — filtrage par rôle métier ──────────────────────────────────────
+    // — filtrage par rôle métier
 
     #[Test]
     public function a_prof_sees_the_prof_tile_but_not_the_admin_tile(): void
@@ -140,11 +140,11 @@ class AppLauncherTest extends TestCase
     #[Test]
     public function an_administratif_sees_the_documentation_tile(): void
     {
-        // Review 54.3 #5 : `businessRoles()` mappe administratif|administratifs
+        // `businessRoles` mappe administratif|administratifs
         // |admin → 'administratif', mais le manifest livré ne visait que
         // admin/prof/eleve — une population réelle, écrite telle quelle par la
-        // sync, ouvrait donc une gaufre SYSTÉMATIQUEMENT vide le jour de la
-        // clôture de l'epic. La documentation est le contre-exemple parfait
+        // sync, ouvrait donc une gaufre SYSTÉMATIQUEMENT vide. La documentation
+        // est le contre-exemple parfait
         // d'une application réservée aux enseignants et aux élèves : le rôle a
         // été ajouté au manifest (une chaîne, aucun code).
         $this->integratedLink('doc', 'Documentation', ['admin', 'prof', 'eleve', 'administratif']);
@@ -155,7 +155,7 @@ class AppLauncherTest extends TestCase
             ->assertSeeHtml('data-testid="launcher-tile-doc"');
     }
 
-    // ── AC2 — ensemble exact des intégrées de type link ─────────────────────
+    // — ensemble exact des intégrées de type link
 
     #[Test]
     public function an_available_extension_never_appears_even_if_visible(): void
@@ -219,7 +219,7 @@ class AppLauncherTest extends TestCase
     #[Test]
     public function integrate_then_uninstall_toggles_the_tile_across_renders(): void
     {
-        // Solde l'AC d'epic 54.2 : « sa tuile disparaît du lanceur ».
+        // Solde l'AC d' : « sa tuile disparaît du lanceur ».
         $source = ExtensionSource::factory()->bundled()->create();
         $extension = Extension::factory()->link('/doc')->create([
             'extension_source_id' => $source->id,
@@ -254,7 +254,7 @@ class AppLauncherTest extends TestCase
         self::assertStringNotContainsString('hidden', $this->emptyBlockTag($html));
     }
 
-    // ── AC3 — état vide propre ───────────────────────────────────────────────
+    // — état vide propre
 
     /**
      * Extrait la balise ouvrante du bloc d'état vide.
@@ -371,8 +371,6 @@ class AppLauncherTest extends TestCase
         }
     }
 
-    // ── NFR9 — 1 requête SQL, zéro HTTP ──────────────────────────────────────
-
     #[Test]
     public function rendering_the_launcher_emits_exactly_one_extensions_query_and_no_http(): void
     {
@@ -414,12 +412,10 @@ class AppLauncherTest extends TestCase
         self::assertCount(0, $auditHits, 'zéro requête sur "extension_audit_logs" (lecture seule)');
     }
 
-    // ── NFR6 — dégradation gracieuse : le lanceur ne fait jamais tomber SE5 ──
-
     #[Test]
     public function an_unreadable_registry_degrades_to_the_empty_state_instead_of_500ing(): void
     {
-        // ⚠️ LE test le plus important de la story. La navbar est rendue par
+        // ⚠️ LE test le plus important du fichier. La navbar est rendue par
         // `layouts::app` ET `layouts::legacy-embed` : sur TOUTE page
         // authentifiée du produit. Sans garde, une table `extensions` absente
         // faisait tomber l'INTÉGRALITÉ de SE5 en 500, y compris des pages sans
@@ -427,11 +423,11 @@ class AppLauncherTest extends TestCase
         //
         // Ce n'est pas théorique : `scripts/update.sh` sert le code neuf pendant
         // tout composer + npm + build VitePress AVANT de lancer
-        // `migrate --force`. La release qui livre l'Epic 54 traverse donc
-        // forcément une fenêtre de plusieurs minutes où la table n'existe pas.
+        // `migrate --force`. Une release traverse donc forcément une fenêtre de
+        // plusieurs minutes où la table n'existe pas.
         //
         // C'est ce test — pas une table hand-rollée recopiée dans les tests de
-        // page — qui prouve NFR6.
+        // page — qui prouve la dégradation gracieuse.
         $this->actingAs($this->makeUser('prof'));
 
         Schema::drop('extensions');
@@ -446,19 +442,14 @@ class AppLauncherTest extends TestCase
         self::assertStringContainsString('class="dropdown dropdown-start"', $this->rootTag($html));
     }
 
-    // ── FR14 — aucune route, aucun middleware, aucune garde ──────────────────
-
     #[Test]
     public function the_launcher_registers_no_route_of_its_own(): void
     {
-        // ⚠️ Ce test inspectait auparavant `git diff`/`git status` sur les
-        // fichiers de routes. Trois défauts : il testait l'ARBRE DE TRAVAIL du
-        // développeur (toute story future touchant légitimement web.php faisait
-        // échouer le test du lanceur — un piège pour l'équipe entière) ; il
-        // était VACUOUS là où il aurait compté (`@shell_exec` + `2>/dev/null` :
-        // sans `.git` — la VM n'en a pas — ou avec `shell_exec` désactivé, il
-        // passait sans rien vérifier) ; et il ne démontrait pas FR14.
-        // On assert désormais l'objet réel : la table de routage.
+        // ⚠️ L'objet asserté est la table de routage, jamais `git diff`/`git
+        // status` sur les fichiers de routes : cela testerait l'ARBRE DE TRAVAIL
+        // du développeur (tout ajout légitime à web.php ferait échouer le test du
+        // lanceur) et resterait VACUOUS sans `.git` — la VM n'en a pas — ou avec
+        // `shell_exec` désactivé.
         $extensionRoutes = collect(Route::getRoutes()->getRoutes())
             ->map(static fn ($r): string => (string) $r->uri())
             ->filter(static fn (string $uri): bool => str_contains($uri, 'extension'))
@@ -477,8 +468,8 @@ class AppLauncherTest extends TestCase
     #[Test]
     public function masking_a_tile_is_not_a_protection_the_target_stays_reachable(): void
     {
-        // FR14 littéral : « la tuile est un affichage, l'autorisation réelle
-        // reste vérifiée côté extension ». Le seul test qui le DÉMONTRE : un
+        // La tuile est un affichage, pas une garde : l'autorisation réelle
+        // reste vérifiée côté extension. Le seul test qui le DÉMONTRE : un
         // utilisateur hors visibilité n'a pas la tuile, et atteint pourtant la
         // cible — SE5 n'a posé aucune garde devant `entry_url`. Si un jour
         // quelqu'un « sécurise » le lanceur en ajoutant un middleware sur la
@@ -530,15 +521,12 @@ class AppLauncherTest extends TestCase
         }
     }
 
-    // =====================================================================
-    // Story 56.5 (AC2, FR35) — badge « Indisponible », et NFR9 RENFORCÉ
-    // =====================================================================
     //
-    // ⚠️ Ajouts en FIN de fichier. Les tests 54.3 — dont
+    // ⚠️ Ajouts en FIN de fichier. Les tests — dont
     // `rendering_the_launcher_emits_exactly_one_extensions_query_and_no_http`
     // et `an_unreadable_registry_degrades_to_the_empty_state_instead_of_500ing`
     // — restent VERBATIM : aucune assertion existante n'a été retouchée ni
-    // relâchée. Ce que 56.5 ajoute, ce sont des tests PLUS forts, pas des
+    // relâchée. Ce que ajoute, ce sont des tests PLUS forts, pas des
     // assouplissements.
 
     /** Une `app` installée dont l'état persisté dit `unreachable` (frais). */
@@ -568,7 +556,7 @@ class AppLauncherTest extends TestCase
     }
 
     /**
-     * ⚠️ FR14 — un badge n'est PAS une garde. L'état peut dater de 5 minutes, et
+     * ⚠️ Un badge n'est PAS une garde. L'état peut dater de 5 minutes, et
      * bloquer transformerait un AFFICHAGE en AUTORISATION : la tuile marquée
      * reste un `<a href>` qui pointe la cible provisionnée.
      */
@@ -585,11 +573,10 @@ class AppLauncherTest extends TestCase
             preg_match('/<a\b[^>]*data-testid="launcher-tile-hello"[^>]*>/s', $html, $m),
             'la tuile indisponible doit rester une balise <a>',
         );
-        // L'URL est résolue contre la racine de l'instance depuis le fix
-        // « extensions bad url » de main (une instance servie sous un
-        // sous-chemin perdait son préfixe). Ce que ce test verrouille est
-        // inchangé : la tuile reste un lien vers sa cible, un badge n'est pas
-        // une garde (FR14).
+        // L'URL est résolue contre la racine de l'instance : servie sous un
+        // sous-chemin, une instance perdrait sinon son préfixe. Ce que ce test
+        // verrouille : la tuile reste un lien vers sa cible, un badge n'est pas
+        // une garde.
         self::assertStringContainsString('href="'.url('/ext/hello').'"', $m[0], 'la cible reste atteignable (FR14)');
     }
 
@@ -647,13 +634,12 @@ class AppLauncherTest extends TestCase
     }
 
     /**
-     * NFR9 RENFORCÉ — la contrainte centrale de la story : l'état de santé est
-     * LU dans la MÊME requête unique, et le rendu n'émet toujours AUCUNE requête
-     * HTTP. C'est ce test qui interdit à quiconque de « juste sonder au rendu ».
+     * La contrainte de coût, renforcée : l'état de santé est LU dans la MÊME
+     * requête unique, et le rendu n'émet toujours AUCUNE requête HTTP. C'est ce
+     * test qui interdit à quiconque de « juste sonder au rendu ».
      *
-     * Test NOUVEAU plutôt que modification de celui de 54.3 : le socle reste
-     * intact et cette version-ci est strictement plus forte (elle rend une tuile
-     * BADGÉE, donc elle traverse le chemin de code qui aurait besoin de sonder).
+     * Il est strictement plus fort que celui qui rend un lanceur nu : il rend une
+     * tuile BADGÉE, donc il traverse le chemin de code qui aurait besoin de sonder.
      */
     #[Test]
     public function rendering_a_launcher_with_a_marked_tile_still_emits_one_query_and_zero_http(): void
@@ -678,7 +664,7 @@ class AppLauncherTest extends TestCase
 
         Http::assertNothingSent();
 
-        // Needles QUOTÉS (même discipline que le test 54.3).
+        // Needles QUOTÉS (même discipline que le test).
         $extensionsHits = array_filter(
             $log,
             static fn (array $q): bool => str_contains((string) $q['query'], '"extensions"'),

@@ -23,13 +23,13 @@ use Tests\TestCase;
 use Tests\Unit\Services\Filesystem\Plan\PlanNeutralityMarkers;
 
 /**
- * Story 60.3 — LE PREMIER LIVRABLE VISIBLE de l'epic : voir avant d'appliquer.
+ * LE PREMIER LIVRABLE VISIBLE du plan de fichiers : voir avant d'appliquer.
  *
  * Deux propriétés se tiennent ici, et elles sont de nature différente :
  *  - le backend est AFFICHÉ (il détermine le chemin d'accès de l'utilisateur, ce
  *    n'est pas un détail d'implémentation) mais il n'est PAS éditable — tant
  *    qu'aucun flux ne route par la colonne, un sélecteur serait une propriété qui
- *    ment, la signature de défaut déjà rencontrée deux epics de suite ;
+ *    ment ;
  *  - l'aperçu est NEUTRE : il montre des dossiers, des personnes et des groupes
  *    SE5, jamais un mode de permission, une commande système ou un chemin absolu.
  */
@@ -106,10 +106,6 @@ class SharePlanPreviewTest extends TestCase
         return $share->fresh();
     }
 
-    // =========================================================================
-    // Le backend est VISIBLE
-    // =========================================================================
-
     #[Test]
     public function the_detail_page_shows_the_backend_by_its_label_never_its_raw_value(): void
     {
@@ -136,7 +132,7 @@ class SharePlanPreviewTest extends TestCase
     /**
      * AUCUN contrôle d'édition. On ne se contente pas de ne pas en ajouter : on
      * vérifie qu'il n'y en a pas, parce que c'est le raccourci « tant qu'à faire »
-     * le plus probable de la story suivante.
+     * le plus probable du prochain passage.
      */
     #[Test]
     public function the_backend_is_not_editable_anywhere(): void
@@ -153,10 +149,6 @@ class SharePlanPreviewTest extends TestCase
         // Et la colonne reste hors du remplissage de masse.
         $this->assertNotContains('backend', (new NetworkShare())->getFillable());
     }
-
-    // =========================================================================
-    // L'aperçu
-    // =========================================================================
 
     #[Test]
     public function the_preview_shows_the_plan_and_the_report_of_the_preview_backend(): void
@@ -234,9 +226,9 @@ class SharePlanPreviewTest extends TestCase
      * Le bloc d'aperçu, isolé du reste de la page.
      *
      * L'isolement était VOLONTAIRE, et sa raison a DISPARU : la page portait,
-     * depuis l'Epic 34, un encart de conformité qui affichait des entrées de liste
-     * d'accès brutes, hors du périmètre de la story 60.3. La story 60.4 l'a
-     * assaini, et il a désormais sa propre garde de neutralité, bornée sur son
+     * cet écran a porté un encart de conformité qui affichait des entrées de liste
+     * d'accès brutes. Il a été assaini, et il a désormais sa propre garde de
+     * neutralité, bornée sur son
      * propre marqueur ({@see \Tests\Feature\Livewire\Shares\ShareDriftPanelTest}).
      * On garde deux zones bornées plutôt qu'une mesure de page entière : chaque
      * test dit alors exactement ce qu'il couvre, et un ajout de bloc ne le rend pas
@@ -255,10 +247,6 @@ class SharePlanPreviewTest extends TestCase
 
         return $end === false ? substr($html, $start) : substr($html, $start, $end - $start);
     }
-
-    // =========================================================================
-    // Les sept états, rendus distinctement
-    // =========================================================================
 
     /**
      * Le rendu est alimenté par un rapport de FIXTURE portant chacun des sept

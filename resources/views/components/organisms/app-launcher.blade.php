@@ -5,27 +5,27 @@ use App\Services\Extensions\ExtensionLauncherService;
 use Livewire\Component;
 
 /**
- * Story 54.3 (FR13/FR14/FR15-link/FR16, NFR9, UX-DR2) — Lanceur « gaufre »
+ * Lanceur « gaufre »
  * de la navbar.
  *
  * SFC Livewire d'organisme navbar (précédents exacts dans ce même dossier :
  * `search-modal.blade.php`, `install-log-modal.blade.php`), testable
  * `Livewire::test('components::organisms.app-launcher')`.
  *
- * **NFR9** : les tuiles sont chargées UNE FOIS au `mount()` via
+ * Les tuiles sont chargées UNE FOIS au `mount()` via
  * {@see ExtensionLauncherService::tilesFor()} (1 requête SQL, zéro requête
  * HTTP par construction — les tuiles sont des `<a>` statiques). Pas d'action
  * Livewire, pas de `WithToasts` : ce composant n'a rien à notifier, il
  * affiche.
  *
- * **Story 56.5 (FR35)** : une tuile dont le backend a été observé INJOIGNABLE
+ * **Santé** : une tuile dont le backend a été observé INJOIGNABLE
  * (état persisté par `ext:health:check`, LU dans la même requête — jamais
  * mesuré ici) porte un badge « Indisponible ». Elle **reste cliquable** : l'état
  * peut dater de 5 minutes, et bloquer transformerait un affichage en
- * autorisation (FR14). Le non-admin ne voit aucun détail technique : ni
+ * autorisation. Le non-admin ne voit aucun détail technique : ni
  * catégorie d'incident, ni port, ni date.
  *
- * **FR14** : ce composant décide UNIQUEMENT de la visibilité d'une tuile —
+ * Ce composant décide UNIQUEMENT de la visibilité d'une tuile —
  * aucune route, aucun middleware, aucune garde n'est ajouté devant
  * `entry_url`. Masquer une tuile n'est PAS une protection.
  */
@@ -48,8 +48,8 @@ new class extends Component {
             return;
         }
 
-        // ⚠️ DÉGRADATION GRACIEUSE OBLIGATOIRE (NFR6) — patron littéral de
-        // `pages/admin/extensions/index.blade.php` (Story 54.2) : « une
+        // ⚠️ DÉGRADATION GRACIEUSE OBLIGATOIRE — patron littéral de
+        // `pages/admin/extensions/index.blade.php` : « une
         // bibliothèque illisible ne doit pas rendre une 500 ».
         //
         // Ce composant est rendu par `layouts::app` ET `layouts::legacy-embed`,
@@ -58,7 +58,7 @@ new class extends Component {
         // de SE5 en 500 — y compris des pages sans aucun rapport avec les
         // extensions. Ce n'est pas théorique : `scripts/update.sh` sert le code
         // neuf pendant tout composer+npm+build VitePress AVANT de lancer
-        // `migrate --force`. La release qui livre l'Epic 54 traverse donc
+        // `migrate --force`. La release qui livre l' traverse donc
         // nécessairement une fenêtre de plusieurs minutes où la table n'existe
         // pas encore.
         //

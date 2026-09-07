@@ -7,9 +7,9 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 27.8 — AC1 (retrait total du mode strict/default — STRICT partout).
+ * (retrait total du mode strict/default — STRICT partout).
  *
- * Annule le déplacement opéré par 27.3 : la colonne `mode` du pivot
+ * Annule le déplacement opéré par : la colonne `mode` du pivot
  * `shortcut_assignables` (ajoutée par `2026_06_16_110000_add_mode_to_shortcut_assignables`)
  * n'a plus aucun consommateur — le mécanisme `strict|default` est supprimé,
  * l'agent réapplique TOUJOURS (comportement strict inconditionnel). Droppée
@@ -17,7 +17,7 @@ use Illuminate\Support\Facades\Schema;
  * préserver, pas de back-fill).
  *
  * **Réversibilité** : `down()` RE-CRÉE `mode` VARCHAR(16) nullable (mêmes
- * attributs que 27.3 — pas de default SQL) pour qu'un rollback restaure le
+ * attributs que — pas de default SQL) pour qu'un rollback restaure le
  * schéma 27.3.
  *
  * **Idempotence stricte** : `Schema::hasColumn()` en garde des deux côtés.

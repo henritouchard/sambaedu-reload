@@ -8,14 +8,15 @@ import (
 	"path/filepath"
 )
 
-// Extension du Store 24.5 pour le sous-système compagnon (Story 24.6) —
-// chemins CONTRATS 24.3/24.4 conservés tels quels (le serveur et la doc QA
+// Extension du Store pour le sous-système compagnon
+// chemins CONTRATS conservés tels quels (le serveur et la doc QA
 // les connaissent) :
 //
 //	C:\ProgramData\SambaEdu\Agent\
-//	├── cache\sessions\<SID>\{state.json, etag.txt}   ← cache per-user (24.3)
-//	├── assets\<filename>                              ← cache d'assets (24.4)
-//	└── reports\sessions\<SID>\session-report.json     ← drop per-SID (24.4)
+//
+// ├── cache\sessions\<SID>\{state.json, etag.txt} ← cache per-user
+// ├── assets\<filename> ← cache d'assets
+// └── reports\sessions\<SID>\session-report.json ← drop per-SID
 //
 //	%LOCALAPPDATA%\SambaEdu\Agent\                      ← racine PER-USER
 //	├── applied-state.json   (dernier-appliqué §5, per-user)
@@ -24,7 +25,7 @@ import (
 //
 // ACL — posées À LA CRÉATION des répertoires, les fichiers HÉRITENT (jamais
 // de ré-ACL des tmp : un icacls explicite SYSTEM+Admins retirerait le R/M du
-// user — acquis 24.3). Injectées par le binaire Windows, nil = no-op (tests
+// user — acquis). Injectées par le binaire Windows, nil = no-op (tests
 // hôte Linux) :
 //   - cache\sessions\<SID>\ : SYSTEM F, Administrators F, <SID>:(OI)(CI)R ;
 //   - assets\               : SYSTEM F, Administrators F, Users:(OI)(CI)R ;
@@ -41,15 +42,13 @@ const (
 
 	// SessionReportMaxBytes : garde-fou de collecte — un drop user est une
 	// entrée NON fiable (le user peut forger le sien), taille plafonnée
-	// AVANT parse (frontière de confiance 24.4).
+	// AVANT parse (frontière de confiance).
 	SessionReportMaxBytes = 262144 // 256 KiB
 )
 
 // SessionACL : ACL d'un répertoire per-SID (cache R ou drop M), injectée par
 // le binaire Windows. nil = no-op (tests hôte).
 type SessionACL func(path, sid string) error
-
-// --- Chemins (contrats 24.3/24.4) -------------------------------------------------
 
 func (s *Store) SessionsCacheRoot() string {
 	return filepath.Join(s.CacheDir(), sessionsDirName)
@@ -68,7 +67,7 @@ func (s *Store) SessionEtagPath(sid string) string {
 }
 
 // SessionAppliedStatePath : dernier-appliqué de la passe SYSTEM PAR-SESSION
-// (Story 35.7, piège n°8) — cache\sessions\<SID>\applied-state.json. Écrit par
+// — cache\sessions\<SID>\applied-state.json. Écrit par
 // SYSTEM (WriteAppliedState atomique) dans le répertoire per-SID existant : le
 // fichier HÉRITE de l'ACL <SID>:R posée à la création (lecture user
 // inoffensive — hashes/timestamps opaques, iso justification de l'applied-state
@@ -89,7 +88,7 @@ func (s *Store) AssetPath(filename string) string {
 }
 
 // IconsDir : cache des icônes UPLOADÉES de raccourcis content-addressed
-// (Story 27.7) — C:\ProgramData\SambaEdu\Agent\icons\<sha>.ico. Distinct du
+// C:\ProgramData\SambaEdu\Agent\icons\<sha>.ico. Distinct du
 // cache d'assets wallpaper (transport différent : GET HTTP statique sans
 // token vs Client token'd) — mais MÊME ACL (Users:R, un .ico n'est pas un
 // secret et le compagnon doit pointer l'IconLocation dessus).
@@ -123,8 +122,8 @@ func (s *Store) EnsureIconsDir(acl func(path string) error) error {
 	return nil
 }
 
-// UpdateDir : répertoire de staging des binaires d'auto-update (Story 25.2,
-// décision n° 5) — C:\ProgramData\SambaEdu\Agent\update\. Le téléchargement
+// UpdateDir : répertoire de staging des binaires d'auto-update
+// — C:\ProgramData\SambaEdu\Agent\update\. Le téléchargement
 // ET les deux vérifications (SHA-256, Authenticode) s'y font ; Program Files
 // n'est touché qu'à l'instant du rename final du swap. ACL SYSTEM (pas de
 // Users:R, contrairement aux assets : un binaire stagé n'est pas affiché).
@@ -173,8 +172,6 @@ func (s *Store) SessionReportPath(sid string) string {
 	return filepath.Join(s.SessionReportDir(sid), sessionReportFileName)
 }
 
-// --- Cache de session per-SID (24.3) ----------------------------------------------
-
 // EnsureSessionCacheDir crée le répertoire de cache du SID avec son ACL
 // (SYSTEM F, Admins F, <SID>:R) — les parents (cache\, sessions\) restent
 // SYSTEM+Admins (le user n'énumère pas l'arborescence mais ouvre son fichier
@@ -204,7 +201,7 @@ func (s *Store) ReadSessionEtag(sid string) string {
 
 // WriteSessionStateCache persiste l'enveloppe BRUTE + l'ETag verbatim du
 // contexte user. Écritures atomiques tmp+PID SANS ré-ACL : les fichiers
-// naissent DANS le répertoire per-SID et héritent de son ACL (acquis 24.3 —
+// naissent DANS le répertoire per-SID et héritent de son ACL (acquis
 // un icacls explicite retirerait le R du user).
 func (s *Store) WriteSessionStateCache(sid string, state []byte, etag string, acl SessionACL) error {
 	if err := s.EnsureSessionCacheDir(sid, acl); err != nil {
@@ -223,8 +220,6 @@ func (s *Store) ReadSessionStateCache(sid string) ([]byte, error) {
 	return os.ReadFile(s.SessionStatePath(sid))
 }
 
-// --- Cache d'assets (24.4) ----------------------------------------------------------
-
 // EnsureAssetsDir crée assets\ avec son ACL (SYSTEM F, Admins F, Users R —
 // un wallpaper n'est pas un secret et la session doit l'afficher). acl nil =
 // no-op (tests hôte). Idempotent.
@@ -242,8 +237,6 @@ func (s *Store) EnsureAssetsDir(acl func(path string) error) error {
 
 	return nil
 }
-
-// --- Drop per-SID (24.4) -------------------------------------------------------------
 
 // EnsureSessionReportDir crée le répertoire de drop du SID avec son ACL
 // (<SID>:M — le user ÉCRIT son session-report.json, ne lit pas les drops des
@@ -274,8 +267,6 @@ func (s *Store) ensureSidDir(dir, sid string, acl SessionACL) error {
 
 	return nil
 }
-
-// --- Applied-state per-user (mode default §5, Story 24.4 décision n° 5) -------------
 
 // ReadAppliedState charge un dernier-appliqué (map type → {hash, applied_at})
 // depuis path. Fichier absent ou corrompu = map vide + corrupted=true pour le
@@ -308,9 +299,7 @@ func WriteAppliedState(path string, state AppliedState) error {
 	return WriteFileAtomic(path, raw)
 }
 
-// --- Drop session-report (écrit par le compagnon) ------------------------------------
-
-// sessionReportDrop est le format du drop per-SID 24.4 :
+// sessionReportDrop est le format du drop per-SID :
 // {generated_at, items: [{type, status, hash, detail?}]}.
 type sessionReportDrop struct {
 	GeneratedAt string       `json:"generated_at"`
@@ -327,7 +316,7 @@ func BuildSessionReportDrop(generatedAt string, items []ReportItem) ([]byte, err
 }
 
 // WriteFileAtomic : écriture atomique générique — fichier temporaire suffixé
-// PID + rename (convention TOCTOU 24.3 conservée PARTOUT), SANS pose d'ACL
+// PID + rename (convention TOCTOU conservée PARTOUT), SANS pose d'ACL
 // (le fichier hérite de l'ACL du répertoire cible — cache/drop per-SID,
 // assets, profil user).
 func WriteFileAtomic(path string, data []byte) error {
@@ -343,8 +332,6 @@ func WriteFileAtomic(path string, data []byte) error {
 
 	return nil
 }
-
-// --- Racine per-user (%LOCALAPPDATA%\SambaEdu\Agent) ---------------------------------
 
 // UserStore : chemins du profil user du compagnon. Racine paramétrable
 // (testabilité hôte) ; en production Windows = %LOCALAPPDATA%\SambaEdu\Agent.

@@ -5,32 +5,32 @@ import (
 	"sort"
 )
 
-// Handler `printers` (aggregate / scope session) — Story 27.2. Logique PURE,
+// Handler `printers` (aggregate / scope session) —. Logique PURE,
 // OS-agnostique (les opérations d'installation d'imprimante réseau réelles sont
 // injectées via PrinterOps) → testée sur l'hôte ; agent/windows ne fait que
 // câbler AddPrinterConnection/SetDefaultPrinter.
 //
-// CONVERGENCE level-triggered (décision n° 8), JAMAIS accumulation :
+// CONVERGENCE level-triggered, JAMAIS accumulation :
 //   - test  : l'ensemble des imprimantes GÉRÉES installées == l'union cible ∧
 //     l'imprimante par défaut == celle marquée `is_default` ?
 //   - apply : installer les manquantes + désinstaller les gérées sorties des
 //     règles + poser le défaut. IDEMPOTENT (deux passes sur état stable = aucune
 //     écriture).
 //
-// MARQUEUR de périmètre (décision n° 8) : seules les imprimantes GÉRÉES par
+// MARQUEUR de périmètre : seules les imprimantes GÉRÉES par
 // l'agent (connexions au partage Samba `\\<se4fs>\<cups_name>`) sont listées,
 // JAMAIS une imprimante installée par l'utilisateur hors SambaEdu. Une
 // imprimante user homonyme (même connexion qu'une cible) est IGNORÉE via
 // Blocked() — ni désinstallée, ni ré-installée : les autres imprimantes
-// convergent quand même (iso shortcuts 27.1 #1).
+// convergent quand même (iso shortcuts).
 //
 // La `connection` (`\\<se4fs>\<cups_name>`) est résolue CÔTÉ SERVEUR (connexion
-// logique, décision n° 4) ; l'agent substitue seulement le token `<se4fs>`. Le
+// logique) ; l'agent substitue seulement le token `<se4fs>`. Le
 // défaut (`is_default`) est résolu CÔTÉ SERVEUR (provider : physique > logique) ;
 // l'agent applique bêtement le marqueur reçu, il ne recalcule JAMAIS la
 // spécificité.
 //
-// ISOLATION des erreurs (AC4) : si le serveur d'impression est injoignable à
+// ISOLATION des erreurs : si le serveur d'impression est injoignable à
 // l'apply, l'op renvoie une erreur → le moteur (engine.go RunPass) rend
 // {status: error, detail} pour le SEUL type `printers` ; `drives` et les autres
 // types continuent. Retry au cycle suivant (level-triggered).
@@ -213,7 +213,7 @@ func (h *PrintersHandler) Apply(items []StateItem) error {
 	sort.Strings(conns)
 	for _, conn := range conns {
 		// Imprimante utilisateur (homonyme hors périmètre) : on ne l'écrase
-		// JAMAIS (décision n° 8). On saute (les autres convergent quand même).
+		// JAMAIS. On saute (les autres convergent quand même).
 		blocked, err := h.Ops.Blocked(conn)
 		if err != nil {
 			return err

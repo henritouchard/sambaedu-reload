@@ -9,8 +9,6 @@ use App\Ipxe\Support\WindowsXmlPlaceholders;
 use App\Models\Workstation;
 
 /**
- * Story 3.5 — D7 / AC3.1.
- *
  * Service d'assemblage dynamique du script bash WinPE consommé par WinPE
  * juste après le boot wimboot+winpeshl pour monter le partage SMB et lancer
  * `setup.exe /unattend:unattend.xml`.
@@ -24,7 +22,7 @@ use App\Models\Workstation;
  *    Chaque ligne du script généré DOIT se terminer par `\r\n` (test unit
  *    `it_contains_only_crlf_line_endings`).
  *  - **Sanitization shell-arg** : tous les values interpolés (config, hostname,
- *    AD domain, passwords) passent par {@see WindowsXmlPlaceholders::sanitizeShellArg()}
+ *  AD domain, passwords) passent par {@see WindowsXmlPlaceholders::sanitizeShellArg()}
  *    qui rejette les chars d'injection cmd.exe (`;`, `&`, `|`, backtick, etc.).
  *
  * **Divergence legacy assumée (2026-06-04)** : les lignes post-`setup.exe`

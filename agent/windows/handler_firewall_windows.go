@@ -12,12 +12,12 @@ import (
 	"sambaedu/agent/shared"
 )
 
-// Câblage Windows du handler `firewall` (Story 36.2, piège #6) — pilotage du
+// Câblage Windows du handler `firewall` — pilotage du
 // pare-feu Windows via COM INetFwPolicy2 EN GO NATIF (vtables syscall pures,
 // ZÉRO dépendance ajoutée : ni netsh, ni go-ole). Deux raisons excluent netsh :
 // (1) `netsh advfirewall firewall add rule` ne sait PAS poser `Grouping` (le
 // paramètre `group` n'active que des groupes prédéfinis) — or le Grouping EST
-// notre marqueur de propriété (D4) ; (2) le shell-out est fragile. go-ole serait
+// notre marqueur de propriété ; (2) le shell-out est fragile. go-ole serait
 // une nouvelle dépendance (go.mod = x/sys + x/text seuls) : refusée. Le
 // précédent maison est `handler_shortcuts_windows.go` (COM IShellLink en vtables
 // syscall). Ici : CoCreateInstance(HNetCfg.FwPolicy2) → INetFwPolicy2 →
@@ -34,8 +34,6 @@ import (
 // (l'ordre inverse échoue). `Profiles = ALL`, `Enabled = TRUE` sur toute règle
 // posée. Une mutation = Remove + Add (recréation atomique, jamais in-place) —
 // gérée par le handler shared. SERVICE SYSTEM seul (câblé main_windows.go).
-
-// --- GUIDs COM (netfw.h) -----------------------------------------------------
 
 var (
 	clsidNetFwPolicy2 = windows.GUID{Data1: 0xE2B3C97F, Data2: 0x6AE1, Data3: 0x41AC, Data4: [8]byte{0x81, 0x7A, 0xF6, 0xF9, 0x21, 0x66, 0xD7, 0xDD}}
@@ -69,8 +67,6 @@ var (
 	procSysFreeString  = modOleaut32.NewProc("SysFreeString")
 )
 
-// --- Vtables (ordre ABI figé, netfw.h) ---------------------------------------
-
 // iDispatchVtbl : préfixe IUnknown (index 0..2, déclaré dans
 // handler_shortcuts_windows.go) + IDispatch (index 3..6). Partagé par toutes
 // les interfaces INetFw* (dual).
@@ -98,7 +94,7 @@ type iNetFwPolicy2Vtbl struct {
 	putUnicastResponsesToMulticastBroadcastDisabled uintptr // 17
 	getRules                                        uintptr // 18
 	// (get_ServiceRestriction, EnableRuleGroup, DefaultInboundAction… non
-	// utilisés — JAMAIS de mutation de politique par défaut/service, piège #11.)
+	// utilisés — JAMAIS de mutation de politique par défaut/service.)
 }
 
 type iNetFwPolicy2 struct{ vtbl *iNetFwPolicy2Vtbl }
@@ -118,42 +114,42 @@ type iNetFwRules struct{ vtbl *iNetFwRulesVtbl }
 // INetFwRule — table COMPLÈTE dans l'ordre ABI (get/put par propriété).
 type iNetFwRuleVtbl struct {
 	iDispatchVtbl
-	getName             uintptr // 7
-	putName             uintptr // 8
-	getDescription      uintptr // 9
-	putDescription      uintptr // 10
-	getApplicationName  uintptr // 11
-	putApplicationName  uintptr // 12
-	getServiceName      uintptr // 13
-	putServiceName      uintptr // 14
-	getProtocol         uintptr // 15
-	putProtocol         uintptr // 16
-	getLocalPorts       uintptr // 17
-	putLocalPorts       uintptr // 18
-	getRemotePorts      uintptr // 19
-	putRemotePorts      uintptr // 20
-	getLocalAddresses   uintptr // 21
-	putLocalAddresses   uintptr // 22
-	getRemoteAddresses  uintptr // 23
-	putRemoteAddresses  uintptr // 24
+	getName              uintptr // 7
+	putName              uintptr // 8
+	getDescription       uintptr // 9
+	putDescription       uintptr // 10
+	getApplicationName   uintptr // 11
+	putApplicationName   uintptr // 12
+	getServiceName       uintptr // 13
+	putServiceName       uintptr // 14
+	getProtocol          uintptr // 15
+	putProtocol          uintptr // 16
+	getLocalPorts        uintptr // 17
+	putLocalPorts        uintptr // 18
+	getRemotePorts       uintptr // 19
+	putRemotePorts       uintptr // 20
+	getLocalAddresses    uintptr // 21
+	putLocalAddresses    uintptr // 22
+	getRemoteAddresses   uintptr // 23
+	putRemoteAddresses   uintptr // 24
 	getIcmpTypesAndCodes uintptr // 25
 	putIcmpTypesAndCodes uintptr // 26
-	getDirection        uintptr // 27
-	putDirection        uintptr // 28
-	getInterfaces       uintptr // 29
-	putInterfaces       uintptr // 30
-	getInterfaceTypes   uintptr // 31
-	putInterfaceTypes   uintptr // 32
-	getEnabled          uintptr // 33
-	putEnabled          uintptr // 34
-	getGrouping         uintptr // 35
-	putGrouping         uintptr // 36
-	getProfiles         uintptr // 37
-	putProfiles         uintptr // 38
-	getEdgeTraversal    uintptr // 39
-	putEdgeTraversal    uintptr // 40
-	getAction           uintptr // 41
-	putAction           uintptr // 42
+	getDirection         uintptr // 27
+	putDirection         uintptr // 28
+	getInterfaces        uintptr // 29
+	putInterfaces        uintptr // 30
+	getInterfaceTypes    uintptr // 31
+	putInterfaceTypes    uintptr // 32
+	getEnabled           uintptr // 33
+	putEnabled           uintptr // 34
+	getGrouping          uintptr // 35
+	putGrouping          uintptr // 36
+	getProfiles          uintptr // 37
+	putProfiles          uintptr // 38
+	getEdgeTraversal     uintptr // 39
+	putEdgeTraversal     uintptr // 40
+	getAction            uintptr // 41
+	putAction            uintptr // 42
 }
 
 type iNetFwRule struct{ vtbl *iNetFwRuleVtbl }
@@ -180,8 +176,6 @@ type variant struct {
 	_          uintptr
 }
 
-// --- firewallOps : impl FirewallOps de production (Windows COM) --------------
-
 type firewallOps struct {
 	log *shared.Logger
 }
@@ -195,9 +189,9 @@ func (o *firewallOps) logf(format string, args ...any) {
 // withFwRules initialise COM, crée INetFwPolicy2, résout get_Rules → INetFwRules,
 // exécute fn, libère tout (jamais de fuite de référence).
 func withFwRules(fn func(rules *iNetFwRules) error) (retErr error) {
-	// Épingle la goroutine à SON thread OS pour TOUTE la durée de la session COM
-	// (corr. review #2). CoInitializeEx ouvre un apartment STA lié au thread
-	// courant ; sans ce verrou, la préemption asynchrone de Go (≥1.14) peut
+	// Épingle la goroutine à SON thread OS pour TOUTE la durée de la session
+	// COM. CoInitializeEx ouvre un apartment STA lié au thread courant ; sans
+	// ce verrou, la préemption asynchrone de Go (≥1.14) peut
 	// migrer la goroutine entre deux SyscallN d'une même session STA — usage COM
 	// illégal aux HRESULT imprévisibles. LockOSThread AVANT CoInitializeEx et
 	// UnlockOSThread APRÈS CoUninitialize (ordre des defers : verrou posé en
@@ -238,7 +232,7 @@ func withFwRules(fn func(rules *iNetFwRules) error) (retErr error) {
 
 // ListGroupRules énumère les règles du GROUPE `group` (via get__NewEnum →
 // IEnumVARIANT), filtrées sur leur `Grouping`. Les règles hors groupe ne sont
-// JAMAIS retournées (D4).
+// JAMAIS retournées.
 func (o *firewallOps) ListGroupRules(group string) ([]shared.FwRule, error) {
 	var out []shared.FwRule
 	err := withFwRules(func(rules *iNetFwRules) error {
@@ -329,7 +323,7 @@ func (o *firewallOps) readRule(rule *iNetFwRule, grouping string) shared.FwRule 
 }
 
 // AddRule crée une règle et l'ajoute au conteneur (ordre put_Protocol AVANT les
-// ports, piège #6 ; Profiles=ALL, Enabled=TRUE, Grouping posé).
+// ports ; Profiles=ALL, Enabled=TRUE, Grouping posé).
 func (o *firewallOps) AddRule(r shared.FwRule) error {
 	return withFwRules(func(rules *iNetFwRules) error {
 		var rulePtr unsafe.Pointer
@@ -408,8 +402,6 @@ func (o *firewallOps) RemoveRule(name string) error {
 	})
 }
 
-// --- Helpers get/put ---------------------------------------------------------
-
 // iUnknownOnly : vue IUnknown seule (pour QueryInterface/Release sur un pointeur
 // d'interface dont on ne connaît que le préfixe IUnknown).
 type iUnknownOnly struct{ vtbl *iUnknownVtbl }
@@ -478,8 +470,6 @@ func ruleGetBool(rule *iNetFwRule, method uintptr) bool {
 	return v != 0
 }
 
-// --- BSTR (oleaut32) ---------------------------------------------------------
-
 func sysAllocString(s string) (uintptr, error) {
 	p, err := windows.UTF16PtrFromString(s)
 	if err != nil {
@@ -498,8 +488,6 @@ func sysFreeString(bstr uintptr) {
 		procSysFreeString.Call(bstr)
 	}
 }
-
-// --- Traductions enum ↔ NET_FW_* / CSV ---------------------------------------
 
 func directionToLong(d string) int32 {
 	if d == "in" {

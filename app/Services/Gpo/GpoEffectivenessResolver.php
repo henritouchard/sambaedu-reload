@@ -21,7 +21,7 @@ use Throwable;
  * (câblé, lui, sur la seule GPO « applications ») à l'ensemble du domaine, et
  * l'inverse pour le rendre O(profondeur de chaîne) au lieu de O(nombre de GPO) :
  *
- *   - l'Inspector interroge, PAR GPO, `(gPLink=*<guid>*)` sur tout l'annuaire —
+ *  - l'Inspector interroge, PAR GPO, `(gPLink=*<guid>*)` sur tout l'annuaire
  *     soit N scans globaux, coûteux en AD fédéré (~75 collèges) ;
  *   - ici on lit `gPLink` + `gPOptions` sur les quelques nœuds de la chaîne
  *     périmètre → racine (≈2 à 4), plus UNE recherche en sous-arbre du périmètre.

@@ -10,10 +10,9 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 63.4 — **LES QUATRE DÉFAUTS PAR PROFIL DEVIENNENT UN DÉFAUT D'INSTANCE.**
+ * **LES QUATRE DÉFAUTS PAR PROFIL DEVIENNENT UN DÉFAUT D'INSTANCE.**
  * Une fois, ici, jamais ailleurs.
  *
- * ---------------------------------------------------------------------------
  * **CE QUE CETTE MIGRATION FERME.** Deux magasins ne se parlaient pas. L'écran des
  * réglages écrivait une clé de `system_settings` (`quota.defaults`, une grille de
  * quatre « profils » × deux partitions) que **PERSONNE ne lisait**. La résolution,
@@ -22,7 +21,6 @@ use Illuminate\Support\Facades\Schema;
  * monde était donc illimité — en silence — pendant que l'écran répondait
  * « Réglages enregistrés ».
  *
- * ---------------------------------------------------------------------------
  * **CETTE MIGRATION NE RÉTRÉCIT JAMAIS UN PLAFOND. C'EST SA RÈGLE PREMIÈRE.**
  *
  * Un plafond qui rétrécit **bloque des gens en écriture** sans que personne n'ait
@@ -44,7 +42,6 @@ use Illuminate\Support\Facades\Schema;
  * main, ce qui a été regroupé et avec quelles valeurs (clé de réglage
  * {@see self::COLLAPSE_NOTICE_KEY}). L'avertissement disparaît au premier
  * enregistrement manuel.
- * ---------------------------------------------------------------------------
  *
  * **LA TABLE DE DÉCISION, par partition et dans cet ordre :**
  *
@@ -56,7 +53,7 @@ use Illuminate\Support\Facades\Schema;
  *     cellules pour cette partition est reprise**, le plafond dur recalculé par le
  *     pourcentage de dépassement de cette cellule. C'est la SEULE intention que
  *     l'administrateur ait jamais exprimée, et la jeter laisserait l'instance dans
- *     l'état « illimité pour tout le monde » que la story existe pour fermer. **Ce
+ *     l'état « illimité pour tout le monde » que cette migration ferme. **Ce
  *     cas est nommé distinctement** — au journal d'audit et au résumé — parce qu'il
  *     CHANGE le comportement : un plafond qui n'était appliqué à personne devient un
  *     plafond réel.
@@ -92,7 +89,6 @@ use Illuminate\Support\Facades\Schema;
  * plus aucun code ne lit. L'effacer aurait détruit la seule trace de ce que
  * l'administrateur avait saisi, au moment précis où cette trace sert à expliquer ce
  * qui vient d'être repris.
- * ---------------------------------------------------------------------------
  */
 return new class extends Migration
 {
@@ -186,7 +182,7 @@ return new class extends Migration
      * n'est pas dans ce code, il est dans le journal d'audit : chaque règle
      * abandonnée y a laissé ses valeurs sous `old_values`, `performed_by =
      * 'migration:63.4'`. Le chemin de restauration manuelle est écrit dans le
-     * runbook QA (`docs/qa/domains/filesystem.md`, section « Story 63.4 ») — s'il
+     * runbook QA (`docs/qa/domains/filesystem.md`, section « ») — s'il
      * n'est pas écrit, il n'existe pas.
      */
     public function down(): void

@@ -9,14 +9,14 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
 /**
- * Story 4-4 (v0.2 D7) — Validation de création d'une programmation.
+ * Validation de création d'une programmation.
  *
  * Règles conditionnelles selon `mode` :
  *  - recurring → days_of_week + time_of_day + timezone requis ; run_at prohibé.
  *  - one_shot  → run_at requis + after:now ; days_of_week / time_of_day / timezone prohibés.
  *
  * L'exclusivité est aussi garantie au niveau DB par la contrainte CHECK
- * `wgs_mode_exclusivity` (défense en profondeur AC20).
+ * `wgs_mode_exclusivity` (défense en profondeur).
  */
 class StoreWorkstationGroupScheduleRequest extends FormRequest
 {

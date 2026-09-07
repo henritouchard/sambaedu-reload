@@ -9,7 +9,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 3.4 — AC1.3 / T1.3.
+ * T1.3.
  *
  * Tests unitaires du helper {@see PreseedPlaceholders} (sanitization +
  * interpolation des fragments preseed).

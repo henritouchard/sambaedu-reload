@@ -11,9 +11,9 @@ use Livewire\Attributes\Computed;
 use Livewire\Component;
 
 /**
- * Story 25.5 — Surface releases & rings (AC2, AC3).
+ * Surface releases & rings.
  *
- * Seconde façade (à côté des commandes artisan 25.1) sur le SEUL écrivain des
+ * Seconde façade (à côté des commandes artisan) sur le SEUL écrivain des
  * tables release/ring : {@see ReleaseCreationService}. L'UI n'écrit JAMAIS
  * `agent_releases` / `agent_release_rings` directement — elle appelle
  * `target()` (cibler/rollback un ring → log `agent.release.targeted`) et
@@ -77,7 +77,7 @@ return new class extends Component {
         return $this->releases->firstWhere('is_stable', true);
     }
 
-    // ── Cibler un ring sur une version ────────────────────────────────────
+    // Cibler un ring sur une version
 
     public function openTarget(?int $groupId = null): void
     {
@@ -166,7 +166,7 @@ return new class extends Component {
         $this->toastSuccess("Ring « {$ring->workstationGroup->name} » re-ciblé sur la stable {$stable->version} — rollback armé.");
     }
 
-    // ── Définir / rollback la stable par défaut ───────────────────────────
+    // Définir / rollback la stable par défaut
 
     public function openPromote(string $version): void
     {

@@ -9,19 +9,18 @@ use JsonException;
 use RuntimeException;
 
 /**
- * Story 55.3 — La configuration que le témoin a REÇUE, et sa seule source.
+ * La configuration que le témoin a REÇUE, et sa seule source.
  *
  * Un `client_id`, un `client_secret`, un `issuer`, une `redirect_uri` : c'est
  * tout ce qu'une extension possède du fournisseur. Elle ne va PAS chercher son
- * client dans `oidc_clients` (FR24) — elle lit le fichier que l'opérateur lui a
- * posé, exactement comme l'Epic 56 le posera automatiquement à l'installation
- * d'une extension `app`.
+ * client dans `oidc_clients` — elle lit le fichier que l'opérateur lui a posé,
+ * exactement comme il le sera à l'installation d'une extension `app`.
  *
  * **Fail-closed** : fichier absent, illisible, JSON invalide ou champ manquant
  * ⇒ `null`. Le témoin affiche alors une erreur EXPLICITE (503), jamais un
  * contournement, jamais une valeur devinée depuis la configuration du serveur.
  *
- * **NFR3** : le fichier est écrit en 0600 sous `umask(0077)` (aucune fenêtre
+ * Le fichier est écrit en 0600 sous `umask(0077)` (aucune fenêtre
  * pendant laquelle le secret serait lisible par un autre processus local), et
  * le secret n'est ni affiché, ni journalisé, ni sérialisé ailleurs.
  *
@@ -181,7 +180,7 @@ final class WitnessCredentials
         $webOwner = (string) config('oidc.web_owner', '');
 
         // ⚠️ `config('app.env')` et NON le helper d'environnement du
-        // conteneur employé par le patron copié : la quarantaine FR24 interdit
+        // conteneur : la quarantaine du témoin interdit
         // toute résolution par le conteneur depuis `app/OidcWitness/` (règle
         // « résolution par le conteneur », `ExtensionIsolationTest`) — et elle
         // scanne le TEXTE, commentaires compris, donc le nom même de ce helper

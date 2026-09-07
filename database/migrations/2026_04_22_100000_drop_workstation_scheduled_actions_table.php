@@ -6,12 +6,12 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 4-4 (tâche 2.1) — Drop de la table orpheline `workstation_scheduled_actions`.
+ * -4 (tâche) — Drop de la table orpheline `workstation_scheduled_actions`.
  *
  * La table créée par 2026_03_16_100000 n'a jamais été utilisée par aucun modèle,
  * service ni UI. Son schéma (`day` VARCHAR unitaire, pas de `days_of_week` ARRAY,
  * pas de timezone, pas d'audit, pas de mode `one_shot`) est incompatible avec la
- * représentation retenue (D3 + D7). Drop idempotent — safe si déjà absente.
+ * représentation retenue. Drop idempotent — safe si déjà absente.
  *
  * Rollback : recrée le schéma d'origine (pour éviter un migrate:rollback cassé).
  */

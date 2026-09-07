@@ -14,7 +14,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Tests feature — commande `apps:import-customizations-from-legacy` (AC 12).
+ * Tests feature — commande `apps:import-customizations-from-legacy`.
  */
 class ImportCustomizationsFromLegacyCommandTest extends TestCase
 {

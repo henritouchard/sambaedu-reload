@@ -15,13 +15,13 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 26.3 — Tests unitaires du volet nettoyage natif de RoamingProfileService.
+ * Tests unitaires du volet nettoyage natif de RoamingProfileService.
  *
- * Couvre AC #1/#2/#3/#5/#6 :
+ * Couvre :
  *   - scan mocké (du fake) → map dir=>bytes ;
  *   - extraction login depuis dir versionné (alice.V6 → alice) ;
  *   - détection orphelins (user présent = non-orphelin ; absent = orphelin),
- *     résolution Postgres-only LOWER(login), NFR7 ;
+ *     résolution Postgres-only LOWER(login) ;
  *   - persistance snapshot (colonne profile_snapshot + SystemSetting orphans) ;
  *   - lecteurs cache (taille par login, count orphelins) — aucun FS ;
  *   - garde de sécurité de la purge (refus `..`, refus nom avec `/`, refus si
@@ -86,8 +86,6 @@ class RoamingProfileCleanupTest extends TestCase
         }
     }
 
-    // --------------------------------------------------------------- login extraction
-
     #[Test]
     public function it_extracts_login_from_versioned_profile_dir(): void
     {
@@ -95,8 +93,6 @@ class RoamingProfileCleanupTest extends TestCase
         $this->assertSame('bob', $this->service->loginFromProfileDir('bob.V2.bak'));
         $this->assertSame('carol', $this->service->loginFromProfileDir('carol'));
     }
-
-    // --------------------------------------------------------------- scan (du fake)
 
     #[Test]
     public function it_parses_du_output_and_filters_root_line(): void
@@ -114,7 +110,7 @@ class RoamingProfileCleanupTest extends TestCase
     }
 
     /**
-     * AC #1 (review 26.3 #1) : `du` fusionne stderr (`2>&1`) et sort en code ≠ 0
+     * `du` fusionne stderr (`2>&1`) et sort en code ≠ 0
      * dès qu'UN sous-dossier est illisible, tout en imprimant des tailles VALIDES
      * pour les autres. Les lignes d'erreur `du: …` n'ont pas de tabulation et
      * DOIVENT être ignorées → le snapshot partiel reste exploitable (sinon la
@@ -149,8 +145,6 @@ class RoamingProfileCleanupTest extends TestCase
         $this->assertNull($this->service->scanProfileSizes());
     }
 
-    // --------------------------------------------------------------- orphans
-
     #[Test]
     public function it_detects_orphan_when_user_absent_and_keeps_existing_user(): void
     {
@@ -172,8 +166,6 @@ class RoamingProfileCleanupTest extends TestCase
         $orphans = $this->service->detectOrphans(['alice.V6']);
         $this->assertSame([], $orphans);
     }
-
-    // --------------------------------------------------------------- persist + readers
 
     #[Test]
     public function it_persists_snapshot_to_column_and_settings(): void
@@ -217,8 +209,6 @@ class RoamingProfileCleanupTest extends TestCase
         $this->assertSame(150.0, $this->service->getProfileSizeForLogin('alice'));
     }
 
-    // --------------------------------------------------------------- purge guards
-
     #[Test]
     public function it_skips_purge_for_path_traversal_and_slash_names(): void
     {
@@ -237,7 +227,7 @@ class RoamingProfileCleanupTest extends TestCase
     }
 
     /**
-     * AC #5 (review S1) : si `rename()` échoue (corbeille sur un autre
+     * Si `rename()` échoue (corbeille sur un autre
      * filesystem que /home/profiles — `EXDEV`, config prod fréquente), le
      * déplacement bascule sur `mv` (cross-device). On le vérifie via la méthode
      * `moveToTrash` exposée : source inexistante → rename false → repli `mv`.

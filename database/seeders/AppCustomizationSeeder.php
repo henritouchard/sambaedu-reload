@@ -12,7 +12,7 @@ use App\Models\WorkstationGroup;
 use Illuminate\Database\Seeder;
 
 /**
- * Seeder fixtures — story 4.8. Idempotent (updateOrCreate sur clé composite).
+ * Seeder fixtures —. Idempotent (updateOrCreate sur clé composite).
  *
  * Crée :
  *   - Default étab Firefox avec Homepage + 1 bookmark

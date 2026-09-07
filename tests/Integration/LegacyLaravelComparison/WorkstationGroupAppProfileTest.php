@@ -12,9 +12,9 @@ use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 /**
- * Story 38.7 (AC8) — ce test PROUVE la NON-création automatique d'AppProfile.
+ * Ce test PROUVE la NON-création automatique d'AppProfile.
  *
- * Avant 38.7 : créer un groupe avec `app_profile_name` rempli déclenchait
+ * Avant : créer un groupe avec `app_profile_name` rempli déclenchait
  * l'Observer qui créait un AppProfile homonyme + un CN dans OU=Parcs, et un
  * renommage de groupe renommait tout profil homonyme. Tout cela a été RETIRÉ.
  *

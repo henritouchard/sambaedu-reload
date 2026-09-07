@@ -16,12 +16,12 @@ use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
- * Story 30.2 — Service de mapping refnum : rattache un label « libre » (`free`)
+ * Service de mapping refnum : rattache un label « libre » (`free`)
  * du contrat amont (controlHub) **actif** à un WorkstationGroup, ou l'en détache.
  *
  * Le lien WG↔label est porté par la colonne string nullable
  * `workstation_groups.controlhub_label` (rattachement PAR NOM, cf. décision de
- * design 30.2 — pas de FK dure). L'intégrité référentielle est assurée ICI, à
+ * design — pas de FK dure). L'intégrité référentielle est assurée ICI, à
  * l'assignation : le label doit être un label `free` réellement déclaré par le
  * contrat actif. L'invariant « 1 label max » est applicatif (refus d'un 2e label
  * différent), pas une contrainte DB.
@@ -38,18 +38,18 @@ use Throwable;
  * {@see ContractAssignmentReconciler} — {@see reapplyContractAssignments()}.
  *
  * ⚠️ GARDE-FOU R3 : aucun mot « central » dans ce service, ses méthodes, ses
- *    messages. Vocabulaire imposé : « amont » / `ControlHub*` / `label`. [prd#R3]
- * ⚠️ NFR3 : la lecture du contrat amont n'est injectée que dans le mapping de
+ *    messages. Vocabulaire imposé : « amont » / `ControlHub*` / `label`.
+ * ⚠️ La lecture du contrat amont n'est injectée que dans le mapping de
  *    label ; sans contrat actif, {@see assignLabel()} refuse, {@see detachLabel()}
  *    reste neutre — le comportement parc standalone est inchangé.
  */
 class WorkstationGroupLabelService
 {
     /**
-     * @param  ?UpstreamLockCollisionDetector  $collisionDetector  Story 30.5 —
+     * @param ?UpstreamLockCollisionDetector $collisionDetector
      *         garde prédictive verrou/verrou. Nullable + résolu paresseusement via
      *         le conteneur pour préserver l'instanciation directe `new
-     *         WorkstationGroupLabelService()` (tests 30.2) sans dépendance dure.
+     *  WorkstationGroupLabelService()` (tests) sans dépendance dure.
      */
     public function __construct(
         private readonly ?UpstreamLockCollisionDetector $collisionDetector = null,
@@ -58,21 +58,21 @@ class WorkstationGroupLabelService
     /**
      * Assigne un label libre du contrat amont actif à un WorkstationGroup.
      *
-     * Matrice de refus (ordre : idempotence AVANT tout — cf. review 30.2 #1/#7) :
-     * - groupe déjà labellisé ===  ⇒ no-op idempotent (return, pas d'exception) (AC #4)
-     * - aucun contrat actif       ⇒ {@see LabelAssignmentException::noActiveContract()}
-     * - label absent du contrat   ⇒ {@see LabelAssignmentException::unknown()} (AC #6)
-     * - label `reserved`          ⇒ {@see LabelAssignmentException::reserved()} (AC #5)
-     * - groupe déjà labellisé ≠    ⇒ {@see LabelAssignmentException::alreadyLabeled()} (AC #4)
+     * Matrice de refus (l'idempotence est évaluée AVANT tout) :
+     * - groupe déjà labellisé avec CE label ⇒ no-op idempotent (return, pas d'exception)
+     * - aucun contrat actif ⇒ {@see LabelAssignmentException::noActiveContract()}
+     * - label absent du contrat ⇒ {@see LabelAssignmentException::unknown()}
+     * - label `reserved` ⇒ {@see LabelAssignmentException::reserved()}
+     * - groupe déjà labellisé avec un AUTRE label ⇒ {@see LabelAssignmentException::alreadyLabeled()}
      *
      * ⚠️ Le no-op idempotent est vérifié EN PREMIER (avant la résolution du
      *    contrat) : ré-affirmer le label déjà porté ne doit JAMAIS échouer, même
-     *    si ce label est devenu `reserved`/dangling depuis (réconciliation 28.2)
-     *    ou si le lien amont a été rompu — sinon éditer un autre champ d'un groupe
-     *    labellisé lèverait une fausse erreur (review 30.2 finding #1).
+     *    si ce label est devenu `reserved` ou orphelin depuis, ou si le lien amont
+     *    a été rompu — sinon éditer un autre champ d'un groupe labellisé lèverait
+     *    une fausse erreur.
      *
      * @throws LabelAssignmentException
-     * @throws UpstreamLockCollisionException Story 30.5 — l'assignation
+     * @throws UpstreamLockCollisionException — l'assignation
      *         introduirait une collision verrou/verrou insoluble (refus avant écriture)
      */
     public function assignLabel(WorkstationGroup $group, string $labelName): void
@@ -99,13 +99,13 @@ class WorkstationGroupLabelService
         }
 
         // Invariant « 1 label max » : un 2e label DIFFÉRENT est refusé (le no-op
-        // idempotent du même label a déjà court-circuité plus haut) (AC #4).
+        // idempotent du même label a déjà court-circuité plus haut).
         if ($group->hasControlHubLabel()) {
             throw LabelAssignmentException::alreadyLabeled($group, $labelName);
         }
 
-        // Story 30.5 — garde prédictive : refuse AVANT toute écriture si
-        // l'assignation introduit une collision verrou/verrou insoluble (FR13).
+        // Garde prédictive : refuse AVANT toute écriture si
+        // l'assignation introduit une collision verrou/verrou insoluble.
         $this->guardUpstreamLockCollision($group, $labelName);
 
         DB::transaction(function () use ($group, $labelName): void {
@@ -155,14 +155,14 @@ class WorkstationGroupLabelService
     }
 
     /**
-     * Story 30.5 — garde prédictive verrou/verrou (FR13). Refuse l'assignation de
+     * Garde prédictive verrou/verrou. Refuse l'assignation de
      * `$labelName` à `$group` si elle INTRODUIRAIT, pour au moins un poste membre,
      * une collision insoluble : deux items amont `locked` imposant des valeurs
      * contradictoires sur la MÊME `exclusiveKey`.
      *
-     * **NFR3** : court-circuit AVANT tout eager-load de la population — si aucun
+     * Court-circuit AVANT tout eager-load de la population : si aucun
      * item label `locked` (ou pas de contrat actif), on ne charge JAMAIS
-     * `$group->workstations` (assignation 30.2 strictement inchangée).
+     * `$group->workstations` (assignation strictement inchangée).
      *
      * @throws UpstreamLockCollisionException
      */
@@ -170,7 +170,7 @@ class WorkstationGroupLabelService
     {
         $detector = $this->collisionDetector ?? app(UpstreamLockCollisionDetector::class);
 
-        // Court-circuit NFR3 EN TÊTE : zéro requête population sans item label locked.
+        // Court-circuit EN TÊTE : zéro requête population sans item label locked.
         if (! $detector->hasLockedLabelItems()) {
             return;
         }
@@ -199,13 +199,13 @@ class WorkstationGroupLabelService
     }
 
     /**
-     * Détache le label de contrat amont porté par un WorkstationGroup (AC #7).
+     * Détache le label de contrat amont porté par un WorkstationGroup.
      *
-     * No-op si le groupe ne porte aucun label. Le détachement d'un label
-     * **réservé** porté par un groupe **imposé** relève de la Story 30.3 (hors
-     * scope ici) ; en 30.2 le refnum ne manipule que des labels libres.
+     * No-op si le groupe ne porte aucun label. Un label **réservé** porté par un
+     * groupe **imposé** n'est pas détachable ici : le refnum ne manipule que des
+     * labels libres.
      *
-     * ⚠️ GARDE-FOU SERVEUR (review 30.2 finding #2) : on refuse de détacher un
+     * ⚠️ GARDE-FOU SERVEUR : on refuse de détacher un
      *    label `reserved` du contrat actif. La propriété Livewire pilotant le
      *    détachement est forgeable côté client ; l'invariant « le refnum ne
      *    manipule que des labels libres » DOIT donc être tenu ici, pas dans l'UI.

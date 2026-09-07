@@ -22,9 +22,9 @@ use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
 
 /**
- * Story 49.2 — AC2 : le filet « œuf/poule » vit dans la CÉRÉMONIE DE LOGIN.
+ * Le filet « œuf/poule » vit dans la CÉRÉMONIE DE LOGIN.
  *
- * Avant 49.2, l'auto-provisioning était dans le guard de session : toute ligne
+ * Avant, l'auto-provisioning était dans le guard de session : toute ligne
  * `users` manquante y déclenchait un lookup annuaire, à chaque requête. Le
  * déplacer au login le ramène à une occurrence par session, dans une cérémonie
  * qui est DÉJÀ un contact AD (le bind vient de réussir).
@@ -139,7 +139,7 @@ class LoginAutoProvisioningTest extends TestCase
     {
         // L'ancien `ensureEloquentUser` du guard écrivait `'is_active' => true`
         // EN DUR. Recopier ce littéral aurait ressuscité en base un compte
-        // désactivé dans l'annuaire — le piège symétrique de celui que 49.3
+        // désactivé dans l'annuaire — le piège symétrique de celui que
         // vient de fermer (`is_active` est un MIROIR, jamais une valeur inventée).
         $repo = Mockery::mock(UserRepository::class);
         $repo->shouldReceive('findByLogin')->once()
@@ -226,17 +226,13 @@ class LoginAutoProvisioningTest extends TestCase
         $this->assertSame(0, User::count());
     }
 
-    // ========================================================================
-    // Correction de review — le filet vaut pour les TROIS points d'entrée
-    // ========================================================================
-
     /**
      * `handleCasAuthenticated()` et `entCallback()` créent une session sans
      * passer par `authenticate()` : avant cette correction, le filet œuf/poule
      * ne les couvrait pas. Ils partagent
      * `ensureEloquentUserForCurrentSession()`, qui provisionne le login QUE LE
      * GUARD IRA CHERCHER — `getCurrentUser()`, le même oracle — plutôt que de
-     * rejouer la composition du login de session (CAS 3.0 retient un `cn`, ENT
+     * rejouer la composition du login de session (CAS retient un `cn`, ENT
      * le login AD local : deux règles différentes, une seule vérité).
      */
     #[Test]

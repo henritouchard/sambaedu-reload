@@ -27,7 +27,6 @@ echo "Parent: " . ($parent ?: 'Computers (parc racine)') . "\n\n";
 // Chargement de la configuration
 $config = get_config();
 
-// Recherche du parc/salle avant suppression
 echo "1. Recherche du parc/salle avant suppression...\n";
 $parc_before = search_parcs($config, $nom);
 
@@ -68,7 +67,6 @@ if ($delegations) {
 }
 echo "\n";
 
-// Suppression du parc/salle
 echo "4. Suppression du parc/salle via delete_parc()...\n";
 $result = delete_parc($config, $nom);
 

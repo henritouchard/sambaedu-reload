@@ -25,12 +25,12 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 35.6 — compilation BOUT-EN-BOUT capacité `privilege` → items de contrat
- * via le `StateCompiler` INCHANGÉ (D2). Prouve : (a) précédence broadcast/parc
- * sur identité ÉGALE (= même privilège), DANS LES DEUX SENS — la maille
- * gagnante prend la liste `accounts` ENTIÈRE, elle ne s'ajoute PAS (piège #4,
- * NON cumulatif) ; (b) deux privilèges DISTINCTS coexistent ; (c) override
- * UserGroup sans effet en compile machine-only (piège #11).
+ * Compilation BOUT-EN-BOUT capacité `privilege` → items de contrat
+ * via le `StateCompiler`, qu'aucune capacité ne modifie. Prouve : (a) précédence
+ * broadcast/parc sur identité ÉGALE (= même privilège), DANS LES DEUX SENS — la
+ * maille gagnante prend la liste `accounts` ENTIÈRE, elle ne s'ajoute PAS (NON
+ * cumulatif) ; (b) deux privilèges DISTINCTS coexistent ; (c) override
+ * UserGroup sans effet en compile machine-only.
  * `exclusiveKey() = <privilège>` minuscule (1 segment).
  */
 class CapabilityPrivilegeCompilationTest extends TestCase
@@ -108,7 +108,7 @@ class CapabilityPrivilegeCompilationTest extends TestCase
         'accounts' => ['eleves' => ['@eleves'], 'off' => []],
     ];
 
-    // ── (a) Précédence sur identité ÉGALE — deux sens (piège #4) ──────────
+    // (a) Précédence sur identité ÉGALE — deux sens
 
     #[Test]
     public function parc_off_beats_broadcast_eleves_on_equal_identity(): void
@@ -150,7 +150,7 @@ class CapabilityPrivilegeCompilationTest extends TestCase
         self::assertSame(['Eleves'], $items[0]['payload']['accounts'], 'override parc (eleves) bat broadcast (off)');
     }
 
-    // ── (b) Privilèges DISTINCTS coexistent (identités distinctes) ────────
+    // (b) Privilèges DISTINCTS coexistent (identités distinctes)
 
     #[Test]
     public function two_distinct_privileges_coexist(): void
@@ -171,7 +171,7 @@ class CapabilityPrivilegeCompilationTest extends TestCase
         self::assertSame(['SeDenyBatchLogonRight', self::RDP_DENY], $privileges);
     }
 
-    // ── (c) Compile MACHINE-ONLY : override UserGroup sans effet ──────────
+    // (c) Compile MACHINE-ONLY : override UserGroup sans effet
 
     #[Test]
     public function user_group_override_has_no_effect_on_machine_only_compile(): void
@@ -181,7 +181,7 @@ class CapabilityPrivilegeCompilationTest extends TestCase
         $user->groups()->attach($group->id);
 
         $cap = $this->makeCapability('rdp_denied', 'off', self::RDP_SPEC);
-        // Override UserGroup vers `eleves` — SANS EFFET en machine-only (piège #11).
+        // Override UserGroup vers `eleves` — SANS EFFET en machine-only.
         DB::table('capability_assignments')->insert([
             'capability_id' => $cap->id,
             'assignable_type' => UserGroup::class,

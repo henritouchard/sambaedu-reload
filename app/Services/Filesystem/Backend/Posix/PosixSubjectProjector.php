@@ -13,14 +13,13 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
 
 /**
- * Story 60.4 — la TRADUCTION des sujets, dans les deux sens.
+ * La TRADUCTION des sujets, dans les deux sens.
  *
  * Le plan nomme des identités internes ; une liste d'accès POSIX nomme des
  * comptes et des groupes système. Ce service est le seul endroit du dépôt où les
  * deux se rencontrent — c'est ce qui rend la ligne de coupe tenable : au-dessus,
  * personne n'a besoin de savoir ce qu'est un nom de groupe système.
  *
- * ---------------------------------------------------------------------------
  * **LE MAPPAGE D'ARÊTE EST UN MAPPAGE DE COMPATIBILITÉ, PAS UNE GÉNÉRALISATION.**
  *
  * Un sujet de plan peut porter un rôle d'arête (`member|manager|owner`) : « les
@@ -36,7 +35,7 @@ use Illuminate\Support\Facades\Process;
  *
  * **Approximation ASSUMÉE** : le groupe des enseignants d'une classe contient les
  * professeurs principaux — `equipe_` est donc un SURENSEMBLE du rôle strict de
- * gestionnaire. C'est la doctrine additive de l'epic : jamais un sous-ensemble
+ * gestionnaire. C'est la doctrine additive : jamais un sous-ensemble
  * silencieux (qui retirerait un accès sans le dire), toujours un surensemble
  * nommé.
  *
@@ -50,14 +49,13 @@ use Illuminate\Support\Facades\Process;
  * POSIX, ce qui serait faux, et l'affichage grisé/masqué s'en trouverait inversé.
  *
  * Pourquoi ne pas étendre l'annuaire à des groupes par rôle pour toutes les
- * verticales ? Parce que POSIX est une ÉTAPE (décision Q-D) : ce serait un
- * investissement d'annuaire à durée de vie limitée et coûteux à défaire. Le trio
- * suffit au seul cas que la story suivante doit rendre iso.
+ * verticales ? Parce que POSIX est une ÉTAPE : ce serait un investissement
+ * d'annuaire à durée de vie limitée et coûteux à défaire. Le trio suffit au seul
+ * cas à rendre iso.
  *
- * ---------------------------------------------------------------------------
- * **STORY 60.5 — LE TRIO D'ANNUAIRE EST L'ARTEFACT COMPILÉ QUE D4 RECOMMANDAIT.**
+ * **LE TRIO D'ANNUAIRE EST L'ARTEFACT COMPILÉ QU'IL FAUT ICI.**
  *
- * La mesure d'ouverture d'epic concluait qu'une audience doit se compiler en
+ * La mesure d'ouverture concluait qu'une audience doit se compiler en
  * GROUPE DÉRIVÉ, jamais en énumération de personnes : à 3 000 entrées nominatives
  * la pose coûte 63 s, et le système la refuse tout court au-delà de 5 457. La
  * recommandation était donc « fabriquer un groupe dérivé ». Cet artefact EXISTE
@@ -68,7 +66,7 @@ use Illuminate\Support\Facades\Process;
  *
  * **L'IMPORT DU SERVICE HISTORIQUE RESTE, ET C'EST UN RENVERSEMENT ASSUMÉ.**
  *
- * L'ancienne rédaction de la story 60.5 prévoyait de descendre ici une recopie de
+ * L'ancienne rédaction de la prévoyait de descendre ici une recopie de
  * la dérivation des noms, parce qu'elle tuait le service historique. Il VIT
  * désormais : les deux arbres de classe coexistent, et ils doivent porter les
  * MÊMES groupes d'annuaire. Descendre une recopie créerait DEUX autorités de
@@ -76,10 +74,8 @@ use Illuminate\Support\Facades\Process;
  * dangereuse — une recopie qui dérive silencieusement rendrait la comparaison des
  * deux arbres fausse sans que rien ne tombe. Une fonction, deux consommateurs,
  * identité des noms garantie PAR CONSTRUCTION plutôt que par un test
- * d'équivalence. La descente appartient à la story de MIGRATION, avec la mort du
- * service.
+ * d'équivalence. La descente appartient à la MIGRATION, avec la mort du service.
  *
- * ---------------------------------------------------------------------------
  * **AUCUN NOM DE GROUPE N'EST INVENTÉ.** Avant d'écrire un octroi de groupe, on
  * vérifie que le nom se résout côté système ({@see groupExists()} — lecture NSS,
  * sans élévation de privilège, exactement le mécanisme déjà en service pour les
@@ -111,13 +107,9 @@ final class PosixSubjectProjector
     {
     }
 
-    // =========================================================================
-    // Projection AVANT (plan → sujet d'ACL)
-    // =========================================================================
-
     /**
      * Nom de groupe système d'un {@see UserGroup} — MAPPAGE HISTORIQUE, repris
-     * mot pour mot du provisionnement 34.1 :
+     * mot pour mot du provisionnement :
      *  - type `classe` → `classe_<localPart>` ;
      *  - type `equipe` → `equipe_<localPart>` ;
      *  - sinon → `<localPart>` : le collectif dont le nom système est son propre
@@ -127,7 +119,7 @@ final class PosixSubjectProjector
      * préfixe `classe_`/`equipe_` déjà présent est retiré avant re-préfixage
      * (anti double-préfixe). `null` si le nom n'est pas dérivable.
      *
-     * C'est ce mappage que le référentiel figé de la story verrouille, et c'est
+     * C'est ce mappage que le référentiel figé verrouille, et c'est
      * lui que la reprojection inverse rejoue en avant pour construire son index.
      */
     public function unixGroupForGroup(UserGroup $group): ?string
@@ -341,10 +333,6 @@ final class PosixSubjectProjector
 
         return $this->groupExistence[$name] = $verdict;
     }
-
-    // =========================================================================
-    // Projection INVERSE (nom système → sujet de plan)
-    // =========================================================================
 
     /**
      * Index INVERSE `nom de groupe système (minuscules) → sujet de plan`.

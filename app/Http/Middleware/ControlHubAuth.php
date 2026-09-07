@@ -96,9 +96,9 @@ class ControlHubAuth
 
     /**
      * Signal dédié : une requête entrante a été acceptée par le REPLI LEGACY
-     * (clé d'instance statique de config), pas par le token de handshake E10.
+     * (clé d'instance statique de config), pas par le token de handshake.
      *
-     * Métrique de bascule (Story 39.5 / Q7) : tant que ce signal apparaît, des
+     * Métrique de bascule : tant que ce signal apparaît, des
      * appelants amont présentent encore l'ancien credential. Le critère de
      * clôture (retrait du repli + durcissement du format `^irundo_[A-Za-z0-9]{32}$`)
      * est « plus aucune occurrence observée sur le parc ». Message et marqueur

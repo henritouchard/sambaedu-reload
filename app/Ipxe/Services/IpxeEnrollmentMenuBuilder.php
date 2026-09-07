@@ -9,22 +9,20 @@ use App\Models\WorkstationGroup;
 use Illuminate\Support\Collection;
 
 /**
- * Story 3.3 — D5 / AC4.1.
- *
  * Construit les **variables Blade** consommées par les 5 templates
  * `resources/views/ipxe/enrollment/*.blade.php` :
  *
- *  - {@see buildNameMenuVariables()}      → `enrollment/name.blade.php`.
- *  - {@see buildByodMenuVariables()}      → `enrollment/byod.blade.php`.
- *  - {@see buildRoomMenuVariables()}      → `enrollment/room.blade.php`.
- *  - {@see buildParcAddMenuVariables()}   → `enrollment/parc-add.blade.php`.
+ *  - {@see buildNameMenuVariables()} → `enrollment/name.blade.php`.
+ *  - {@see buildByodMenuVariables()} → `enrollment/byod.blade.php`.
+ *  - {@see buildRoomMenuVariables()} → `enrollment/room.blade.php`.
+ *  - {@see buildParcAddMenuVariables()} → `enrollment/parc-add.blade.php`.
  *  - {@see buildParcRemoveMenuVariables()} → `enrollment/parc-remove.blade.php`.
  *
  * **Stateless** (singleton enregistré dans `IpxeServiceProvider`).
  *
  * **Sanitisation** : applique le même `sanitizeAscii()` que
  * {@see IpxeMenuRenderer} sur les noms de salles / parcs (un firmware iPXE
- * rejette l'ASCII étendu — accents fr cassent le menu). Cf. iso 3.1 D9.
+ * rejette l'ASCII étendu — les accents cassent le menu).
  *
  * **Cap volumétrique** : limite les listes affichées via
  * `config('ipxe.enrollment.max_rooms_in_menu')` / `max_parcs_in_menu`. Au-delà,
@@ -107,7 +105,7 @@ final class IpxeEnrollmentMenuBuilder
             $rooms = $rooms->take($maxRooms);
         }
 
-        // Story 4.11 — la salle courante se lit via le pivot (accessor
+        // La salle courante se lit via le pivot (accessor
         // `physicalRoom`), plus via la FK `physical_room_id`.
         $current = $ws->physicalRoom;
         $currentRoomId = $current?->id;
@@ -188,7 +186,7 @@ final class IpxeEnrollmentMenuBuilder
     ): array {
         $maxParcs = max(1, (int) config('ipxe.enrollment.max_parcs_in_menu', 50));
 
-        // F6 (review 3.3) : calcul du total AVANT troncature pour exposer `truncated` réel
+        // Calcul du total AVANT troncature pour exposer `truncated` réel
         // (parité avec buildRoomMenuVariables / buildParcAddMenuVariables).
         $candidates = $ws->groups->filter(function (WorkstationGroup $g): bool {
             return $g->is_physical === false
@@ -235,7 +233,7 @@ final class IpxeEnrollmentMenuBuilder
 
     /**
      * Délègue à l'implémentation canonique {@see IpxeHostnameSanitizer::sanitizeForIpxeOutput()}
-     * — Unicode-aware + fail-closed sur UTF-8 invalide (cf. F15 review).
+     * — Unicode-aware + fail-closed sur UTF-8 invalide.
      */
     private function sanitizeAscii(string $value): string
     {

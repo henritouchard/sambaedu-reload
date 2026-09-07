@@ -17,21 +17,19 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 56.4 (AC1, AC2) — la fiche d'extension : **demandés vs accordés**, et
+ * La fiche d'extension : **demandés vs accordés**, et
  * la révocation.
  *
- * Fichier NOUVEAU, volontairement : {@see ExtensionDetailPageTest} (54.1/54.2)
- * et {@see ExtensionAppOperationsPageTest} (56.3) restent VERBATIM. Qu'elles
+ * Fichier NOUVEAU, volontairement : {@see ExtensionDetailPageTest}
+ * et {@see ExtensionAppOperationsPageTest} restent VERBATIM. Qu'elles
  * passent inchangées est la preuve que ce volet s'ajoute sans rien déplacer.
  *
- * ══════════════════════════════════════════════════════════════════════════
  *  DEUX LISTES, DEUX SENS
  *
  *  « Demandés » vient du manifest : ce que l'extension DÉCLARE vouloir.
  *  « Accordés » vient du client OIDC : ce qu'elle REÇOIT. L'écart entre les
  *  deux est précisément l'information que la fiche doit rendre lisible — les
  *  confondre reviendrait à afficher un consentement que personne n'a donné.
- * ══════════════════════════════════════════════════════════════════════════
  */
 class ExtensionScopesPageTest extends TestCase
 {
@@ -89,9 +87,7 @@ class ExtensionScopesPageTest extends TestCase
         return $extension;
     }
 
-    // ══════════════════════════════════════════════════════════════════════
-    // AC1 — la fiche montre les DEUX informations, distinctes
-    // ══════════════════════════════════════════════════════════════════════
+    // La fiche montre les DEUX informations, distinctes
 
     #[Test]
     public function the_page_shows_requested_and_granted_scopes_as_two_distinct_blocks(): void
@@ -173,9 +169,7 @@ class ExtensionScopesPageTest extends TestCase
         );
     }
 
-    // ══════════════════════════════════════════════════════════════════════
-    // AC2 — la révocation : modale, acte, audit, toast
-    // ══════════════════════════════════════════════════════════════════════
+    // La révocation : modale, acte, audit, toast
 
     #[Test]
     public function revoking_a_scope_updates_the_client_and_writes_an_audit_line(): void
@@ -214,7 +208,7 @@ class ExtensionScopesPageTest extends TestCase
     /**
      * TOUS les clients actifs de la clé sont traités — un fantôme laissé par
      * une installation antérieure continuerait sinon de servir la donnée
-     * révoquée (patron `remove()` 56.2).
+     * révoquée (patron `remove()`).
      */
     #[Test]
     public function every_enabled_client_of_the_key_is_stripped_not_only_the_displayed_one(): void
@@ -247,8 +241,7 @@ class ExtensionScopesPageTest extends TestCase
 
     /**
      * Écran PÉRIMÉ (second admin, onglet dupliqué) : no-op signalé en `info`,
-     * page rafraîchie, et ZÉRO ligne d'audit — un no-op n'est pas un acte
-     * (patron review 54.2 #2).
+     * page rafraîchie, et ZÉRO ligne d'audit — un no-op n'est pas un acte.
      */
     #[Test]
     public function revoking_an_already_revoked_scope_is_a_signalled_no_op_without_audit(): void
@@ -315,9 +308,7 @@ class ExtensionScopesPageTest extends TestCase
         );
     }
 
-    // ══════════════════════════════════════════════════════════════════════
     // Sécurité — la garde vit dans CHAQUE méthode (defense-in-depth)
-    // ══════════════════════════════════════════════════════════════════════
 
     #[Test]
     public function every_revocation_method_is_forbidden_without_server_admin(): void
@@ -337,7 +328,7 @@ class ExtensionScopesPageTest extends TestCase
 
             // Le Gate résolu porte encore le `before()` du montage : on le
             // jette du conteneur pour que la délégation soit RÉELLEMENT
-            // retirée — un `Gate::before(fn () => null)` ne fait que s'ajouter
+            // retirée — un `Gate::before(fn => null)` ne fait que s'ajouter
             // à la pile, il n'annule rien.
             $this->app->forgetInstance(GateContract::class);
             Gate::clearResolvedInstances();
@@ -371,7 +362,7 @@ class ExtensionScopesPageTest extends TestCase
     }
 
     /**
-     * NFR3 — la fiche parle de SCOPES, jamais d'identifiants de client. Ni le
+     * La fiche parle de SCOPES, jamais d'identifiants de client. Ni le
      * `client_id`, ni le hash du secret n'ont à traverser une vue : ce sont des
      * éléments d'exploitation, et les afficher les ferait finir dans une capture
      * d'écran de ticket.

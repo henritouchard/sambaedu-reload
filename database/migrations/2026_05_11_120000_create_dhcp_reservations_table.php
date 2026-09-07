@@ -7,9 +7,9 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 8.1 — Création de la table `dhcp_reservations` (FR20/FR22).
+ * Création de la table `dhcp_reservations`.
  *
- * Modèle de données dédié (décision SM #1) : ne pas stocker la réservation
+ * Modèle de données dédié : ne pas stocker la réservation
  * sur `workstations` (`ip` / `mac` y existent déjà mais représentent l'état
  * observé, pas l'intention de réservation). Découplage :
  *  - une réservation peut exister sans `Workstation` (import CSV depuis un

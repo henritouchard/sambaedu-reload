@@ -11,7 +11,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 29.10 — Test de la commande `queue-task-runs:prune`.
+ * Test de la commande `queue-task-runs:prune`.
  *
  * Couvre :
  *  - runs done > done_days  → supprimés ;
@@ -25,7 +25,7 @@ class PruneQueueTaskRunsCommandTest extends TestCase
 {
     use RefreshDatabase;
 
-    // ── Helpers ─────────────────────────────────────────────────────────────
+    // Helpers
 
     private function insertRun(
         string $uuid,
@@ -47,7 +47,7 @@ class PruneQueueTaskRunsCommandTest extends TestCase
         ]);
     }
 
-    // ── Tests ────────────────────────────────────────────────────────────────
+    // Tests
 
     #[Test]
     public function done_runs_older_than_done_days_are_deleted(): void

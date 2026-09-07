@@ -5,20 +5,20 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 27.3ter — OVERRIDE de valeur par parc sur le pivot d'assignation
- * `registry_setting_assignables` (D2).
+ * OVERRIDE de valeur par parc sur le pivot d'assignation
+ * `registry_setting_assignables`.
  *
- * Évolution sémantique du pivot 27.3 : une ligne ne signifie plus « activer la
+ * Évolution sémantique du pivot : une ligne ne signifie plus « activer la
  * gestion » mais « ce parc DÉVIE ce réglage vers CETTE valeur ». La nouvelle
  * colonne `value` (texte, NULLABLE, même sérialisation que `registry_settings
  * .value` — DWORD/QWORD décimal, MULTI_SZ JSON array, SZ/EXPAND_SZ littéral)
  * porte l'override.
  *
  * `value = null` ⇒ pas de déviation : le provider replie sur le défaut catalogue
- * (override inerte, no-op). Couvre les assignations 27.3 résiduelles (pivot sans
- * `value`) sans erreur — AC1.
+ * (override inerte, no-op). Couvre les assignations résiduelles (pivot sans
+ * `value`) sans erreur.
  *
- * La précédence existante (`logique > physique > broadcast`, D-Q3 de 27.3) fait
+ * La précédence existante (`logique > physique > broadcast`) fait
  * que l'override par maille bat le défaut Broadcast pour cette clé — AUCUNE
  * nouvelle logique de précédence (StateCompiler inchangé).
  */

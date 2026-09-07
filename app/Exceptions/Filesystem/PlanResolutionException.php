@@ -7,12 +7,12 @@ namespace App\Exceptions\Filesystem;
 use RuntimeException;
 
 /**
- * Story 60.1 — la résolution d'un plan a ÉCHOUÉ sur ses données d'entrée (nom de
+ * La résolution d'un plan a ÉCHOUÉ sur ses données d'entrée (nom de
  * groupe ou login non conforme, segment de chemin dangereux après substitution,
  * rôle de recette sans cible connue du contexte…).
  *
  * **Pourquoi une exception plutôt qu'un plan partiel.** Un plan est comparé octet
- * pour octet à l'état relu (story 60.4) : un plan amputé en silence d'un nœud
+ * pour octet à l'état relu : un plan amputé en silence d'un nœud
  * ferait passer une absence pour une conformité. On échoue bruyamment, jamais à
  * moitié.
  *

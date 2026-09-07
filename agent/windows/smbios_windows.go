@@ -12,14 +12,13 @@ import (
 // (workstation.uuid, envoyé VERBATIM — la normalisation minuscules est côté
 // serveur).
 //
-// Implémentation : shell-out PowerShell Get-CimInstance — choix de la story
-// (décision n° 3, option b) : échappatoire explicitement admise par
+// Implémentation : shell-out PowerShell Get-CimInstance — échappatoire
+// explicitement admise par
 // l'addendum architecture, zéro dépendance Go supplémentaire (go-smbios
-// écarté), et EXACTEMENT la source du spike 24.2 (Win32_ComputerSystemProduct,
+// écarté), et EXACTEMENT la source du spike (Win32_ComputerSystemProduct,
 // donc même valeur rapportée qu'avant la bascule Go).
 //
-// Échec (WinMgmt en réparation, CIM transitoirement indisponible — review
-// 24.4 #1) → chaîne vide : le rapport part QUAND MÊME (champ déclaratif,
+// Échec (WinMgmt en réparation, CIM transitoirement indisponible) → chaîne vide : le rapport part QUAND MÊME (champ déclaratif,
 // l'identité réelle est le token).
 func smbiosUUID(log *shared.Logger) func() string {
 	return func() string {

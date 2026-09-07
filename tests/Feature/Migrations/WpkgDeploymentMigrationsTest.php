@@ -11,7 +11,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 15.1 / AC3.1 — vérifie la création + le rollback des deux tables
+ * Vérifie la création + le rollback des deux tables
  * de tracking pipeline déploiement WPKG.
  *
  * Cible test = SQLite :memory:. La stack `migrate:fresh` complète n'est pas
@@ -129,7 +129,7 @@ class WpkgDeploymentMigrationsTest extends TestCase
     #[Test]
     public function wpkg_deployment_workstation_status_table_has_expected_indexes(): void
     {
-        // AC3.1 : indexes (deployment_id, workstation_id) et
+        // Indexes (deployment_id, workstation_id) et
         // (workstation_id, client_reported_at) doivent être présents.
         $indexNames = collect(DB::select("PRAGMA index_list('wpkg_deployment_workstation_status')"))
             ->pluck('name')

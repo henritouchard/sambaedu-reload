@@ -11,9 +11,10 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Tests Unit `TokenRotationService` — Story 23.2 (FR12-FR14).
+ * Tests Unit `TokenRotationService`.
  *
- * Cycle de vie du token agent : format, hachage, grâce D5, révocation,
+ * Cycle de vie du token agent : format, hachage, fenêtre de grâce (l'ancien
+ * hash reste accepté jusqu'à confirmation de la rotation), révocation,
  * quarantaine. Le clair n'est jamais persisté.
  */
 class TokenRotationServiceTest extends TestCase

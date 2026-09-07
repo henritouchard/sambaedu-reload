@@ -9,7 +9,7 @@ use Illuminate\Console\Command;
 
 /**
  * Backfill des icônes UPLOADÉES existantes name-addressed → content-addressed
- * (Story 27.7, AC5). Appelant fin de {@see ShortcutIconBackfiller} — calque
+ * . Appelant fin de {@see ShortcutIconBackfiller} — calque
  * la commande wallpaper backfill.
  *
  * Usage :

@@ -19,10 +19,9 @@ use Tests\Feature\Oidc\Concerns\UsesOidcTestKeys;
 use Tests\TestCase;
 
 /**
- * Story 55.1 — **AC3** : les refus de `/oidc/authorize`, fail-closed et
+ * Les refus de `/oidc/authorize`, fail-closed et
  * journalisés.
  *
- * ══════════════════════════════════════════════════════════════════════════
  *  CE QUE CE FICHIER PROUVE, ET POURQUOI L'ORDRE COMPTE
  *
  *  Règle OAuth cardinale : **on ne redirige JAMAIS vers une `redirect_uri` non
@@ -34,7 +33,6 @@ use Tests\TestCase;
  *   • refus LOCAUX (client, `redirect_uri`) ⇒ 400, aucune redirection ;
  *   • refus REDIRIGEABLES (PKCE, `response_type`, `scope`) ⇒ 302 vers l'URI
  *     DÉCLARÉE avec `error` + `state`.
- * ══════════════════════════════════════════════════════════════════════════
  *
  * ⚠️ Chaque test de refus est adossé au contrôle POSITIF
  * {@see self::the_nominal_request_of_this_fixture_does_emit_a_code()} : sans
@@ -64,7 +62,7 @@ class OidcAuthorizeRefusalsTest extends TestCase
         ]);
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────
+    // Helpers
 
     private function makeUser(): User
     {
@@ -101,7 +99,7 @@ class OidcAuthorizeRefusalsTest extends TestCase
             ->get('/oidc/authorize?'.http_build_query($this->query($client, $overrides)));
     }
 
-    // ── Le contrôle positif dont dépendent tous les refus ─────────────────
+    // Le contrôle positif dont dépendent tous les refus
 
     #[Test]
     public function the_nominal_request_of_this_fixture_does_emit_a_code(): void
@@ -118,7 +116,7 @@ class OidcAuthorizeRefusalsTest extends TestCase
         self::assertSame(1, OidcAuthorizationCode::query()->count());
     }
 
-    // ── Refus NON redirigeables : 400, aucune redirection ─────────────────
+    // Refus NON redirigeables : 400, aucune redirection
 
     #[Test]
     public function an_unknown_client_gets_a_local_400_and_no_redirection(): void
@@ -194,7 +192,7 @@ class OidcAuthorizeRefusalsTest extends TestCase
         self::assertSame(0, OidcAuthorizationCode::query()->count());
     }
 
-    // ── Refus REDIRIGEABLES : 302 vers l'URI DÉCLARÉE ─────────────────────
+    // Refus REDIRIGEABLES : 302 vers l'URI DÉCLARÉE
 
     /**
      * @param array<string, string> $overrides
@@ -220,7 +218,7 @@ class OidcAuthorizeRefusalsTest extends TestCase
     #[Test]
     public function a_missing_pkce_challenge_is_refused(): void
     {
-        // NFR1 : PKCE est OBLIGATOIRE. Sans lui, un code intercepté suffit à
+        // PKCE est OBLIGATOIRE. Sans lui, un code intercepté suffit à
         // obtenir un id_token.
         $this->assertRedirectableRefusal(['code_challenge' => ''], 'invalid_request');
     }
@@ -277,7 +275,7 @@ class OidcAuthorizeRefusalsTest extends TestCase
         $this->assertRedirectableRefusal(['scope' => 'openidx'], 'invalid_scope');
     }
 
-    // ── Bornes de longueur des paramètres PERSISTÉS (correctif review #3) ──
+    // Bornes de longueur des paramètres PERSISTÉS
 
     #[Test]
     public function a_nonce_longer_than_its_column_is_refused_instead_of_crashing_on_insert(): void
@@ -286,7 +284,7 @@ class OidcAuthorizeRefusalsTest extends TestCase
         // `oidc_authorization_codes.nonce` (VARCHAR 255). PostgreSQL REFUSE le
         // dépassement (`value too long for type character varying`) : sans
         // borne applicative, le client obtient un 500 générique hors journal
-        // `oidc` au lieu d'un refus OAuth normalisé (FR20).
+        // `oidc` au lieu d'un refus OAuth normalisé.
         //
         // ⚠️ SQLite — driver de cette suite — n'applique AUCUNE limite de
         // longueur. Ce test ne peut donc PAS prouver la contrainte SQL : il
@@ -327,8 +325,8 @@ class OidcAuthorizeRefusalsTest extends TestCase
     #[Test]
     public function an_oversized_scope_containing_an_unknown_name_is_an_invalid_request_not_an_invalid_scope(): void
     {
-        // Correctif review 55.2 (#4) — FIGE l'ordre de validation choisi
-        // délibérément par le dev : la borne de longueur (étape 4) passe AVANT
+        // FIGE l'ordre de validation délibérément choisi : la borne de
+        // longueur (étape 4) passe AVANT
         // le catalogue fermé de scopes (étape 5).
         //
         // Le cas composite est le seul qui distingue les deux ordres possibles.
@@ -357,12 +355,12 @@ class OidcAuthorizeRefusalsTest extends TestCase
         );
     }
 
-    // ── Story 55.2 / AC4 — l'ensemble des scopes est FERMÉ ────────────────
+    // — l'ensemble des scopes est FERMÉ
 
     #[Test]
     public function an_unsupported_scope_is_refused_with_invalid_scope_and_journaled(): void
     {
-        // AC4 : un scope inconnu ne peut PAS être « accordé silencieusement ».
+        // Un scope inconnu ne peut PAS être « accordé silencieusement ».
         // L'ignorer laisserait un client croire qu'il a obtenu quelque chose —
         // et le jour où `foo` deviendrait un vrai scope, il serait accordé
         // rétroactivement à qui le demandait déjà.

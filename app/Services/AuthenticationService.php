@@ -82,7 +82,7 @@ class AuthenticationService
         try {
             // Vérifier si les élèves sont bloqués, et si l'utilisateur en est un.
             //
-            // Story 49.2 — l'ordre des deux opérandes est INVERSÉ : la config
+            // L'ordre des deux opérandes est INVERSÉ : la config
             // (lecture mémoire) est évaluée avant le lookup utilisateur (SQL).
             // Sur le défaut du produit (`blocage_eleves` vide), aucune requête
             // n'est émise et le comportement est strictement inchangé.
@@ -261,14 +261,14 @@ class AuthenticationService
     /**
      * Vérifier si l'utilisateur est un élève (option legacy `blocage_eleves`).
      *
-     * **Story 49.2 — RESTAURATION d'un comportement en sommeil.** Cette méthode
+     * **RESTAURATION d'un comportement en sommeil.** Cette méthode
      * renvoyait `return false` en dur depuis la migration, avec pour motif « la
      * requête LDAP prend 720 s sur ce serveur ». Un contournement de performance
      * devenu une extinction silencieuse de fonctionnalité : l'option
      * `blocage_eleves` était configurable mais totalement inerte.
      *
      * La bascule Postgres la restaure à coût nul : le rôle `eleve` est
-     * matérialisé en base par la Story 49.1 (le groupe porteur attribue le
+     * matérialisé en base par la (le groupe porteur attribue le
      * profil), la question se résout donc en une lecture SQL indexée — sans
      * annuaire, sans les 720 s.
      *
@@ -295,7 +295,7 @@ class AuthenticationService
     }
 
     /**
-     * Story 4.10 — Validation AD credentials sans effet de bord session.
+     * Validation AD credentials sans effet de bord session.
      *
      * Wrapper public minimal autour de {@see validatePassword()} destiné aux
      * call-sites qui veulent un bind LDAP « pur » (pas de `$_SESSION['login']`,
@@ -361,7 +361,6 @@ class AuthenticationService
                 return 0;
             }
 
-            // Récupérer pwdlastset via le trait ResolvesPwdLastSet (D7 — story 14.4)
             $pwdLastSetRaw = $ldapUser->getFirstAttribute('pwdlastset');
             $pwdLastSet = $this->resolvePwdLastSetRaw($pwdLastSetRaw);
 
@@ -385,7 +384,7 @@ class AuthenticationService
                     $ldapUser->save();
 
                     if ($authenticated) {
-                        // Auth OK avec mdp par défaut → password_changed_at reste NULL (D7)
+                        // Auth OK avec le mot de passe par défaut : password_changed_at reste NULL.
                         $this->persistPasswordChangedAt($login, 0);
                         return -1; // Authentification réussie mais changement obligatoire
                     } else {
@@ -433,11 +432,9 @@ class AuthenticationService
     /**
      * Persiste password_changed_at au moment de l'authentification.
      *
-     * Enveloppé dans try/catch \Throwable pour ne JAMAIS faire échouer le login (D5).
+     * Enveloppé dans try/catch \Throwable pour ne JAMAIS faire échouer le login.
      * Si le User Eloquent n'existe pas encore (premier login avant ensureEloquentUser),
      * l'update retourne 0 — on log en debug et on continue.
-     *
-     * Story 14.4 — AC2 / Tâche 3.2
      */
     private function persistPasswordChangedAt(string $login, int $pwdLastSet): void
     {
@@ -564,17 +561,9 @@ class AuthenticationService
      */
     private function searchMachine(string $ip, bool $strict = false)
     {
-        // Désactivé temporairement - fonction legacy non disponible
+        // `search_machine()` legacy exige la config complète avec bind LDAP, qui
+        // n'est pas chargée ici : la recherche rend toujours `null`.
         return null;
-        
-        // if (function_exists('search_machine')) {
-        //     // Ces fonctions legacy nécessitent la config complète avec bind LDAP
-        //     $legacyConfig = $this->getLegacyConfig();
-        //     return search_machine($legacyConfig, $ip, $strict);
-        // } else {
-        //     Log::error('Fonction search_machine non trouvée');
-        //     return null;
-        // }
     }
 
     /**
@@ -701,9 +690,6 @@ class AuthenticationService
             $_SESSION['auth'] === 'ent';
     }
 
-    /**
-     * Obtenir les informations de session ENT
-     */
     public function getEntSessionInfo(): ?array
     {
         if (!$this->isEntAuthenticated()) {

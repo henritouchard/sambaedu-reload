@@ -60,7 +60,7 @@ new #[Title('Profil utilisateur - Instance SE4FS')] class extends Component {
     public array $groupDetails = [];
     public array $listCurrentRights = [];
 
-    // Story 7.x — Permissions Spatie + délégations (remplace le bitmask legacy
+    // .x — Permissions Spatie + délégations (remplace le bitmask legacy
     // pour la card "Permissions" de la page profil utilisateur).
     public array $spatieRoles = [];
     public array $directPermissions = [];
@@ -97,7 +97,7 @@ new #[Title('Profil utilisateur - Instance SE4FS')] class extends Component {
             abort(404);
         }
 
-        // Story 7.2 — scoping classe : Prof/EleveAdmin ne consulte que ses élèves
+        // Scoping classe : Prof/EleveAdmin ne consulte que ses élèves
         // (rôles globaux bypass, sinon match Equipe_X/PP_X ↔ Classe_X).
         Gate::authorize('view-user', $this->sqlUserModel);
 
@@ -128,7 +128,7 @@ new #[Title('Profil utilisateur - Instance SE4FS')] class extends Component {
         $this->listCurrentRights = $this->user->rights;
         $this->refreshGroupDetails();
 
-        // Story 7.x — charger l'état Spatie pour la card Permissions.
+        // .x — charger l'état Spatie pour la card Permissions.
         $this->loadSpatieState();
     }
 
@@ -241,7 +241,7 @@ new #[Title('Profil utilisateur - Instance SE4FS')] class extends Component {
                 'edge_role' => $edgeRole,
                 // Membre simple : pas de badge (c'est le cas par défaut, le
                 // signaler noierait les rôles qui, eux, sont informatifs).
-                // Story 60.2 — le libellé vient de la table CANONIQUE par type de
+                // Le libellé vient de la table CANONIQUE par type de
                 // groupe (« Porteur » dans un projet, « Référent » dans une
                 // équipe), plus d'un `match` local écrit pour la seule classe.
                 'edge_role_label' => $edgeRole === UserGroupUserPivot::ROLE_MEMBER
@@ -261,7 +261,7 @@ new #[Title('Profil utilisateur - Instance SE4FS')] class extends Component {
     }
 
     /**
-     * Libellé FR du type de groupe — story 62.2 : lu au CATALOGUE.
+     * Libellé FR du type de groupe : lu au CATALOGUE.
      *
      * Ce `match`-ci était la forme la plus riche des trois qui coexistaient (seul
      * à connaître « Rôle » et « Fonction ») : ce sont ses libellés que la
@@ -351,7 +351,7 @@ new #[Title('Profil utilisateur - Instance SE4FS')] class extends Component {
                 ->whereIn('name', $adGroupCns)
                 ->pluck('id')
                 ->all();
-            // Story 42.1 (review #1) — rôle d'arête dérivé appliqué aux arêtes
+            // Rôle d'arête dérivé appliqué aux arêtes
             // NOUVELLES uniquement ; une arête existante n'est jamais réécrite
             // (un `owner` promu survit à la re-synchronisation).
             $sqlUser->userGroups()->sync(
@@ -466,7 +466,7 @@ new #[Title('Profil utilisateur - Instance SE4FS')] class extends Component {
         <!-- Actions principales -->
         <div class="flex flex-col gap-3 flex-shrink-0">
             @php
-                // Story 7.2 — scoping classe : un Prof n'a pas `user.modify` mais
+                // Scoping classe : un Prof n'a pas `user.modify` mais
                 // doit voir le menu pour réinitialiser le mdp de ses propres élèves.
                 // On ouvre le dropdown dès qu'au moins une action est autorisée.
                 $canShowActions = $user->login !== 'Administrator' && (

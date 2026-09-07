@@ -12,7 +12,6 @@ use Tests\Concerns\IssuesWorkstationJwt;
 use Tests\TestCase;
 
 /**
- * Story 16.10 — AC2.1 / AC7.1.
  *
  * Tests unit `WorkstationJwtIssuer` :
  *

@@ -13,7 +13,7 @@ use App\Services\Filesystem\Plan\PlanNode;
 use App\Services\Filesystem\Plan\PlanSubject;
 
 /**
- * Story 60.4 — LA COMPARAISON désiré/observé, écrite UNE FOIS, AU-DESSUS de la
+ * LA COMPARAISON désiré/observé, écrite UNE FOIS, AU-DESSUS de la
  * ligne de contrat.
  *
  * Le contrat dit ce qui EST ; il ne dit pas si c'est ce qu'on voulait. La mettre
@@ -21,15 +21,14 @@ use App\Services\Filesystem\Plan\PlanSubject;
  * l'écriraient différemment — c'est le patron déjà en service ailleurs dans le
  * dépôt : la précédence s'implémente une fois, jamais dans le fournisseur d'état.
  *
- * Elle remplace l'audit de dérive de l'Epic 34, qui comparait des LIGNES DE
+ * Elle remplace l'audit de dérive précédent, qui comparait des LIGNES DE
  * PERMISSION BRUTES et les affichait telles quelles à l'administrateur. Ici, tout
  * est en vocabulaire de plan : un nœud, un sujet par son identité interne, les
  * verbes attendus et les verbes constatés. Les quatre statuts agrégés de l'audit
  * historique survivent — un contrôleur d'environnement les consomme — mais ce sont
  * des VUES DÉRIVÉES des écarts, jamais le fait primaire.
  *
- * ---------------------------------------------------------------------------
- * **LA TABLE DE COMPARAISON, ÉCRITE — parce qu'elle est le cœur de la story.**
+ * **LA TABLE DE COMPARAISON, ÉCRITE — parce qu'elle est le cœur du service.**
  *
  * Les trois états d'un octroi (ACTIF / SUSPENDU / rôle en CLÔTURE) doivent
  * traverser la comparaison sans jamais se confondre :
@@ -47,7 +46,7 @@ use App\Services\Filesystem\Plan\PlanSubject;
  *  | (aucun octroi au plan)    | quels que soient les verbes | ÉCART — en trop                   |
  *  | rôle en CLÔTURE           | —                     | RIEN : ni attendu, ni écart             |
  *
- * **Story 62.4 — l'égalité est une ÉGALITÉ D'ENSEMBLES, pas une comparaison de
+ * **l'égalité est une ÉGALITÉ D'ENSEMBLES, pas une comparaison de
  * niveaux.** Avec deux niveaux ordonnés, « moindre » avait un sens. Avec quatre
  * verbes combinables, deux octrois peuvent être INCOMPARABLES, et la seule question
  * honnête est « est-ce exactement ce qu'on voulait ? ». Un observé qui en fait
@@ -59,7 +58,7 @@ use App\Services\Filesystem\Plan\PlanSubject;
  * le disque ne porte pas ce verbe — et la comparaison le dit. Absoudre l'écart
  * « parce qu'on savait » reviendrait à afficher conforme un état qui ne l'est pas :
  * l'administrateur perdrait le seul endroit où la limite se voit en continu. Le
- * grisé de ce qui n'est pas exprimable appartient à l'écran de composition (62.6),
+ * grisé de ce qui n'est pas exprimable appartient à l'écran de composition,
  * pas à la comparaison.
  *
  * Les deux lignes qui comptent le plus sont les deux du milieu. « Suspendu observé
@@ -75,8 +74,7 @@ use App\Services\Filesystem\Plan\PlanSubject;
  * C'est un backend à PROPAGATION qui devra la matérialiser — et c'est là seulement
  * que la clôture deviendra comparable.
  *
- * ---------------------------------------------------------------------------
- * **STORY 61.3 — CE MOMENT EST ARRIVÉ, ET LA COMPARAISON EST GATÉE SUR LA DONNÉE.**
+ * **CE MOMENT EST ARRIVÉ, ET LA COMPARAISON EST GATÉE SUR LA DONNÉE.**
  *
  * Un backend à propagation matérialise la clôture en règles de masque, donc il sait
  * la RELIRE : {@see NodeObservation::$closure} la porte. La comparaison ne se
@@ -89,13 +87,13 @@ use App\Services\Filesystem\Plan\PlanSubject;
  *
  * L'attendu est DÉRIVÉ, comme la clôture elle-même : les sujets des rôles clos du
  * nœud, moins ceux qui y ont reçu un octroi (un sujet octroyé par un rôle et clos
- * par un autre reste octroyé — union au plus permissif, doctrine de l'epic).
+ * par un autre reste octroyé — union au plus permissif, doctrine additive).
  *
  * **Ce que cette comparaison attrape, et qu'aucune autre n'attrapait** : une règle
  * de masque retirée à la main sur le dossier privé des enseignants. L'octroi de la
  * classe, lui, reste parfaitement conforme — c'est la CLÔTURE qui a sauté, et sans
  * cette table, la fuite serait invisible sur un écran tout vert. C'est exactement
- * le mode de rupture que le sondage d'ouverture d'epic avait mesuré.
+ * le mode de rupture que le sondage d'ouverture avait mesuré.
  *
  * Le résultat vit dans une clé `closure` ADDITIVE de chaque nœud : les
  * consommateurs existants lisent `differences` et `status`, et ne voient pas la
@@ -169,7 +167,7 @@ final class PlanStateComparator
                 // la construction d'une relecture) — mais une relecture peut aussi
                 // arriver par un tableau reconstruit ailleurs, et un nœud sans
                 // observation qui se lirait « conforme » est exactement la fuite
-                // que tout l'epic combat. On le dit.
+                // qu'on combat partout ailleurs. On le dit.
                 ? [
                     'path' => $node->path,
                     'status' => self::NODE_NON_OBSERVE,
@@ -249,7 +247,7 @@ final class PlanStateComparator
         // déclarer le nœud conforme.
         $hasUnnamed = $observation->detail !== null && $observation->detail !== '';
 
-        // Story 61.3 — la CLÔTURE, quand et seulement quand le backend l'observe.
+        // La CLÔTURE, quand et seulement quand le backend l'observe.
         $closure = $this->compareClosure($plan, $node, $observation, $expected);
 
         $result = [

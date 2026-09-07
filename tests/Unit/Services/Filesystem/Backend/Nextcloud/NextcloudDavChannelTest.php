@@ -14,7 +14,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 61.3 — LE CANAL DES RÈGLES, ÉPROUVÉ SUR SES CORPS RÉELS.
+ * LE CANAL DES RÈGLES, ÉPROUVÉ SUR SES CORPS RÉELS.
  *
  * Chaque double de ce fichier rejoue un corps MESURÉ contre l'instance de sondage
  * le 2026-08-08. Aucune sémantique n'y est inventée : ce sont les réponses que le
@@ -86,12 +86,8 @@ class NextcloudDavChannelTest extends TestCase
         XML;
     }
 
-    // =========================================================================
-    // Relecture
-    // =========================================================================
-
     /**
-     * **LE PIÈGE N°3 DE L'EPIC, ÉPINGLÉ** : le serveur AJOUTE un champ à la
+     * **LE PIÈGE, ÉPINGLÉ** : le serveur AJOUTE un champ à la
      * relecture. Le lire comme une différence produirait une réécriture à chaque
      * passage — un drift permanent avec tous les doubles verts.
      */
@@ -216,10 +212,6 @@ class NextcloudDavChannelTest extends TestCase
         self::assertSame([], $state->rules);
     }
 
-    // =========================================================================
-    // Écriture
-    // =========================================================================
-
     /** Le chemin heureux, dans sa forme mesurée : `207` + statut de propriété `200`. */
     #[Test]
     public function a_rule_is_written_as_xml_and_the_property_status_says_it_took(): void
@@ -249,8 +241,8 @@ class NextcloudDavChannelTest extends TestCase
      * **L'ENVELOPPE NE CONCLUT RIEN — c'est le piège structurel du protocole.**
      *
      * Un `207` peut envelopper un échec. Lire l'enveloppe rapporterait « appliqué »
-     * sur un cloisonnement qui n'existe pas : la signature de défaut exacte que cet
-     * epic traque depuis les Epics 56/57.
+     * sur un cloisonnement qui n'existe pas : la signature de défaut exacte qu'on
+     * traque ici.
      */
     #[Test]
     public function a_207_envelope_wrapping_a_property_failure_is_a_failure(): void
@@ -293,10 +285,6 @@ class NextcloudDavChannelTest extends TestCase
 
         Http::assertSent(static fn (Request $r): bool => str_contains($r->body(), '<nc:acl-list></nc:acl-list>'));
     }
-
-    // =========================================================================
-    // Structure
-    // =========================================================================
 
     /** `201` = créé, `405` (rejeu) = déjà là. Deux succès, un seul état. */
     #[Test]

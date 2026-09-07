@@ -18,7 +18,7 @@ use Tests\Support\WpkgSchemaBootstrapper;
 use Tests\TestCase;
 
 /**
- * Story 15.4 / AC4, AC7.1 — Clone parc → parc.
+ * Clone parc → parc.
  *
  * Vérifie : (a) BD reflète source, (b) ligne wpkg_deployments créée avec UUID
  * + status completed, (c) events ciblés dispatchés selon le diff.

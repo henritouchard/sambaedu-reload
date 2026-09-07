@@ -7,22 +7,23 @@ namespace App\Services\Agent\Providers;
 use App\Models\CapabilityProjection;
 
 /**
- * Story 35.2 — base COMMUNE des deux providers `registry_list` (contrat §7.6) :
+ * Base COMMUNE des deux providers `registry_list` (contrat §7.6) :
  * listes registre à sous-valeurs indexées `\1..\N` (ExtensionInstallForcelist,
  * DisallowRun).
  *
  * Réutilise TOUTE la mécanique capacité de {@see AbstractCapabilityStateProvider}
  * (Broadcast + overrides par maille, résolution map/littéral, lecture Postgres
- * pure NFR7) en ne changeant que le MÉCANISME filtré ({@see mechanism()}) et
- * l'interpréteur de `spec` ({@see expand()}). En bi-projection D5, chaque
- * provider ne voit que SA projection (`itemsFor()` filtre par mécanisme).
+ * pure) en ne changeant que le MÉCANISME filtré ({@see mechanism()}) et
+ * l'interpréteur de `spec` ({@see expand()}). Une capacité peut porter
+ * plusieurs projections : chaque provider ne voit que la sienne (`itemsFor()`
+ * filtre par mécanisme).
  *
  * **Payload EXACTEMENT 4 clés** `{hive, path, entry_type, values}` (invariant
- * central 27.12 : jamais d'id/key de capacité) — **+ `refresh` OU `writer`
- * OPTIONNELS, mutuellement exclusifs** : `refresh` (Story 43.2) recopié par le
+ * central : jamais d'id/key de capacité) — **+ `refresh` OU `writer`
+ * OPTIONNELS, mutuellement exclusifs** : `refresh` recopié par le
  * foyer UNIQUE hérité d'`itemsFor()`
  * ({@see AbstractCapabilityStateProvider::withRefreshHint()}) ; `writer`
- * (Story 35.7) recopié PAR CLÉ dans `expand()` ci-dessous
+ * recopié PAR CLÉ dans `expand` ci-dessous
  * ({@see AbstractCapabilityStateProvider::withWriterMarker()} — le conteneur
  * est réconcilié par le service SYSTEM dans `HKU\<SID>` de la session, jamais
  * par le compagnon). Portée Session/MachineUser uniquement, jamais sur un
@@ -39,12 +40,12 @@ use App\Models\CapabilityProjection;
  *   2. **purger** — liste VIDE `[]` (le « off » honnête d'une liste : supprimer
  *      toutes les entrées numérotées) → conteneur émis avec `values: []` ;
  *   3. **ne pas gérer** — sentinelle UNMANAGED (clé de map absente) → rien.
- * Le marqueur `$ensure` de 35.1 n'existe PAS en `registry_list` : toute forme
+ * Le marqueur `$ensure` n'existe PAS en `registry_list` : toute forme
  * assoc inattendue résolue (dont `{"$ensure": …}`) ⇒ conteneur NON émis
  * (défensif, jamais d'exception au render) — l'idiome de suppression EST la
- * liste vide (piège n°5 de la story).
+ * liste vide.
  *
- * **Sémantique `exclusive` PAR CLÉ-CONTENEUR (D2)** :
+ * **Sémantique `exclusive` PAR CLÉ-CONTENEUR** :
  * `exclusiveKey() = {hive|path}` minuscules (2 segments, PAS de `name`) — la
  * maille la plus spécifique gagne la clé-conteneur ENTIÈRE via la précédence
  * EXISTANTE du StateCompiler (INTOUCHÉ) : jamais d'union de listes entre
@@ -70,7 +71,7 @@ abstract class AbstractRegistryListCapabilityProvider extends AbstractCapability
 
     /**
      * Identité d'une clé-conteneur exclusive : `{hive|path}` (2 segments,
-     * jamais de `name` — l'agent possède la clé ENTIÈRE, D3). Insensible à la
+     * jamais de `name` — l'agent possède la clé ENTIÈRE). Insensible à la
      * casse (Windows l'est) → minuscules pour la stabilité de la sélection.
      */
     public function exclusiveKey(array $payload): string
@@ -113,7 +114,7 @@ abstract class AbstractRegistryListCapabilityProvider extends AbstractCapability
                 continue;
             }
 
-            // `entry_type` borné (piège n°14) : REG_SZ | REG_EXPAND_SZ, défaut
+            // `entry_type` borné : REG_SZ | REG_EXPAND_SZ, défaut
             // REG_SZ. Hors contrat ⇒ conteneur non émis (défensif au render ;
             // le garde-fou d'authoring refuse déjà en amont).
             $entryType = strtoupper((string) ($key['entry_type'] ?? 'REG_SZ'));
@@ -121,7 +122,7 @@ abstract class AbstractRegistryListCapabilityProvider extends AbstractCapability
                 continue;
             }
 
-            // Résolution map/littéral (D5, réutilisée telle quelle).
+            // Résolution map/littéral, réutilisée telle quelle.
             $resolved = $this->resolveKeyValue($key['values'] ?? null, $capabilityValue);
             if ($resolved === self::UNMANAGED) {
                 continue; // clé de map absente : cesser de gérer ce conteneur.
@@ -134,7 +135,7 @@ abstract class AbstractRegistryListCapabilityProvider extends AbstractCapability
                 continue;
             }
 
-            // Marqueur `writer` (Story 35.7) recopié PAR CLÉ — 5 clés au lieu
+            // Marqueur `writer` recopié PAR CLÉ — 5 clés au lieu
             // de 4 quand le conteneur est délégué au service SYSTEM.
             $payloads[] = $this->withWriterMarker($key, $hive, [
                 'hive' => $hive,

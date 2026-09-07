@@ -20,9 +20,9 @@ use Tests\TestCase;
 use Tests\Traits\MocksAdminUser;
 
 /**
- * Tests Feature Livewire panneau Programmations (story 4-4).
+ * Tests Feature Livewire panneau Programmations (-4).
  *
- * 16 tests : 10 AC15 + 6 AC26 (one-shot).
+ * 16 tests : 10 + 6 (one-shot).
  */
 class GroupSchedulesPageTest extends TestCase
 {
@@ -76,8 +76,8 @@ class GroupSchedulesPageTest extends TestCase
                 $table->timestamp('date_rapport_poste')->nullable();
                 $table->string('ad_dn')->nullable();
                 $table->string('ad_guid')->nullable();
-                // Story 23.2 / 24.7 — colonnes du canal agent (la page groupe
-                // inclut le panneau conformité 24.7 au render de l'onglet général).
+                // Colonnes du canal agent (la page groupe
+                // inclut le panneau conformité au render de l'onglet général).
                 $table->string('agent_token_hash', 64)->nullable();
                 $table->timestamp('agent_token_rotated_at')->nullable();
                 $table->timestamp('agent_last_checkin_at')->nullable();
@@ -88,7 +88,7 @@ class GroupSchedulesPageTest extends TestCase
             $this->createdTables = true;
         }
 
-        // Story 24.7 — tables D3 (24.1) lues par le panneau conformité.
+        // Tables lues par le panneau conformité.
         if (!Schema::hasTable('agent_resource_states')) {
             Schema::create('agent_resource_states', function (Blueprint $table) {
                 $table->id();
@@ -163,7 +163,7 @@ class GroupSchedulesPageTest extends TestCase
             $this->createdTables = true;
         }
 
-        // Story 3.11 — table dédiée lue par le panneau réinstall (SFC enfant) de
+        // Table dédiée lue par le panneau réinstall (SFC enfant) de
         // la page groupe. Sans elle, le render du panneau lève « no such table ».
         if (!Schema::hasTable('workstation_reinstall_requests')) {
             Schema::create('workstation_reinstall_requests', function (Blueprint $table) {
@@ -217,7 +217,7 @@ class GroupSchedulesPageTest extends TestCase
             $this->createdTables = true;
         }
 
-        // Story 6.1 — l'onglet Imprimantes du partial machines-list invoque
+        // L'onglet Imprimantes du partial machines-list invoque
         // $group->printers->count() au rendu, donc il faut a minima les 2
         // tables même vides pour que le rendu de la vue groupe ne casse pas.
         if (!Schema::hasTable('printers')) {
@@ -265,10 +265,6 @@ class GroupSchedulesPageTest extends TestCase
 
         return $group;
     }
-
-    // ========================================
-    // AC15 — tests Livewire panneau récurrent
-    // ========================================
 
     public function test_admin_can_see_schedules_panel_on_group_page(): void
     {
@@ -377,7 +373,7 @@ class GroupSchedulesPageTest extends TestCase
     public function test_non_admin_sees_read_only_view_without_crud_buttons(): void
     {
         // User non-admin MAIS avec computer.view (sinon la Policy `view` introduite
-        // en Story 7.1 redirige silencieusement hors périmètre — cf. AC3 7.1).
+        // en redirige silencieusement hors périmètre).
         // Intention du test : le user voit la page en read-only, sans boutons CRUD.
         $this->swapAuthToReadOnlyViewer();
 
@@ -402,7 +398,7 @@ class GroupSchedulesPageTest extends TestCase
 
     public function test_non_admin_cannot_forge_livewire_call_to_create_schedule(): void
     {
-        // Story 7.1 — un user sans `computer.view` est redirigé au mount() avant
+        // Un user sans `computer.view` est redirigé au mount avant
         // même que la méthode forgée soit atteinte. On utilise le viewer
         // read-only pour cibler spécifiquement le 2ᵉ étage de défense (guard
         // dans openScheduleModal qui requiert `computer.control`).
@@ -511,8 +507,8 @@ class GroupSchedulesPageTest extends TestCase
     /**
      * Variant de swapAuthToNonAdmin : user non-admin MAIS avec computer.view accordé.
      * Reproduit le cas "lecteur passif" attendu par la vue read-only : peut
-     * consulter mais pas modifier. Sans computer.view, la Policy 7.1 redirige
-     * silencieusement hors périmètre (AC3 Story 7.1).
+     * consulter mais pas modifier. Sans computer.view, la Policy redirige
+     * silencieusement hors périmètre.
      */
     private function swapAuthToReadOnlyViewer(): void
     {
@@ -621,10 +617,6 @@ class GroupSchedulesPageTest extends TestCase
             ->assertHasErrors(['formTimeOfDay']);
     }
 
-    // ========================================
-    // AC26 — tests UI one-shot
-    // ========================================
-
     public function test_admin_can_create_one_shot_schedule_via_modal_toggle(): void
     {
         $group = $this->makeGroup();
@@ -717,7 +709,7 @@ class GroupSchedulesPageTest extends TestCase
         $newSchedule = WorkstationGroupSchedule::where('id', '!=', $schedule->id)->first();
         $this->assertEquals('one_shot', $newSchedule->mode);
         $this->assertNull($newSchedule->completed_at);
-        // Correction review #13/#14 : le clone est créé DÉSACTIVÉ pour éviter que
+        // Le clone est créé DÉSACTIVÉ pour éviter que
         // le placeholder run_at=now+1h fire spontanément avant que l'utilisateur
         // ne confirme la vraie date dans la modale auto-ouverte.
         $this->assertFalse($newSchedule->enabled, 'Le clone doit être créé désactivé (placeholder non confirmé)');
@@ -761,15 +753,11 @@ class GroupSchedulesPageTest extends TestCase
 
         $component = Livewire::test('pages::parc.groups.[id].index', ['id' => $group->id]);
 
-        // AC24 : l'ordre d'affichage doit être récurrent → one-shot futur → terminé.
+        // L'ordre d'affichage doit être récurrent → one-shot futur → terminé.
         // assertSeeInOrder vérifie que les chaînes apparaissent dans cet ordre dans
         // le HTML rendu, ce qui garantit que orderByRaw(... completed_at ...) est correct.
         $component->assertSeeInOrder(['Récurrent', 'Date unique', 'Terminé']);
     }
-
-    // ========================================
-    // AC9 — page dédiée historique runs
-    // ========================================
 
     public function test_runs_page_renders_recent_runs_for_schedule(): void
     {

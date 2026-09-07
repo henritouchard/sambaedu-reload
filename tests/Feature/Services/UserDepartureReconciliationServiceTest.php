@@ -18,13 +18,13 @@ use Tests\TestCase;
 use Tests\Traits\CreatesPermissionSchema;
 
 /**
- * Story 49.3 (AC10) — réconciliation des départs.
+ * Réconciliation des départs.
  *
  * Les presence sets sont INJECTÉS : aucun LDAP, aucun `DirectoryEmulator`
  * (absent de la suite). Le service est donc testable sur exactement le
  * prédicat qui compte — « cet identifiant était-il au balayage ? ».
  *
- * L'observer pivot des PROFILS reste ACTIF dans ce fichier (D5) : le détachement
+ * L'observer pivot des PROFILS reste ACTIF dans ce fichier : le détachement
  * nocturne doit produire les mêmes effets que celui du read-back 5 min. Seul le
  * canal FS (`$syncEnabled`) est coupé, et les groupes sont de type `role` — un
  * test ne touche pas au filesystem.
@@ -57,10 +57,6 @@ class UserDepartureReconciliationServiceTest extends TestCase
         parent::tearDown();
     }
 
-    // ========================================================================
-    // Helpers
-    // ========================================================================
-
     private function role(string $name): Role
     {
         return Role::firstOrCreate(['name' => $name, 'guard_name' => 'web']);
@@ -74,7 +70,7 @@ class UserDepartureReconciliationServiceTest extends TestCase
             'is_active' => true,
         ], $attributes));
 
-        // `source` n'est délibérément PAS `fillable` (Epic 20).
+        // `source` n'est délibérément PAS `fillable`.
         $user->source = $source;
         $user->save();
 
@@ -98,7 +94,7 @@ class UserDepartureReconciliationServiceTest extends TestCase
     }
 
     /**
-     * Santé d'un balayage SAIN (celui d'AC3 qui autorise la passe).
+     * Santé d'un balayage SAIN (celui d' qui autorise la passe).
      *
      * @param string[] $logins
      * @param string[] $guids
@@ -112,11 +108,6 @@ class UserDepartureReconciliationServiceTest extends TestCase
             force: $force,
         );
     }
-
-    // ========================================================================
-    // AC10-1 — Départ : soft-disable + detach + profil porté retiré,
-    //          DÉLÉGATION MANUELLE INTACTE (NFR-R2)
-    // ========================================================================
 
     #[Test]
     public function a_departed_user_is_disabled_detached_and_loses_only_carried_profiles(): void
@@ -148,7 +139,7 @@ class UserDepartureReconciliationServiceTest extends TestCase
         self::assertSame('autre', $alice->role);
         self::assertSame(0, DB::table('user_group_user')->where('user_id', $alice->id)->count());
 
-        // Le profil PORTÉ est parti (chemin 49.1), la délégation manuelle RESTE.
+        // Le profil PORTÉ est parti (chemin), la délégation manuelle RESTE.
         self::assertSame(['user-admin'], $this->roleNames($alice));
 
         // Bob intact.
@@ -187,10 +178,6 @@ class UserDepartureReconciliationServiceTest extends TestCase
         self::assertSame(0, $stats['candidates']);
         self::assertTrue((bool) User::find($user->id)->is_active);
     }
-
-    // ========================================================================
-    // AC10-2 — LA garde (NFR-R1) : « fetch en échec ⇒ AUCUNE désactivation »
-    // ========================================================================
 
     #[Test]
     public function guard_aborts_when_the_fetch_threw(): void
@@ -349,10 +336,6 @@ class UserDepartureReconciliationServiceTest extends TestCase
         self::assertSame(6, $this->service->disableThreshold(51));
     }
 
-    // ========================================================================
-    // AC10-3 — Re-run = no-op
-    // ========================================================================
-
     #[Test]
     public function a_second_identical_pass_is_a_no_op(): void
     {
@@ -375,10 +358,6 @@ class UserDepartureReconciliationServiceTest extends TestCase
         self::assertSame(0, $second['errors']);
     }
 
-    // ========================================================================
-    // AC10-5 — Compte désactivé À LA MAIN : présent au balayage, pas un départ
-    // ========================================================================
-
     #[Test]
     public function a_manually_disabled_but_still_present_account_is_never_a_departure(): void
     {
@@ -400,10 +379,6 @@ class UserDepartureReconciliationServiceTest extends TestCase
         );
         self::assertSame(['prof'], $this->roleNames($disabled));
     }
-
-    // ========================================================================
-    // AC10-6 — Exclusions du périmètre
-    // ========================================================================
 
     #[Test]
     public function protected_admin_system_accounts_and_federated_users_are_never_candidates(): void
@@ -434,10 +409,6 @@ class UserDepartureReconciliationServiceTest extends TestCase
 
         self::assertSame(4, $stats['skipped'], 'Les 4 comptes hors périmètre sont comptés au rapport.');
     }
-
-    // ========================================================================
-    // AC10-7 — `--dry-run` : base inchangée bit à bit
-    // ========================================================================
 
     #[Test]
     public function dry_run_writes_absolutely_nothing(): void
@@ -478,10 +449,6 @@ class UserDepartureReconciliationServiceTest extends TestCase
         self::assertSame(1, $stats['threshold']);
     }
 
-    // ========================================================================
-    // AC10-8 — Fail-soft : une erreur n'arrête JAMAIS la boucle
-    // ========================================================================
-
     #[Test]
     public function an_error_on_one_user_does_not_stop_the_pass(): void
     {
@@ -510,10 +477,6 @@ class UserDepartureReconciliationServiceTest extends TestCase
         self::assertTrue((bool) User::find($boom->id)->is_active, 'La transaction du user en erreur est annulée.');
         self::assertFalse((bool) User::find($ok->id)->is_active);
     }
-
-    // ========================================================================
-    // Corrections de review — symétrie du périmètre & retour d'un utilisateur
-    // ========================================================================
 
     /**
      * Un compte rattaché à un AUTRE établissement est absent de CHAQUE
@@ -564,10 +527,9 @@ class UserDepartureReconciliationServiceTest extends TestCase
     }
 
     /**
-     * Le RETOUR d'un utilisateur : la story délègue la re-pose des profils au
-     * chemin 49.1 (ré-attachement → observer). Ce test le vérifie de bout en
-     * bout plutôt que sur parole — c'est la moitié « retour » d'AC6 que la
-     * review signalait comme affirmée mais non couverte ici.
+     * Le RETOUR d'un utilisateur : la re-pose des profils est déléguée au
+     * ré-attachement (→ observer). Ce test le vérifie de bout en bout plutôt que
+     * sur parole.
      */
     #[Test]
     public function a_returning_user_recovers_the_carried_profile_through_membership(): void

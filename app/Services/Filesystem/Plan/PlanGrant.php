@@ -7,7 +7,7 @@ namespace App\Services\Filesystem\Plan;
 use App\Exceptions\Filesystem\PlanResolutionException;
 
 /**
- * Story 60.1 → 62.4 — OCTROI porté par un nœud de plan : « ce sujet peut FAIRE
+ * → — OCTROI porté par un nœud de plan : « ce sujet peut FAIRE
  * ceci ici ».
  *
  * **Positif, toujours.** Un octroi est une LISTE DE VERBES, non vide, prise dans
@@ -17,8 +17,7 @@ use App\Exceptions\Filesystem\PlanResolutionException;
  * la doctrine en cas de conflit. Les vraies interdictions vivent ailleurs, dans un
  * mécanisme machine, et n'ont rien à faire dans un plan de fichiers.
  *
- * ---------------------------------------------------------------------------
- * **LE CONTRAT SÉMANTIQUE DES QUATRE VERBES (décision Henri, Q2 = A, 2026-08-08).**
+ * **LE CONTRAT SÉMANTIQUE DES QUATRE VERBES.**
  *
  * Ce paragraphe est NORMATIF. Il est épinglé par un test de documentation, parce
  * qu'un vocabulaire dont chacun devine le périmètre est un vocabulaire que deux
@@ -47,18 +46,16 @@ use App\Exceptions\Filesystem\PlanResolutionException;
  *    Deux objets, deux bits : « éditer » et « créer/supprimer » ne sont pas la
  *    même autorisation, et les confondre donne à un déposant le droit d'effacer
  *    le travail des autres ;
- *  - le plan de fichiers distant de l'Epic 61 porte NATIVEMENT la même
+ *  - le plan de fichiers distant porte NATIVEMENT la même
  *    distinction (quatre bits séparés : lecture, mise à jour, création,
  *    suppression). Le vocabulaire s'y consomme donc sans traduction.
  *
- * **Conséquence assumée sur les recettes seedées (Q3 = A).** L'ancien vocabulaire
+ * **Conséquence assumée sur les recettes seedées.** L'ancien vocabulaire
  * binaire a été traduit une fois pour toutes : `ro` → `lire` seul, `rw` → les
  * QUATRE verbes. C'est le seul mappage qui ne retire d'accès à personne (doctrine
- * additive de l'epic). Les recettes livrées sont donc maximalement permissives ;
- * les raffiner est le travail de l'écran de la story 62.6, pas d'une conversion
- * silencieuse.
+ * additive). Les recettes livrées sont donc maximalement permissives ; les
+ * raffiner est le travail de l'écran, pas d'une conversion silencieuse.
  *
- * ---------------------------------------------------------------------------
  * **Trois états, à ne jamais confondre** (le backend les traduira différemment) :
  *
  *  | état                        | signification                                   |
@@ -103,7 +100,7 @@ final class PlanGrant
      * ORDRE CANONIQUE — l'ordre de DÉCLARATION, pas l'ordre alphabétique.
      *
      * C'est un choix de SÉRIALISATION, pas d'affichage : le déterminisme octet
-     * pour octet de la story 60.1 (deux résolutions du même état donnent la même
+     * pour octet de la (deux résolutions du même état donnent la même
      * chaîne) en dépend, et l'affichage reste libre de ses libellés.
      *
      * @var list<string>
@@ -243,7 +240,7 @@ final class PlanGrant
      * payload portant la clé `access` (`ro`/`rw`) est REFUSÉ. La conversion vit
      * dans la migration des données stockées, jouée UNE fois ; l'accepter à la
      * désérialisation la ferait vivre indéfiniment et laisserait deux vocabulaires
-     * coexister dans les JSON — exactement ce que le garde-fou d'epic interdit.
+     * coexister dans les JSON — exactement ce que le garde-fou interdit.
      */
     public static function fromArray(array $data): self
     {

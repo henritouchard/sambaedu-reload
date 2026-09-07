@@ -18,7 +18,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 34.1 — modèle `NetworkShare` + pivot polymorphe + relations inverses.
+ * Modèle `NetworkShare` + pivot polymorphe + relations inverses.
  * 100 % SQL (zéro AD/LdapRecord).
  */
 class NetworkShareTest extends TestCase

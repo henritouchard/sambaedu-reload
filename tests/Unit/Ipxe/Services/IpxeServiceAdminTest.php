@@ -14,7 +14,7 @@ use Tests\TestCase;
 use Tests\Support\IpxeAuthTestHelper;
 
 /**
- * Story 3.2 — AC3.1 / T4.4.
+ * T4.4.
  *
  * Tests unitaires de {@see IpxeService::handleAdmin()}.
  */
@@ -77,9 +77,8 @@ class IpxeServiceAdminTest extends TestCase
     #[Test]
     public function it_returns_minimal_admin_menu_for_unknown_workstation(): void
     {
-        // Story 3.3 — AC6.6 / T6.8 — la modification de `admin.blade.php`
-        // remplace le message neutre 3.2 par l'item enrollment `(n) set-name`.
-        // Item maintenance reste absent pour poste inconnu (parité 3.2 D7).
+        // Un poste inconnu se voit proposer l'enrôlement `(n) set-name`, jamais
+        // l'item de maintenance.
         $response = $this->service->handleAdmin($this->makeRequest([
             'mac' => 'aa:bb:cc:dd:ee:99',
             'uuid' => '99999999-9999-9999-9999-999999999999',

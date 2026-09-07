@@ -11,11 +11,11 @@ use App\Services\Extensions\ExtensionInstallService;
 use Illuminate\Console\Command;
 
 /**
- * Story 56.3 (AC3, AR1) — `php artisan ext:update <key>`.
+ * `php artisan ext:update <key>`.
  *
  * Troisième façade CLI sur le MÊME moteur ({@see ExtensionInstallService}),
  * strictement sans logique propre : elle résout l'argument, délègue, met en
- * forme. La doctrine AR1 est tenue de bout en bout — l'UI de la Story 56.3
+ * forme. La doctrine AR1 est tenue de bout en bout — l'UI de la
  * appelle exactement `update()`, il n'existe pas deux chemins de mise à jour.
  *
  * Ce que la commande met à jour, c'est **le paquet et le service**, rien
@@ -23,7 +23,7 @@ use Illuminate\Console\Command;
  * client OIDC sont des invariants de la clé, pas de la version (cf. le docblock
  * de {@see ExtensionInstallService::update()}).
  *
- * ⚠️ **NFR3 — aucun secret n'est affiché.** Rien n'est régénéré, donc rien à
+ * ⚠️ **Aucun secret n'est affiché.** Rien n'est régénéré, donc rien à
  * afficher : contrairement à `ext:install`, la mise à jour ne touche même pas
  * au client OIDC.
  *
@@ -69,10 +69,9 @@ class ExtensionUpdate extends Command
             $this->renderSteps($result['steps']);
             $this->error('Mise à jour refusée : '.$result['error']);
 
-            // ⚠️ Review 56.3 #1 — cette ligne était inconditionnelle : elle
-            // affirmait le rétablissement même quand le rollback venait
-            // d'échouer. Un message rassurant qui peut être faux est pire que
-            // pas de message : c'est celui-là qu'un opérateur croit.
+            // Le message de rétablissement est conditionné à la réussite du
+            // rollback : un message rassurant qui peut être faux est pire que
+            // pas de message, c'est celui-là qu'un opérateur croit.
             if ($result['error'] === ExtensionInstallService::ERROR_ROLLBACK_FAILED) {
                 $this->line('  ⚠️  Le service peut être ARRÊTÉ. Vérifier : systemctl status sambaedu-ext-'.$key);
             } else {

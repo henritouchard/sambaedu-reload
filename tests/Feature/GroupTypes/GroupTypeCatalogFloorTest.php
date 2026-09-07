@@ -10,7 +10,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 62.2 — LE PLANCHER, sur une base où la table n'existe MÊME PAS.
+ * LE PLANCHER, sur une base où la table n'existe MÊME PAS.
  *
  * Ce cas n'est pas théorique : une bonne partie de la suite fabrique son schéma à
  * la main, sans migrations, et une instance en cours de mise à jour est dans le

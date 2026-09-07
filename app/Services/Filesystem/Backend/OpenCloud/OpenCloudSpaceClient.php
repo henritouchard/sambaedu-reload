@@ -12,11 +12,10 @@ use App\Services\OpenCloud\OpenCloudResult;
  *
  * Ce client est le SEUL écrivain légitime des zones, et il n'a **aucune méthode**
  * pour ce qu'il ne doit pas faire : ni création de compte, ni quota de compte
- * (frontière D8 : la recette plafonne des ZONES, les règles de quota budgètent des
+ * (la recette plafonne des ZONES, les règles de quota budgètent des
  * PERSONNES), ni suppression d'espace en production. Une méthode absente ne
  * s'appelle pas par distraction, et un test épingle la liste.
  *
- * ---------------------------------------------------------------------------
  * **LES TROIS PIÈGES DE ROUTAGE MESURÉS LE 2026-08-13, refermés ici.**
  *
  *  1. **Deux versions d'API cohabitent.** Les espaces vivent en `v1.0`, les
@@ -30,12 +29,12 @@ use App\Services\OpenCloud\OpenCloudResult;
  *     LISTER les enfants de la racine. Les deux formes sont employées telles que
  *     mesurées, chacune là où elle marche.
  *  3. **La création d'un dossier n'est pas dans l'API Graph.** Elle passe par le
- *     protocole d'édition distante ({@see OpenCloudGraphTransport::sendRaw()}),
+ *  protocole d'édition distante ({@see OpenCloudGraphTransport::sendRaw()}),
  *     seul geste pour lequel Graph ne suffit pas.
  *
  * **{@see deleteSpace()} n'existe pas, et son absence est le point.** Révoquer,
  * c'est retirer les octrois ; détruire une zone n'est le geste d'aucune
- * réconciliation (D9). Le test d'intégration nettoie ce qu'il crée en retirant ses
+ * réconciliation. Le test d'intégration nettoie ce qu'il crée en retirant ses
  * octrois et en laissant l'espace : un espace vide et sans octroi est inoffensif,
  * là où une méthode de suppression dans le code de production serait une arme
  * chargée posée sur la table.
@@ -47,10 +46,6 @@ final class OpenCloudSpaceClient
     private const ITEMS = 'graph/v1beta1/drives';
 
     public function __construct(private readonly OpenCloudGraphTransport $transport) {}
-
-    // =========================================================================
-    // Les espaces
-    // =========================================================================
 
     /** L'inventaire des espaces, tel que l'instance le REND. */
     public function listSpaces(): OpenCloudResult
@@ -93,10 +88,6 @@ final class OpenCloudSpaceClient
         return $this->transport->get(self::SPACES . '/' . $spaceId, 'relecture de l\'espace');
     }
 
-    // =========================================================================
-    // L'arborescence
-    // =========================================================================
-
     /**
      * Les enfants d'un item.
      *
@@ -137,10 +128,6 @@ final class OpenCloudSpaceClient
             ),
         );
     }
-
-    // =========================================================================
-    // Les octrois
-    // =========================================================================
 
     /** Les octrois posés sur la RACINE de l'espace. */
     public function listRootPermissions(string $spaceId): OpenCloudResult

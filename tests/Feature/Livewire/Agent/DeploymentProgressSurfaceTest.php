@@ -19,7 +19,7 @@ use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
 /**
- * Story 25.5 — surface progression du déploiement (AC1, AC4).
+ * Surface progression du déploiement.
  *
  * Agrégation LECTURE SEULE `rings × workstation_group_workstation ×
  * workstations` : par ring, version ciblée vs `agent_reported_version` des
@@ -110,7 +110,7 @@ class DeploymentProgressSurfaceTest extends TestCase
     {
         // Cas réel : un poste ∈ groupe physique (ring canari récent) ET groupe
         // logique (ring parc plus ancien). Le manifest ne lui sert qu'UNE
-        // version = celle du ring le plus récemment ciblé (récence FR4). Il doit
+        // version = celle du ring le plus récemment ciblé. Il doit
         // être compté UNE seule fois, dans le ring canari — et SURTOUT pas
         // « en retard » dans le ring parc qui ne le gouverne pas.
         $relCanari = $this->release('2.3.0');

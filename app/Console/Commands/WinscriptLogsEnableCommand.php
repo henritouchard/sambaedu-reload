@@ -9,11 +9,11 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 17.5 / AC1.1 — Active l'enveloppe de logging centralisé des scripts
- * d'applications (wrapper opt-in livré par 17.2).
+ * Active l'enveloppe de logging centralisé des scripts
+ * d'applications (wrapper opt-in livré par).
  *
- * Positionne `SAMBAEDU_SCRIPTS_LOGGING_ENABLED=true` dans le `.env` (D1) de
- * façon non destructive (D2), puis invalide le cache config (D3/D4).
+ * Positionne `SAMBAEDU_SCRIPTS_LOGGING_ENABLED=true` dans le `.env` de façon
+ * non destructive, puis invalide le cache de configuration.
  */
 final class WinscriptLogsEnableCommand extends Command
 {

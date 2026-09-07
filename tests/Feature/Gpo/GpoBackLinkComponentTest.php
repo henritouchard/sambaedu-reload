@@ -15,15 +15,15 @@ use Tests\Support\FakesGpoService;
 use Tests\TestCase;
 
 /**
- * Tests Feature — Composant Blade `<x-molecules.gpo-back-link />` (Story 16.3a, AC4.3).
+ * Tests Feature — Composant Blade `<x-molecules.gpo-back-link />`.
  *
- * Stratégie (review 16.3a #1 — décision Henri "Blade::render isolation") :
+ * Stratégie :
  * tester le composant en isolation via Blade::render(), sans passer par les pages
  * cibles. Évite la chaîne de permissions (`wallpaper.manage`, `app.customize`)
- * qui ne sont pas dans le scope de cette story.
+ * hors sujet ici.
  *
  * On simule la query string en injectant un Request fake dans le container,
- * et on couvre aussi le fallback Referer (review 16.3a #2 — Livewire re-render).
+ * et on couvre aussi le fallback Referer (re-render Livewire).
  */
 class GpoBackLinkComponentTest extends TestCase
 {
@@ -77,10 +77,6 @@ class GpoBackLinkComponentTest extends TestCase
         return Blade::render('<x-molecules.gpo-back-link />');
     }
 
-    // =========================================================================
-    // AC4.3 — Scénario 1 : ?from_gpo valide + GpoService::get retourne une GPO
-    // =========================================================================
-
     #[Test]
     public function it_renders_full_back_link_when_from_gpo_is_present_and_gpo_found(): void
     {
@@ -96,10 +92,6 @@ class GpoBackLinkComponentTest extends TestCase
         $this->assertStringContainsString('/admin/settings/gpo/', $html);
     }
 
-    // =========================================================================
-    // AC4.3 — Scénario 2 : ?from_gpo valide + GpoService::get retourne null
-    // =========================================================================
-
     #[Test]
     public function it_renders_generic_fallback_when_gpo_service_returns_null(): void
     {
@@ -114,10 +106,6 @@ class GpoBackLinkComponentTest extends TestCase
         $this->assertStringNotContainsString('Retour à la GPO «', $html);
     }
 
-    // =========================================================================
-    // AC4.3 — Scénario 3 : sans ?from_gpo → composant vide
-    // =========================================================================
-
     #[Test]
     public function it_renders_nothing_when_from_gpo_query_param_is_absent(): void
     {
@@ -129,10 +117,6 @@ class GpoBackLinkComponentTest extends TestCase
         $this->assertStringNotContainsString('Retour à la liste des GPOs', $html);
         $this->assertSame('', trim($html));
     }
-
-    // =========================================================================
-    // AC4.3 bonus — GpoService::get() lève une exception → fallback silencieux
-    // =========================================================================
 
     #[Test]
     public function it_renders_generic_fallback_when_gpo_service_throws(): void
@@ -146,16 +130,11 @@ class GpoBackLinkComponentTest extends TestCase
         $this->assertStringContainsString('Retour à la liste des GPOs', $html);
     }
 
-    // =========================================================================
-    // Review 16.3a #3 — Garde défensive : ?from_gpo[]=... (tableau) → composant vide
-    // =========================================================================
-
     #[Test]
     public function it_renders_nothing_when_from_gpo_is_an_array(): void
     {
         FakesGpoService::make()->expectNoCalls()->bind($this->app);
 
-        // Simule ?from_gpo[]=foo&from_gpo[]=bar
         $request = Request::create('/test-component?from_gpo[]=foo&from_gpo[]=bar', 'GET');
         $this->app->instance('request', $request);
         URL::setRequest($request);
@@ -164,10 +143,6 @@ class GpoBackLinkComponentTest extends TestCase
 
         $this->assertSame('', trim($html));
     }
-
-    // =========================================================================
-    // Review 16.3a #2 — Fallback Referer (cas Livewire update)
-    // =========================================================================
 
     #[Test]
     public function it_falls_back_to_referer_query_string_when_request_has_no_from_gpo(): void

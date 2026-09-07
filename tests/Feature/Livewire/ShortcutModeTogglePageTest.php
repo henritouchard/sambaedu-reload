@@ -15,7 +15,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 27.8 (FR26 retiré, FR19) — le mécanisme de drift policy strict/default
+ * Le mécanisme de drift policy strict/default
  * est SUPPRIMÉ : l'assignation d'un raccourci ne pose plus AUCUN `mode`
  * (STRICT inconditionnel — la cible fait toujours loi).
  *
@@ -54,7 +54,7 @@ class ShortcutModeTogglePageTest extends TestCase
     #[Test]
     public function page_no_longer_exposes_a_mode_property(): void
     {
-        // Story 27.8 : plus aucune propriété `$mode` sur le composant de page —
+        // Plus aucune propriété `$mode` sur le composant de page
         // le mécanisme strict/default est entièrement retiré.
         $sc = Shortcut::create([
             'key' => 'firefox', 'name' => 'Firefox', 'place' => 'desktop',
@@ -72,7 +72,7 @@ class ShortcutModeTogglePageTest extends TestCase
     #[Test]
     public function assignment_no_longer_persists_any_mode_on_the_pivot(): void
     {
-        // Story 27.8 : `onAssignmentsConfirmed` ne pose plus de `mode` (signature
+        // `onAssignmentsConfirmed` ne pose plus de `mode` (signature
         // sans param `$mode`) — l'assignation crée le lien, sans drift policy.
         $sc = Shortcut::create([
             'key' => 'pronote', 'name' => 'Pronote', 'place' => 'desktop',

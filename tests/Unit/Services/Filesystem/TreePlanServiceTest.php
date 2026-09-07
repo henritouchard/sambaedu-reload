@@ -22,7 +22,7 @@ use Tests\Unit\Services\Filesystem\Plan\ClassTreeRecipe;
 use Tests\Unit\Services\Filesystem\Plan\PlanNeutralityMarkers;
 
 /**
- * Story 60.2 — LA CHAÎNE COMPLÈTE : groupe réel en base → plan neutre.
+ * LA CHAÎNE COMPLÈTE : groupe réel en base → plan neutre.
  *
  * Ces tests-ci ont besoin d'une base, et c'est normal : l'assembleur requête. Ce
  * qu'ils N'ONT PAS besoin, c'est d'un faux processus ou d'un faux système de
@@ -30,7 +30,7 @@ use Tests\Unit\Services\Filesystem\Plan\PlanNeutralityMarkers;
  * bougé.
  *
  * Le test PIVOT de ce fichier est {@see edge_role_subjects_do_not_depend_on_the_headcount()} :
- * il matérialise la conclusion de la revue de la story 60.1 — la garde de la
+ * Il matérialise la conclusion de la revue de la — la garde de la
  * mesure vit dans la couche des stratégies, pas dans le résolveur pur.
  */
 class TreePlanServiceTest extends TestCase
@@ -64,10 +64,6 @@ class TreePlanServiceTest extends TestCase
         parent::tearDown();
     }
 
-    // =========================================================================
-    // Décor
-    // =========================================================================
-
     private function classGroup(string $name = '3emeA', string $type = 'classe'): UserGroup
     {
         return UserGroup::create(['name' => $name, 'display_name' => $name, 'type' => $type]);
@@ -95,10 +91,6 @@ class TreePlanServiceTest extends TestCase
         return $plan->roles[$roleKey] ?? [];
     }
 
-    // =========================================================================
-    // AC5 — la chaîne complète, et son absence de recette
-    // =========================================================================
-
     #[Test]
     public function a_group_whose_type_has_no_attached_recipe_yields_null(): void
     {
@@ -121,7 +113,7 @@ class TreePlanServiceTest extends TestCase
         $plan = $this->service->planFor($group);
 
         $this->assertNotNull($plan);
-        // Story 60.5 — la racine du plan est UN segment : la ZONE est portée par
+        // La racine du plan est UN segment : la ZONE est portée par
         // l'ancre logique, plus par un segment de tête du motif de chemin.
         $this->assertSame('Classe_3emeA', $plan->rootPath);
         $this->assertSame(PlanAnchor::Classes, $plan->anchor);
@@ -138,7 +130,7 @@ class TreePlanServiceTest extends TestCase
     #[Test]
     public function a_brownfield_prefixed_group_name_does_not_double_the_prefix(): void
     {
-        // Le repliement 4.13 stocke le nom NU, mais des lignes préfixées
+        // Le repliement stocke le nom NU, mais des lignes préfixées
         // subsistent sur les instances en place. Les deux formes doivent donner le
         // MÊME chemin.
         $this->autoResolvableClassTreeTemplate()->save();
@@ -171,10 +163,6 @@ class TreePlanServiceTest extends TestCase
 
         $this->service->contextFor(new UserGroup(['name' => '3emeA', 'type' => 'classe']), $this->autoResolvableClassTreeTemplate(null));
     }
-
-    // =========================================================================
-    // AC2 — LA GARDE DE LA MESURE
-    // =========================================================================
 
     #[Test]
     public function edge_role_subjects_do_not_depend_on_the_headcount(): void
@@ -235,7 +223,7 @@ class TreePlanServiceTest extends TestCase
     #[Test]
     public function each_listed_edge_role_yields_exactly_one_abstract_subject(): void
     {
-        // La recette SEEDÉE ne liste qu'un rôle d'arête (arbitrage 60.5 : le
+        // La recette SEEDÉE ne liste qu'un rôle d'arête (arbitrage : le
         // surensemble est déjà dans l'annuaire). Le MÉCANISME, lui, doit valoir
         // pour n'importe quelle liste : on l'éprouve donc sur une variante à deux
         // rôles, plutôt que de compter sur ce que la recette du jour se trouve
@@ -311,8 +299,8 @@ class TreePlanServiceTest extends TestCase
     #[Test]
     public function a_designated_user_target_stays_perfectly_legitimate(): void
     {
-        // NON-RÉGRESSION NOMMÉE (revue 60.1, finding #1). Le correctif « rejeter
-        // les sujets utilisateur en bloc » casserait cette recette LIVRÉE : deux
+        // NON-RÉGRESSION NOMMÉE. Rejeter « les sujets utilisateur en bloc »
+        // casserait cette recette LIVRÉE : deux
         // rôles de maille utilisateur, cardinalité un. La garde de la mesure porte
         // sur l'ÉNUMÉRATION d'une audience, pas sur le type du sujet.
         $template = new DirectoryTemplate([
@@ -396,10 +384,6 @@ class TreePlanServiceTest extends TestCase
 
         $this->service->planUsing($this->classGroup('E', 'custom'), $template, ['cible' => ['alecoz']]);
     }
-
-    // =========================================================================
-    // AC3 — les stratégies `self` et `pattern`
-    // =========================================================================
 
     #[Test]
     public function the_self_strategy_designates_the_whole_materialization_group(): void
@@ -490,10 +474,6 @@ class TreePlanServiceTest extends TestCase
             ]],
         ]);
     }
-
-    // =========================================================================
-    // Lecture des appartenances
-    // =========================================================================
 
     #[Test]
     public function only_the_edge_role_is_read_never_the_stale_head_teacher_flag(): void
@@ -595,10 +575,6 @@ class TreePlanServiceTest extends TestCase
         $this->assertNotNull($this->service->planFor($this->classGroup('3emeA', 'classe')));
     }
 
-    // =========================================================================
-    // AC6 — la maille « matière × classe », de bout en bout
-    // =========================================================================
-
     #[Test]
     public function a_matiere_classe_group_resolves_through_the_whole_chain(): void
     {
@@ -637,10 +613,6 @@ class TreePlanServiceTest extends TestCase
         $this->assertPlanIsNeutral($plan, 'plan matière×classe');
     }
 
-    // =========================================================================
-    // AC8 — la garde de neutralité, exercée sur un plan du NOUVEAU service
-    // =========================================================================
-
     #[Test]
     public function a_plan_produced_by_the_whole_chain_stays_neutral(): void
     {
@@ -659,7 +631,7 @@ class TreePlanServiceTest extends TestCase
 
         $this->assertPlanIsNeutral($plan, 'plan issu de la chaîne complète');
 
-        // Et aucun chemin absolu, comme pour le décor de la story 60.1.
+        // Et aucun chemin absolu, comme pour le décor.
         $offenders = [];
         $serializable = $plan->toArray();
         array_walk_recursive($serializable, static function (mixed $value) use (&$offenders): void {

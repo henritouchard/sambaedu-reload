@@ -26,7 +26,7 @@ use Illuminate\Support\Facades\Log;
  * ]
  * ```
  *
- * Story 16.3c — AC3.5 étape 1-2, AC3.6, AC6.6.
+ * Étape 1-2.
  *
  * @legacy-port path="sambaedu/gpo/associations_out.php:41-66"
  */
@@ -37,7 +37,7 @@ class PackagesXmlAssociationsReader
      * `$packageId => $identifier => ['ProgId', 'type']`.
      *
      * Path par défaut : `config('sambaedu.wpkg.deploy_path').'/packages.xml'`
-     * (Story 15.1). Fichier absent / DOM cassé → tableau vide + log.
+     * . Fichier absent / DOM cassé → tableau vide + log.
      *
      * @return array<string, array<string, array{ProgId: string, type: string}>>
      */
@@ -142,7 +142,7 @@ class PackagesXmlAssociationsReader
     }
 
     /**
-     * Path par défaut iso Story 15.1 : `config('sambaedu.wpkg.deploy_path').'/packages.xml'`.
+     * Path par défaut iso : `config('sambaedu.wpkg.deploy_path').'/packages.xml'`.
      */
     private function resolvePath(): string
     {

@@ -11,7 +11,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 60.3 — le VOCABULAIRE du contrat de backend, épinglé.
+ * Le VOCABULAIRE du contrat de backend, épinglé.
  *
  * Trois enums fermées, et trois propriétés qu'on ne veut pas voir dériver : la
  * colonne n'accueille que ce que le code sait résoudre, les sept résultats disent
@@ -19,23 +19,20 @@ use Tests\TestCase;
  */
 class FileBackendVocabularyTest extends TestCase
 {
-    // =========================================================================
-    // Le nom : deux cases, et pas une de plus
-    // =========================================================================
 
     /**
-     * **STORY 61.3 — LA GARDE A CHANGÉ D'OBJET, ET CE N'EST PAS UN AFFAIBLISSEMENT.**
+     * **LA GARDE A CHANGÉ D'OBJET, ET CE N'EST PAS UN AFFAIBLISSEMENT.**
      *
      * Elle s'appelait « aucun backend distant n'a de valeur de colonne » et elle
-     * protégeait le squelette jetable de la story 60.3 : rien, hors de l'arbre, ne
-     * pouvait se faire choisir faute d'un nom. Cette phrase décrivait un ÉTAT DATÉ —
-     * l'epic 61 avait pour objet de l'annuler, et elle est annulée : un backend
+     * protégeait le squelette jetable : rien, hors de l'arbre, ne pouvait se faire
+     * choisir faute d'un nom. Cette phrase décrivait un ÉTAT DATÉ, désormais
+     * annulé : un backend
      * distant réel existe, il est enregistré, il est sélectionnable.
      *
      * Ce que l'ancienne garde protégeait RÉELLEMENT, c'est autre chose, et c'est
      * permanent : **aucune case ne doit exister sans implémentation.** Une position
-     * déclarée que le système ne sait pas tenir est le défaut que tout cet epic
-     * combat — un signal accepté qui n'atteint pas son destinataire. La garde porte
+     * déclarée que le système ne sait pas tenir est le défaut qu'on combat
+     * partout — un signal accepté qui n'atteint pas son destinataire. La garde porte
      * désormais là-dessus, et elle est plus forte : elle vaudra encore quand un
      * quatrième nom arrivera.
      *
@@ -45,12 +42,11 @@ class FileBackendVocabularyTest extends TestCase
      * cloisonnement), et il n'y a rien à rouvrir pour lui, ni maintenant ni plus
      * tard.
      *
-     * ---------------------------------------------------------------------------
      * **LA LISTE PASSE À QUATRE : `opencloud` ENTRE AU VOCABULAIRE.** La liste
      * exacte est retouchée, et c'est la SEULE chose qui bouge dans ce test.
      * L'invariant permanent — *chaque case résout dans le registre* — est repris
      * mot pour mot en dessous, et c'est lui qui portait déjà tout le poids : la
-     * garde annoncée en 61.3 disait qu'elle « vaudrait encore quand un quatrième
+     * garde annoncée disait qu'elle « vaudrait encore quand un quatrième
      * nom arriverait ». Il est arrivé, et elle vaut.
      *
      * Pourquoi cette case-là est légitime quand la case déléguée ne l'était pas :
@@ -59,7 +55,6 @@ class FileBackendVocabularyTest extends TestCase
      * instance réelle, le 2026-08-13 : espace de projet créé, octroi posé par
      * sous-dossier à un principal groupe, et un compte sans octroi qui obtient
      * `404` plutôt qu'un accès. Le cloisonnement, lui, est bien là.
-     * ---------------------------------------------------------------------------
      */
     #[Test]
     public function the_column_vocabulary_is_exact_and_every_case_resolves(): void
@@ -95,7 +90,7 @@ class FileBackendVocabularyTest extends TestCase
     #[Test]
     public function an_unknown_column_value_is_never_part_of_the_vocabulary(): void
     {
-        // Story 61.3 — `nextcloud` a rejoint le vocabulaire ; la case DÉLÉGUÉE, elle,
+        // `nextcloud` a rejoint le vocabulaire ; la case DÉLÉGUÉE, elle,
         // n'y entrera jamais (elle a été supprimée du produit, pas reportée).
         //
         // `opencloud` figurait ici comme exemple d'inconnu — c'était l'état daté
@@ -109,10 +104,6 @@ class FileBackendVocabularyTest extends TestCase
         $this->assertTrue(FileBackendName::isKnown('nextcloud'));
         $this->assertTrue(FileBackendName::isKnown('opencloud'));
     }
-
-    // =========================================================================
-    // Les sept résultats
-    // =========================================================================
 
     #[Test]
     public function there_are_exactly_seven_outcomes(): void
@@ -207,10 +198,6 @@ class FileBackendVocabularyTest extends TestCase
             }
         }
     }
-
-    // =========================================================================
-    // Les quatre observations
-    // =========================================================================
 
     #[Test]
     public function the_observation_vocabulary_is_closed_and_distinguishes_absent_from_unobservable(): void

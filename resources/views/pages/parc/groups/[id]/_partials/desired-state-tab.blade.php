@@ -8,9 +8,9 @@ use Livewire\Attributes\Locked;
 use Livewire\Component;
 
 /**
- * Story 37.1 — Onglet « État cible » de la page PARC / SALLE (consultation pure).
+ * Onglet « État cible » de la page PARC / SALLE (consultation pure).
  *
- * Affiche la CONTRIBUTION de ce groupe (décision D4) : raccourcis assignés à CE
+ * Affiche la CONTRIBUTION de ce groupe : raccourcis assignés à CE
  * groupe, applications qu'il apporte (directes + via profils), + les PLANCHERS
  * hérités (socle commun `is_parc_default`, contrat amont). Les réglages propres à
  * chaque poste membre restent visibles sur leur fiche. Projection lecture seule
@@ -92,8 +92,8 @@ new #[Lazy] class extends Component {
     }
 }; ?>
 
-{{-- Review #5 — vocabulaire salle/parc : les textes de la vue suivent la nature
-     physique/logique du groupe (cohérent D6, badges room_self/group_self). --}}
+{{-- Vocabulaire salle/parc : les textes de la vue suivent la nature
+     physique/logique du groupe (badges room_self/group_self). --}}
 @php $isRoom = $this->group?->is_physical === true; @endphp
 <div class="space-y-6 mt-4">
 

@@ -14,11 +14,11 @@ use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
 
 /**
- * Story 6.2 — Service d'encapsulation des commandes Samba `rpcclient` /
+ * Service d'encapsulation des commandes Samba `rpcclient` /
  * `smbclient` pour la gestion des pilotes Windows publiés sur le share
  * `[print$]` du serveur SE4FS.
  *
- * Pattern shellout aligné sur {@see CupsPrinterService} (Story 6.1) :
+ * Pattern shellout aligné sur {@see CupsPrinterService} :
  *  - `escapeshellarg()` systématique avant `commandRunner->run()`.
  *  - Capture stdout / stderr / returnCode → `PrintDriverException`
  *    structurée.
@@ -27,21 +27,21 @@ use InvalidArgumentException;
  *    est en français ; sans `LC_ALL=C` la sortie de `smbclient` /
  *    `rpcclient` peut diverger.
  *
- * Pré-requis sécurité (defense in depth, AC9) :
+ * Pré-requis sécurité (defense in depth) :
  *  - regex stricte côté Livewire validation,
  *  - re-validation regex stricte ICI (Service) avant `escapeshellarg`,
  *  - `basename()` PHP forcé sur tout nom de fichier driver avant
  *    insertion dans un chemin destination (anti path-traversal),
  *  - chemin destination en CONSTANTE (`/var/lib/samba/printers/x64/`).
  *
- * Pré-requis auth (D4) :
+ * Pré-requis auth :
  *  - tous les `rpcclient`/`smbclient` passent `--use-kerberos=required`
  *    (centralisé `buildRpcclientCommand` / `buildSmbclientCommand`),
  *  - pas de fallback NTLM (protection contre downgrade).
  *
  * Comportement Samba-down ({@see SambaUnavailableException}) :
  *  {@see PrinterDriversSyncCommand} l'attrape pour skip orphan-marking
- *  (décalque fix #12 6.1 sur CUPS).
+ *  comme le fait le canal CUPS.
  */
 class PrintDriverService
 {
@@ -49,7 +49,7 @@ class PrintDriverService
     public const MAX_DRIVER_NAME_LENGTH = 255;
 
     /**
-     * Regex nom driver Samba — lettres / chiffres / espace / `._-()` /
+     * Regex nom driver Samba — lettres / chiffres / espace / `._-` /
      * `/` (séparateur usuel ex. `HP / LaserJet 4`).
      *
      * Note : le slash `/` est inclus volontairement pour les noms de
@@ -67,7 +67,7 @@ class PrintDriverService
 
     /**
      * Regex nom d'imprimante CUPS — alignée sur
-     * {@see CupsPrinterService::NAME_REGEX} (6.1). Autorise l'underscore
+     * {@see CupsPrinterService::NAME_REGEX}. Autorise l'underscore
      * (`imp_salle_a`), contrairement au strict NetBIOS.
      */
     public const CUPS_NAME_REGEX = '/^[a-zA-Z0-9_-]{1,15}$/';
@@ -78,11 +78,11 @@ class PrintDriverService
      */
     public const FILE_NAME_REGEX = '/^[a-zA-Z0-9._\-]{1,255}$/';
 
-    /** Architectures supportées en 6.2 (D5 : `x64` uniquement). */
+    /** Seule architecture supportée : `x64`. */
     public const ARCHITECTURE_ALLOWED = ['x64'];
 
     /**
-     * Mapping interne SER → étiquette `rpcclient adddriver` (D5/legacy
+     * Mapping interne SER → étiquette `rpcclient adddriver` (legacy
      * `printers.inc.php:111` : `"Windows x64"` exactement).
      */
     public const ARCHITECTURE_LABEL = [
@@ -126,10 +126,6 @@ class PrintDriverService
         private readonly CommandRunner $commandRunner,
     ) {
     }
-
-    // ========================================================================
-    // CONFIG / CONSTRUCTION DE COMMANDES
-    // ========================================================================
 
     /**
      * Nom du serveur SE4FS (cible des appels `rpcclient` pour les drivers
@@ -175,7 +171,7 @@ class PrintDriverService
 
     /**
      * Construit une commande `sudo rpcclient` avec :
-     *  - `--use-kerberos=required` (D4 strict),
+     *  - `--use-kerberos=required`,
      *  - `escapeshellarg` sur le serveur cible,
      *  - `escapeshellarg` sur la commande `-c '...'` interne.
      *
@@ -194,7 +190,7 @@ class PrintDriverService
 
     /**
      * Construit une commande `sudo smbclient //server/print$` avec
-     * `--use-kerberos=required` (D4) + escapeshellarg sur le UNC + escape
+     * `--use-kerberos=required` + escapeshellarg sur le UNC + escape
      * sur la sous-commande SMB `-c '...'`.
      */
     private function buildSmbclientCommand(string $serverPivot, string $smbCmd): string
@@ -206,10 +202,6 @@ class PrintDriverService
             . ' --use-kerberos=required -c '
             . escapeshellarg($smbCmd);
     }
-
-    // ========================================================================
-    // VALIDATION (defense in depth, AC9)
-    // ========================================================================
 
     /**
      * Valide le nom canonique d'un driver Samba.
@@ -250,7 +242,7 @@ class PrintDriverService
     /**
      * Valide un nom d'imprimante CUPS. Plus permissif que
      * `validatePivotHostname` (autorise l'underscore — cohérent
-     * {@see CupsPrinterService::NAME_REGEX} 6.1).
+     * {@see CupsPrinterService::NAME_REGEX}).
      *
      * @throws InvalidArgumentException
      */
@@ -265,7 +257,7 @@ class PrintDriverService
     }
 
     /**
-     * Valide l'architecture (D5 : `x64` uniquement en 6.2).
+     * Valide l'architecture : `x64` uniquement.
      *
      * @throws InvalidArgumentException
      */
@@ -274,7 +266,7 @@ class PrintDriverService
         if (!in_array($arch, self::ARCHITECTURE_ALLOWED, true)) {
             Log::warning('PrintDriverService: architecture non supportée', ['arch' => $arch]);
             throw new InvalidArgumentException(
-                'Architecture non supportée : seul `x64` est autorisé en 6.2 (cf. D5).'
+                'Architecture non supportée : seul `x64` est autorisé.'
             );
         }
     }
@@ -301,14 +293,10 @@ class PrintDriverService
         }
     }
 
-    // ========================================================================
-    // SANTÉ
-    // ========================================================================
-
     /**
      * Vérifie que `rpcclient srvinfo <se4fs>` répond. Retourne `false`
      * sans lever d'exception — les appelants décident (sync command
-     * skip orphan-marking si false, cohérent fix #12 6.1).
+     * skip orphan-marking si false).
      */
     public function isSambaHealthy(): bool
     {
@@ -341,10 +329,6 @@ class PrintDriverService
         return $result['returnCode'] === 0;
     }
 
-    // ========================================================================
-    // LECTURE (rpcclient enumdrivers / getdriver / enumprinters / getprinter)
-    // ========================================================================
-
     /**
      * Liste tous les drivers publiés sur le serveur SE4FS via
      * `rpcclient enumdrivers`. Parse les lignes `Driver Name: [<name>]`
@@ -376,7 +360,7 @@ class PrintDriverService
                 $seen[$key] = true;
                 $drivers[] = [
                     'driver_name' => $name,
-                    'architecture' => 'x64', // D5 — 6.2 ne supporte que x64
+                    'architecture' => 'x64', // Seule architecture supportée.
                 ];
             }
         }
@@ -427,7 +411,7 @@ class PrintDriverService
             'Configfile' => 'NULL',
             'Helpfile' => 'NULL',
             'Dependentfiles' => [],
-            'Architecture' => 'Windows x64', // D5
+            'Architecture' => 'Windows x64',
         ];
 
         foreach ($result['stdout'] as $line) {
@@ -571,7 +555,7 @@ class PrintDriverService
     /**
      * Combine la vue Samba (driver effectivement attaché à l'imprimante
      * runtime) avec les rangées SER (audit + provenance + notes) pour
-     * une imprimante donnée. Utilisé par la modale édit (AC1).
+     * une imprimante donnée. Utilisé par la modale édit.
      *
      * @return array{
      *   samba: array{smb_name:string,smb_driver:string,smb_comment:string}|null,
@@ -606,21 +590,17 @@ class PrintDriverService
         ];
     }
 
-    // ========================================================================
-    // MUTATION (smbclient copy / rpcclient adddriver / setdriver / deldriver)
-    // ========================================================================
-
     /**
      * Récupère un fichier driver depuis le partage `[print$]` du pivot
      * W10 vers `/var/lib/samba/printers/x64/<file>`, puis pose le
-     * propriétaire `www-admin:www-admin` (sudo path-restricted, D11).
+     * propriétaire `www-admin:www-admin` (sudo path-restricted).
      *
-     * Workflow legacy `printers.inc.php:69,81`. Différences 6.2 :
+     * Workflow legacy `printers.inc.php:69,81`. Différences :
      *  - escape complet du serveur et de la sous-commande SMB,
      *  - validation regex stricte du fileName (anti path-traversal),
      *  - `basename($fileName)` forcé en pré-flight,
      *  - chown post-copy obligatoire (pas legacy mais nécessaire pour
-     *    `unlink` ultérieur via sudoers path-restricted D11).
+     *    `unlink` ultérieur via sudoers path-restricted).
      *
      * @throws InvalidArgumentException|WindowsPivotUnreachableException|PrintDriverException
      */
@@ -647,7 +627,7 @@ class PrintDriverService
             $this->throwForSmbclientFailure($cmd, $result, "copie fichier driver \"{$safeName}\" depuis pivot", $serverPivot);
         }
 
-        // Pose proprio post-copy (D11 path-restricted, exigée pour les
+        // Pose proprio post-copy (path-restricted, exigée pour les
         // `unlink` ultérieurs et la lisibilité par www-admin/PHP).
         $chownCmd = 'sudo /bin/chown www-admin:www-admin ' . escapeshellarg($destPath);
         $chownResult = $this->runQuiet($chownCmd);
@@ -695,11 +675,11 @@ class PrintDriverService
         $name = $driverDef['Driver Name'] ?? '';
         $this->validateDriverName($name);
 
-        // L'archi `Windows x64` est la SEULE valeur acceptée en 6.2 (D5).
+        // L'archi `Windows x64` est la SEULE valeur acceptée.
         $arch = $driverDef['Architecture'] ?? self::ARCHITECTURE_LABEL['x64'];
         if ($arch !== self::ARCHITECTURE_LABEL['x64']) {
             Log::warning('PrintDriverService: architecture non x64 rejetée', ['arch' => $arch]);
-            throw new InvalidArgumentException('Architecture non supportée — seul "Windows x64" est autorisé en 6.2.');
+            throw new InvalidArgumentException('Architecture non supportée — seul "Windows x64" est autorisé.');
         }
 
         // Chaque fichier driver doit être validé avant insertion dans le
@@ -808,10 +788,10 @@ class PrintDriverService
 
     /**
      * Supprime un driver de Samba : `rpcclient deldriver "<name>"` + unlink
-     * sudo path-restricted des fichiers physiques associés (D11).
+     * sudo path-restricted des fichiers physiques associés.
      *
      * **Pré-condition** : l'appelant DOIT vérifier que le driver n'est
-     * plus rattaché à aucune imprimante CUPS (D8 — refus côté UI sinon).
+     * plus rattaché à aucune imprimante CUPS — l'UI refuse sinon.
      *
      * @param  string[]  $associatedFiles  Liste de noms de fichiers (sans
      *   path) à supprimer post-deldriver (déjà extraits via
@@ -871,7 +851,7 @@ class PrintDriverService
     /**
      * Supprime des fichiers driver déposés dans `/var/lib/samba/printers/x64/`
      * sans toucher à Samba (`rpcclient deldriver`). Utilisé par le rollback
-     * D9 quand un upload échoue après `copyDriverFile` mais avant
+     * quand un upload échoue après `copyDriverFile` mais avant
      * `registerDriver` — il faut nettoyer les fichiers orphelins.
      *
      * Chaque nom est re-validé via `validateFileName` (defense in depth).
@@ -920,10 +900,6 @@ class PrintDriverService
         }
         return ['removed' => $removed, 'failed' => $failed];
     }
-
-    // ========================================================================
-    // INTERNAL HELPERS
-    // ========================================================================
 
     /**
      * Run + log silencieux (debug). `LC_ALL=C` injecté par RealCommandRunner.

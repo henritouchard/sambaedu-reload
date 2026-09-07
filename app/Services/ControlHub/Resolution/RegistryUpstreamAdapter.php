@@ -10,10 +10,10 @@ use App\Models\ControlHubContractItem;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 28.3 — Adaptateur AMONT pour le type `registry` (exclusive PAR IDENTITÉ
+ * Adaptateur AMONT pour le type `registry` (exclusive PAR IDENTITÉ
  * DE CLÉ — {@see \App\Services\Agent\Contracts\KeyedExclusiveProvider}).
  *
- * Convention de `key` (bridge minimal, déféré Epic 33 pour un schéma figé) :
+ * Convention de `key` (bridge minimal, déféré pour un schéma figé) :
  * `key = "hive|path|name"` ou `key = "hive|path|name|REG_TYPE"` (séparateur `|`,
  * EXACTEMENT la forme de la clé d'exclusivité du provider registry
  * `strtolower("$hive|$path|$name")`). Cela garantit qu'un item amont entre en
@@ -26,7 +26,7 @@ use Illuminate\Support\Facades\Log;
  * Routage de portée : `hive=HKLM` → portée MACHINE (service SYSTEM) ;
  * `hive=HKCU` → portée SESSION (compagnon). Le `providerType()` `registry`
  * couvre les DEUX providers ; la portée discrimine lequel reçoit le candidat
- * (routage d'enveloppe, PAS une précédence de maille — D2 intact).
+ * (routage d'enveloppe, PAS une précédence de maille).
  *
  * ⚠️ GARDE-FOU R3 : aucun « central ». Vocabulaire « amont » / `Upstream`.
  */
@@ -82,7 +82,7 @@ final class RegistryUpstreamAdapter implements UpstreamPayloadAdapter
     /**
      * Décompose la clé amont `hive|path|name[|type]`. Les segments manquants
      * tombent sur des défauts sûrs (hive vide → routé session par défaut, type
-     * `REG_SZ`). Stable et déterministe (sert l'ETag 23.5).
+     * `REG_SZ`). Stable et déterministe (sert l'ETag).
      *
      * @return array{hive:string, path:string, name:string, type:string}
      */

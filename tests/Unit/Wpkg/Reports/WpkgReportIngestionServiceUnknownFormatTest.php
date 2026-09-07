@@ -19,7 +19,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 15.5 / AC2.3 + AC2.4 — Tests parser graceful (format inconnu, champs additionnels).
+ * + — Tests parser graceful (format inconnu, champs additionnels).
  */
 final class WpkgReportIngestionServiceUnknownFormatTest extends TestCase
 {

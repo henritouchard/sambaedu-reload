@@ -13,16 +13,15 @@ import (
 	"sambaedu/agent/shared"
 )
 
-// Pose du LIEN `app_profile` par le SERVICE SYSTEM au logon (Story 36.5,
-// amendement final — conception ARRÊTÉE Henri 2026-07-21). Sur le modèle EXACT
-// de l'overlay (Story 27.1bis, overlay_logon_windows.go) : déclenché par
+// Pose du LIEN `app_profile` par le SERVICE SYSTEM au logon. Sur le modèle EXACT
+// de l'overlay (overlay_logon_windows.go) : déclenché par
 // WTS_SESSION_LOGON (service_windows.go), résolution user/profil via le token de
 // session (WTSQueryUserToken → GetUserProfileDirectory), best-effort/gracieux de
 // bout en bout (rien ne bloque jamais le service ni les autres sessions).
 //
 // POURQUOI SYSTEM. Le lien de dossier vers UNC (mklink /D iso-SE4) exige
 // SeCreateSymbolicLinkPrivilege, qu'AUCUN canal SE5 ne peut accorder à
-// l'utilisateur (le mécanisme `privilege` 35.6 est SeDeny*-only par conception)
+// l'utilisateur (le mécanisme `privilege` est SeDeny*-only par conception)
 // — mais que LocalSystem possède NATIVEMENT. Le service pose donc / répare le
 // LIEN ; le COMPAGNON garde tout le reste (dossier serveur, marqueur, user.js,
 // paire d'ini — contexte user, non privilégié). Split iso-SE4.
@@ -72,7 +71,7 @@ func applyAppProfilesForSession(sessionID uint32, se4fs string, store *shared.St
 	}
 	defer userToken.Close()
 
-	// SID (clé du cache per-SID) — même sous-système LSA que le fetch (cohérence 24.6).
+	// SID (clé du cache per-SID) — même sous-système LSA que le fetch (cohérence).
 	tokenUser, err := userToken.GetTokenUser()
 	if err != nil {
 		log.Warningf("Lien app_profile : résolution du SID de session %d impossible (%v) — pose sautée.", sessionID, err)

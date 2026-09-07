@@ -10,12 +10,11 @@ use App\Ipxe\Services\IpxeEnrollmentOrchestrator;
 use Illuminate\Http\Response;
 
 /**
- * Story 3.3 — AC7.1.
  *
  * Controller fin — délègue 100% à {@see IpxeEnrollmentOrchestrator::handleByod()}.
  *
  * **Sert** : `GET|POST /ipxe/enrollment/byod` (port simplifié de
- * `sambaedu/ipxe/enregistrement_byod.php` — stub 3.3, extension 3.4).
+ * `sambaedu/ipxe/enregistrement_byod.php` — stub, extension).
  */
 class IpxeEnrollmentByodController extends Controller
 {

@@ -10,12 +10,12 @@ use App\Models\ExtensionSource;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
- * Story 54.1 — Fabrique de sources d'extensions.
+ * Fabrique de sources d'extensions.
  *
  * Défaut = source EMBARQUÉE anonyme (clé unique) ; l'état {@see self::bundled()}
  * produit LA source canonique `bundled` du dépôt.
  *
- * Story 56.1 : les états {@see self::remote()}, {@see self::syncError()} et
+ * Les états {@see self::remote}, {@see self::syncError} et
  * {@see self::unreachable()} couvrent les sources DISTANTES et leurs trois
  * états de synchro. L'URL d'une source distante est une URL de **BASE** (le
  * service compose `/index.json`, `/index.json.sig`, `/source.pub`).
@@ -51,7 +51,7 @@ class ExtensionSourceFactory extends Factory
     }
 
     /**
-     * Source DISTANTE (Story 56.1) : `$url` est l'URL de **BASE** du dépôt —
+     * Source DISTANTE : `$url` est l'URL de **BASE** du dépôt
      * jamais `…/index.json`, que le service compose lui-même.
      *
      * `$publicKey` est la clé Ed25519 base64 PINNÉE. Vide par défaut : les

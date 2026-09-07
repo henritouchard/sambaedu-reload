@@ -10,17 +10,17 @@ use Livewire\Attributes\Computed;
 use Livewire\Component;
 
 /**
- * Story 27.17 — Onglet « Registre / capacités » de /admin/settings/parc-defaults.
+ * Onglet « Registre / capacités » de /admin/settings/parc-defaults.
  *
  * Édite le DÉFAUT DIFFUSÉ de chaque capacité (`capabilities.default_value`) via
  * le flow `saveDefault()` / `toggleLock` (anciennement page /admin/settings/capabilities
- * 27.12, désormais consolidée ici — page doublon supprimée, décision Henri 27.17).
+ * désormais consolidée ici — la page doublon a été supprimée).
  * Le défaut est diffusé à toute la flotte par la maille Broadcast (provider
- * `Registry{Machine,User}CapabilityProvider`, 27.12). Les OVERRIDES PAR PARC
+ * `Registry{Machine,User}CapabilityProvider`). Les OVERRIDES PAR PARC
  * restent sur l'onglet « Options/Capacités » de la page du groupe — NON touchés
  * ici (on n'écrit que `default_value` et `overrides_locked`).
  *
- * Décision Henri : tout en `server.admin` (le flow capabilities l'était déjà).
+ * Tout est gardé par `server.admin` (le flow capabilities l'était déjà).
  * Chaque action mutante re-garde `Gate::authorize('server.admin')`.
  */
 new class extends Component {
@@ -43,8 +43,8 @@ new class extends Component {
     #[Computed]
     public function capabilities(): array
     {
-        // Stories 29.2/29.4 — statut amont pré-calculé une fois (set mémoïsé ;
-        // court-circuit NFR3 sans contrat) pour éviter le N+1.
+        // Statut amont pré-calculé une fois (set mémoïsé ; court-circuité
+        // en l'absence de contrat) pour éviter le N+1.
         $lock = app(UpstreamLockResolver::class);
 
         return Capability::query()
@@ -53,7 +53,7 @@ new class extends Component {
             ->orderBy('label')
             ->get()
             ->map(function (Capability $c) use ($lock): array {
-                // Story 29.4 — statut tri-état : 'locked'|'permissive'|'local'.
+                // Statut tri-état : 'locked'|'permissive'|'local'.
                 // `is_upstream_locked` dérivé du statut (évite un double appel).
                 $upstreamStatus = $lock->capabilityUpstreamStatus($c);
 
@@ -69,7 +69,7 @@ new class extends Component {
                     'has_warning' => $c->hasWarning(),
                     'is_upstream_locked' => $upstreamStatus === 'locked',
                     'upstream_status' => $upstreamStatus,
-                    // Story 43.2 (D5/D6) — temporalité d'effet ; null = AUCUN
+                    // Temporalité d'effet ; null = AUCUN
                     // badge (capacité sans clé HKCU registre). Dérivé sur la
                     // relation `projections` DÉJÀ eager-loaded ci-dessus (zéro
                     // requête ajoutée).
@@ -80,10 +80,10 @@ new class extends Component {
     }
 
     /**
-     * Story 29.4 (#3) — Un contrat amont actif est-il présent ? Aucune requête
+     * Un contrat amont actif est-il présent ? Aucune requête
      * supplémentaire (singleton mémoïsé — réutilise `ensureResolved()`). Permet
      * de gater l'affichage des badges tri-état : en standalone (aucun contrat),
-     * AUCUN badge n'est rendu → UI byte-identique à 27.17 (NFR3).
+     * AUCUN badge n'est rendu → UI byte-identique.
      */
     #[Computed]
     public function hasUpstreamContract(): bool
@@ -94,7 +94,7 @@ new class extends Component {
     #[Computed]
     public function editingCapability(): ?Capability
     {
-        // Story 43.2 — `with('projections')` : la modale affiche AUSSI le
+        // `with('projections')` : la modale affiche AUSSI le
         // badge de temporalité d'effet (effectTiming()) sans requête ajoutée.
         return $this->editingCapabilityId !== null
             ? Capability::query()->with('projections')->find($this->editingCapabilityId)
@@ -107,7 +107,7 @@ new class extends Component {
 
         $capability = Capability::query()->findOrFail($capabilityId);
 
-        // Story 35.5 (review #2) : une capacité inactive (gate is_active) est
+        // Une capacité inactive (gate is_active) est
         // ignorée par le provider — éditer son défaut serait un réglage sans
         // effet posé silencieusement. Refus explicite, pas d'opacité seule.
         if (! $capability->is_active) {
@@ -137,8 +137,8 @@ new class extends Component {
 
         $capability = Capability::query()->findOrFail($capabilityId);
 
-        // Story 29.2 — un item verrouillé amont interdit aussi de (dé)geler
-        // localement la capacité correspondante (le gel local 27.12 ne doit pas
+        // Un item verrouillé amont interdit aussi de (dé)geler
+        // localement la capacité correspondante (le gel local ne doit pas
         // servir de contournement du verrou amont).
         if (! $this->authorizeUpstream($capability)) {
             return;
@@ -164,14 +164,14 @@ new class extends Component {
             return;
         }
 
-        // Story 35.5 (review #2) — defense-in-depth : refus même si l'UI est
+        // Defense-in-depth : refus même si l'UI est
         // contournée (openEdit refuse déjà, mais l'action reste appelable).
         if (! $capability->is_active) {
             $this->toastError('Capacité inactive : le réglage n\'aurait aucun effet tant que le gate n\'est pas levé.');
             return;
         }
 
-        // Story 29.2 — refus SERVEUR (defense-in-depth) : éditer le défaut diffusé
+        // Refus SERVEUR (defense-in-depth) : éditer le défaut diffusé
         // d'une capacité verrouillée amont est refusé même si l'UI est contournée.
         if (! $this->authorizeUpstream($capability)) {
             return;
@@ -231,11 +231,11 @@ new class extends Component {
     }
 
     /**
-     * Story 29.2 — garde de VERROU AMONT (defense-in-depth). `server.admin` est
+     * Garde de VERROU AMONT (defense-in-depth). `server.admin` est
      * DÉJÀ vérifié par guardAdmin() en tête de chaque mutation. Le gate
      * `modify-capability` ajoute le verrou amont : un item `locked`/`instance`/
      * `registry` matchant une clé de la capacité refuse l'édition du défaut ET le
-     * (dé)gel local. Refus = toast explicite + arrêt (retourne false). [AC #2, #5, #6]
+     * (dé)gel local. Refus = toast explicite + arrêt (retourne false).
      */
     private function authorizeUpstream(Capability $capability): bool
     {
@@ -244,7 +244,7 @@ new class extends Component {
 
             return true;
         } catch (AuthorizationException) {
-            // Story 29.8 — depuis le retrait du plancher de droit dans
+            // Depuis le retrait du plancher de droit dans
             // `CapabilityPolicy::modify`, ce gate ne refuse PLUS que pour VERROU
             // AMONT : le droit GLOBAL est filtré EN AMONT par `guardAdmin()`
             // (`server.admin`) qui aborte 403 avant d'atteindre ce point. La branche
@@ -301,7 +301,7 @@ new class extends Component {
                                                 <i class="fa-solid fa-triangle-exclamation text-warning text-xs"
                                                     aria-label="Capacité sensible"></i>
                                             @endif
-                                            {{-- Story 43.2 (D5/D6) — badge de temporalité d'effet : AUCUN badge
+                                            {{-- Badge de temporalité d'effet : AUCUN badge
                                                  pour une capacité sans clé HKCU registre (piège n°8). --}}
                                             @if ($capability['effect_timing'] !== null)
                                                 <span class="badge badge-sm badge-outline gap-1"
@@ -311,10 +311,10 @@ new class extends Component {
                                                     {{ $capability['effect_timing']['label'] }}
                                                 </span>
                                             @endif
-                                            {{-- Story 29.4 — tri-état : verrouillé > permissif > local (AC #1-4).
-                                                 Libellés centrés sur l'ACTION possible (décision 2026-06-27).
-                                                 #3 : badges gatés sur hasUpstreamContract() — en standalone,
-                                                 AUCUN badge n'est rendu (UI byte-identique à 27.17, NFR3). --}}
+                                            {{-- Tri-état : verrouillé > permissif > local.
+                                                 Libellés centrés sur l'ACTION possible.
+                                                 Badges gatés sur hasUpstreamContract() : en standalone,
+                                                 AUCUN badge n'est rendu. --}}
                                             @if ($this->hasUpstreamContract)
                                                 @if ($capability['is_upstream_locked'])
                                                     <span class="badge badge-sm badge-neutral gap-1"
@@ -329,7 +329,7 @@ new class extends Component {
                                                         <i class="fa-solid fa-pen text-xs"></i> Modifiable
                                                     </span>
                                                 @else
-                                                    {{-- #1 : surface = défaut diffusé flotte (Broadcast) — tooltip
+                                                    {{-- Surface = défaut diffusé à la flotte (Broadcast) — tooltip
                                                          différencié de capabilities-tab (« parc/groupe »). --}}
                                                     <span class="badge badge-sm badge-ghost gap-1"
                                                         data-testid="upstream-local-{{ $capability['id'] }}"
@@ -356,12 +356,12 @@ new class extends Component {
                                         </label>
                                     </td>
                                     <td class="text-right whitespace-nowrap">
-                                        {{-- Story 29.4 — tri-état : locked masque le bouton (29.2) ;
+                                        {{-- Tri-état : locked masque le bouton ;
                                              permissif le garde actif + explication FR8 (AC #2). --}}
                                         @if ($capability['is_upstream_locked'])
                                             <span class="text-xs opacity-60 italic">Imposé par contrat amont</span>
                                         @else
-                                            {{-- Story 35.5 (review #2) : capacité inactive = bouton désactivé,
+                                            {{-- Capacité inactive = bouton désactivé,
                                                  le réglage serait sans effet (garde serveur dans openEdit/saveDefault). --}}
                                             <button type="button" class="btn btn-ghost btn-xs"
                                                 wire:click="openEdit({{ $capability['id'] }})"
@@ -404,7 +404,7 @@ new class extends Component {
                 @if ($capability->description)
                     <p class="text-sm opacity-70 mb-2">{{ $capability->description }}</p>
                 @endif
-                {{-- Story 43.2 (D5/D6) — badge de temporalité d'effet. --}}
+                {{-- Badge de temporalité d'effet. --}}
                 @php($timing = $capability->effectTiming())
                 @if ($timing !== null)
                     <span class="badge badge-sm badge-outline gap-1 mb-2" title="{{ $timing['tooltip'] }}">

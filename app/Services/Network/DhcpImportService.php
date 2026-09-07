@@ -16,9 +16,9 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 /**
- * Story 8.1 — Import CSV des réservations DHCP (FR22).
+ * Import CSV des réservations DHCP.
  *
- * Pattern aligné Story 2.6 (`BulkResetListingService`) pour la persistance
+ * Pattern aligné (`BulkResetListingService`) pour la persistance
  * du rapport :
  *  - rapport stocké en cache Redis 24h sous `dhcp.import.report.<uuid>` ;
  *  - URL d'accès `/app/network/dhcp/import/<uuid>` (UUID v4 sans signature
@@ -26,15 +26,15 @@ use Illuminate\Support\Str;
  *    d'erreurs ; les mots de passe legacy bulk-reset sont chiffrés mais
  *    ici ce sont des données réseau publiques côté serveur).
  *
- * Comportement atomique sur reload (AC5) :
+ * Comportement atomique sur reload :
  *  - toutes les insertions / updates DB sont faites en boucle ;
  *  - 1 SEUL appel `exportReservationsFile()` + `reloadService()` à la fin,
  *    après le commit DB de toutes les lignes valides ;
  *  - une ligne en erreur n'avorte JAMAIS l'import (collecte exhaustive) ;
  *  - un échec de reload est capturé et ajouté au rapport comme « erreur de
- *    reload final » mais n'invalide pas les lignes déjà persistées (AC6).
+ * reload final » mais n'invalide pas les lignes déjà persistées.
  *
- * Format CSV (figé § Décisions SM #5) :
+ * Format CSV :
  *  - header obligatoire `name,mac,ip,description`
  *  - séparateur `,`
  *  - colonnes 1..3 obligatoires, 4 optionnelle
@@ -224,9 +224,9 @@ class DhcpImportService
                 continue;
             }
 
-            // Upsert (par MAC en priorité, sinon name, sinon IP — fallback
-            // séquentiel déterministe pour respecter D-CSV-UPSERT et éviter
-            // les écrasements de ligne arbitraires. Cf. review code 8.1 #3).
+            // Upsert (par MAC en priorité, sinon name, sinon IP) : le fallback
+            // est séquentiel et déterministe, pour éviter les écrasements de
+            // ligne arbitraires.
             try {
                 $action = DB::transaction(function () use ($name, $mac, $ip, $description) {
                     $existing = DhcpReservation::query()->where('mac', $mac)->first()
@@ -272,7 +272,7 @@ class DhcpImportService
             $touchedAny = true;
         }
 
-        // Un seul reload à la fin (AC5).
+        // Un seul reload à la fin.
         if ($touchedAny) {
             try {
                 $this->dhcpService->exportReservationsFile();

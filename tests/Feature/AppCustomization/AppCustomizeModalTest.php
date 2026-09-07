@@ -15,9 +15,6 @@ use Livewire\Livewire;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
-/**
- * Tests feature — composants Livewire AppCustomize (AC 7).
- */
 class AppCustomizeModalTest extends TestCase
 {
     protected function setUp(): void

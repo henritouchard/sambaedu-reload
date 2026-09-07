@@ -13,7 +13,6 @@ use Tests\Concerns\SeedsWorkstationConfig;
 use Tests\TestCase;
 
 /**
- * Story 16.13bis — AC5.
  *
  * Tests Feature UI parc : colonne « Migration », filtre `migrationFilter`,
  * compteur « X/Y postes migrés » (Eloquent scope + repository).

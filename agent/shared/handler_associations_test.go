@@ -6,7 +6,6 @@ import (
 	"testing"
 )
 
-// --- TESTS VECTORIELS DU HASH USERCHOICE (cœur de risque, AC5) ---------------
 //
 // DEUX NATURES DE VECTEURS dans ce test — à ne PAS confondre :
 //
@@ -18,12 +17,12 @@ import (
 //      PS-SFTA). Toute divergence Go vs ces vecteurs = transcription fautive d'une
 //      constante/d'un shift → hash rejeté par Windows (bug silencieux).
 //
-//  (b) VECTEUR DE NON-RÉGRESSION INTERNE (`Applications\vlc.exe`, Story 27.11) :
+// (b) VECTEUR DE NON-RÉGRESSION INTERNE (`Applications\vlc.exe`) :
 //      sa valeur attendue est calculée par le CODE GO TESTÉ LUI-MÊME sur des inputs
 //      figés (ce N'EST PAS une référence indépendante). Il fige le comportement du
 //      portage sur un ProgId contenant un `\` (anti-régression), mais ne prouve PAS
 //      à lui seul la fidélité Windows-native. Cette dernière a été validée
-//      EMPIRIQUEMENT par Henri (AC1/T1 : SFTA.ps1 produit `Gk3UMH/Rm+A=` sur des
+// EMPIRIQUEMENT contre SFTA.ps1, qui produit `Gk3UMH/Rm+A=` sur des
 //      inputs RÉELS — valeur ≠ ici car les inputs diffèrent). Le `\` (0x5C) n'est
 //      PAS un caractère spécial de l'algorithme : le hash porte sur l'UTF-16LE
 //      VERBATIM de baseInfo.
@@ -31,11 +30,11 @@ import (
 // experience = chaîne hardcodée de Get-UserExperience (GUID figé de shell32.dll).
 // sid/dateTimeHex = valeurs figées représentatives (forme réelle).
 //
-// ⚠️ PORTÉE GÉNÉRALE : ces vecteurs (hors validation empirique d'Henri) ne prouvent
+// ⚠️ PORTÉE GÉNÉRALE : ces vecteurs (hors validation empirique contre SFTA.ps1) ne prouvent
 // PAS l'acceptation Windows-native. La preuve FINALE (Windows applique l'association
 // ET ne l'invalide pas après redémarrage d'Explorer) est déléguée à la validation
-// lab Windows (story T9, action humaine — cf. docs/qa/domains/agent.md
-// « Story 27.3bis »). Symptôme d'un hash subtilement faux = association non
+// lab Windows (action humaine — cf. docs/qa/domains/agent.md). Symptôme d'un
+// hash subtilement faux = association non
 // appliquée SANS erreur d'écriture côté agent → seul un poste réel le révèle.
 
 const (
@@ -55,14 +54,14 @@ func TestUserChoiceHashVectors(t *testing.T) {
 		{".pdf", "Acrobat.Document.DC", "file", "h5ZFaFkHaDU="},
 		{"http", "FirefoxURL", "protocol", "9RbFZtAB87g="},
 		{".html", "FirefoxHTML", "file", "zWoSzvx4Irg="},
-		// (b) Story 27.11 — VECTEUR DE NON-RÉGRESSION INTERNE : ProgId contenant un
+		// (b) — VECTEUR DE NON-RÉGRESSION INTERNE : ProgId contenant un
 		// `\` (`Applications\<exe>`). ⚠️ Cette valeur attendue est calculée par le
 		// CODE GO TESTÉ LUI-MÊME sur ces inputs figés — ce N'EST PAS une référence
 		// indépendante : elle FIGE le comportement du portage sur le cas `\`
 		// (anti-régression), pas sa fidélité Windows-native. Le hash porte sur la
 		// chaîne ProgId VERBATIM (le `\` = 0x5C n'est PAS un cas particulier de
 		// l'algorithme). La fidélité Windows-native du cas `\` est validée
-		// EMPIRIQUEMENT par Henri (AC1/T1 : SFTA.ps1 → `Gk3UMH/Rm+A=` sur des inputs
+		// EMPIRIQUEMENT contre SFTA.ps1 (→ `Gk3UMH/Rm+A=` sur des inputs
 		// RÉELS, valeur ≠ ici car inputs différents).
 		{".clclcc", "Applications\\vlc.exe", "file", "5q6eG+3TpdI="},
 	}
@@ -96,8 +95,6 @@ func TestUserChoiceHashIsSensitiveToInputs(t *testing.T) {
 	}
 }
 
-// --- FAKE OPS ----------------------------------------------------------------
-
 // fakeAssociationsOps : AssociationsOps en mémoire (testable hôte).
 type fakeAssociationsOps struct {
 	userChoice map[string]string // identifier (lower) → ProgId réel sous UserChoice
@@ -109,7 +106,7 @@ type fakeAssociationsOps struct {
 	writeCnt   int
 	deleteSeen map[string]bool // identifier (lower) → WriteUserChoice appelé (= delete+write)
 
-	// Story 27.11 — auto-enregistrement per-user d'un Applications\<exe>.
+	// Auto-enregistrement per-user d'un Applications\<exe>.
 	exeAvailable map[string]bool  // exe (lower) → résoluble sur le poste (App Paths/PATH)
 	registerErr  map[string]error // exe (lower) → erreur d'écriture registre
 	registerCnt  int              // nombre d'appels à RegisterApplicationProgID
@@ -167,7 +164,7 @@ func (o *fakeAssociationsOps) SessionInputs() (string, string, string, error) {
 	return vectorSID, vectorDateTime, vectorExperience, nil
 }
 
-// RegisterApplicationProgID (Story 27.11) : simule l'auto-enregistrement per-user.
+// RegisterApplicationProgID : simule l'auto-enregistrement per-user.
 // L'exe est « résolu » s'il est marqué disponible ; on marque alors le ProgId
 // `Applications\<exe>` comme enregistré (le passage suivant le verra conforme).
 func (o *fakeAssociationsOps) RegisterApplicationProgID(exe string) (bool, error) {
@@ -206,8 +203,6 @@ func assocItem(identifier, progID, assocType string) StateItem {
 	}
 }
 
-// --- Set cible + idempotence -------------------------------------------------
-
 func TestAssociationsApplyWritesTargetThenIdempotent(t *testing.T) {
 	ops := newFakeAssociationsOps()
 	ops.registered["acrobat.document.dc"] = true
@@ -240,8 +235,6 @@ func TestAssociationsApplyWritesTargetThenIdempotent(t *testing.T) {
 	}
 }
 
-// --- Drift (ProgId réel ≠ cible) → réimposition ------------------------------
-
 func TestAssociationsDriftIsRewritten(t *testing.T) {
 	ops := newFakeAssociationsOps()
 	ops.registered["firefoxhtml"] = true
@@ -265,8 +258,6 @@ func TestAssociationsDriftIsRewritten(t *testing.T) {
 		t.Fatalf("ProgId attendu réimposé FirefoxHTML, obtenu %q", ops.userChoice[".html"])
 	}
 }
-
-// --- D-Henri n°5 : ProgId absent → choix utilisateur PRÉSERVÉ, error non fatal -
 
 func TestAssociationsProgIdAbsentPreservesUserChoiceAndReportsError(t *testing.T) {
 	ops := newFakeAssociationsOps()
@@ -309,8 +300,6 @@ func TestAssociationsProgIdAbsentDoesNotLoopRewrite(t *testing.T) {
 	}
 }
 
-// --- Isolation par item : une erreur n'empêche pas les autres de converger ----
-
 func TestAssociationsErrorIsolationBestEffort(t *testing.T) {
 	ops := newFakeAssociationsOps()
 	ops.registered["acrobat.document.dc"] = true
@@ -333,8 +322,6 @@ func TestAssociationsErrorIsolationBestEffort(t *testing.T) {
 	}
 }
 
-// --- Enveloppe invalide → erreur (le moteur rapporte error pour le type) ------
-
 func TestAssociationsInvalidPayloadIsError(t *testing.T) {
 	ops := newFakeAssociationsOps()
 	h := &AssociationsHandler{Ops: ops}
@@ -347,8 +334,6 @@ func TestAssociationsInvalidPayloadIsError(t *testing.T) {
 		t.Error("Apply : enveloppe invalide doit être une erreur")
 	}
 }
-
-// --- Fichier vs protocole : les deux types convergent ------------------------
 
 func TestAssociationsFileAndProtocolBothConverge(t *testing.T) {
 	ops := newFakeAssociationsOps()
@@ -370,8 +355,6 @@ func TestAssociationsFileAndProtocolBothConverge(t *testing.T) {
 		t.Errorf("association protocole non appliquée : %q", ops.userChoice["https"])
 	}
 }
-
-// --- Story 27.11 : auto-enregistrement per-user d'un Applications\<exe> --------
 
 // Générique non enregistré + exe RÉSOLUBLE → auto-enregistré per-user PUIS
 // UserChoice imposé ; 2e passe idempotente (zéro réécriture, pas de ré-enregistrement).
@@ -409,7 +392,7 @@ func TestAssociationsGenericAutoRegistersThenAppliesIdempotent(t *testing.T) {
 	}
 }
 
-// Générique + exe INTROUVABLE → abstention D-Henri n°5 : aucun UserChoice imposé,
+// Générique + exe INTROUVABLE → abstention : aucun UserChoice imposé,
 // choix utilisateur préservé, error non fatal (pas de boucle).
 func TestAssociationsGenericAbstainsWhenExeUnavailable(t *testing.T) {
 	ops := newFakeAssociationsOps()
@@ -452,7 +435,7 @@ func TestAssociationsGenericAbstainsWhenExeUnavailable(t *testing.T) {
 }
 
 // Un ProgId RICHE non enregistré ne déclenche PAS l'auto-enregistrement (réservé
-// au cas générique Applications\<exe>) — non-régression D-Henri n°5.
+// au cas générique Applications\<exe>).
 func TestAssociationsRichProgIdDoesNotAutoRegister(t *testing.T) {
 	ops := newFakeAssociationsOps()
 	ops.userChoice[".pdf"] = "SumatraPDF.User"
@@ -467,8 +450,6 @@ func TestAssociationsRichProgIdDoesNotAutoRegister(t *testing.T) {
 		t.Fatalf("aucune écriture attendue (ProgId riche absent), obtenu %d", ops.writeCnt)
 	}
 }
-
-// --- Identifiant non géré (aucun item) = no-op --------------------------------
 
 func TestAssociationsEmptyItemsNoOp(t *testing.T) {
 	ops := newFakeAssociationsOps()

@@ -12,12 +12,12 @@ use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
- * Cache portable des appels santé GPO (Story 16.14 — arbitrage Q2 Henri 2026-05-20).
+ * Cache portable des appels santé GPO.
  *
  * Wrappe les appels `GpoService::getLinks()` et `GpoService::get()` (versionNumber)
  * derrière un `Cache::remember()` 24 h. Sans ça, le filtre "Statut santé" et les
  * exports CSV/JSON nécessiteraient N appels samba-tool par render (cap 100 GPOs)
- * ce qui est inacceptable au niveau UX (finding #1 / #23 review opus).
+ * ce qui est inacceptable au niveau UX.
  *
  * **Driver portable** : on n'utilise PAS `Cache::tags()` car les drivers `file`,
  * `database` et `apc` (default Sambaedu) ne supportent pas les tags. À la place,

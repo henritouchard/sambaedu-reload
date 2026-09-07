@@ -11,16 +11,15 @@ use Illuminate\Support\Facades\Log;
 /**
  * @legacy-port path="sambaedu/wpkg/poste_maintenance_options.php"
  * @legacy-port-fn="create_ini_poste / update_ini_poste / delete_ini_poste"
- * @see _bmad-output/implementation-artifacts/15-2-generators-xml-ini-par-poste.md
  *
- * Story 15.2 / AC5.3-AC5.7 — Génération du fichier `.ini` per-poste WPKG.
+ * Génération du fichier `.ini` per-poste WPKG.
  *
  * Format ligne strict legacy : `{key}={value} ' {description}\r\n` — séparateur
  * **CRLF**, parité legacy `poste_maintenance_options.php:59,105`. 8 options
  * fixes, defaults `false`, override depuis `wpkg_workstation_options`.
  *
  * Idempotence binaire garantie par tri stable (constante `LEGACY_OPTIONS`).
- * Écriture atomique via `App\Support\AtomicFileWriter` (15.1).
+ * Écriture atomique via `App\Support\AtomicFileWriter`.
  */
 final class WorkstationIniGenerator
 {

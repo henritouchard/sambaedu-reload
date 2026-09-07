@@ -12,7 +12,7 @@ use Tests\Support\IpxeSchemaBootstrapper;
 use Tests\TestCase;
 
 /**
- * Story 3.3 — AC4.1 / T2.4.
+ * T2.4.
  *
  * Tests unitaires du builder qui prépare les variables Blade des 5 menus
  * d'enrollment.
@@ -121,7 +121,7 @@ class IpxeEnrollmentMenuBuilderTest extends TestCase
             'mac' => 'aa:bb:cc:dd:ee:04',
             'status' => 'active',
         ]);
-        // Story 4.11 — la salle courante vit dans le pivot global.
+        // La salle courante vit dans le pivot global.
         $ws->groups()->attach($room->id);
 
         $vars = $this->builder->buildRoomMenuVariables($ws, 'http://se4fs.lan');

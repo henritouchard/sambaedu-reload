@@ -21,7 +21,7 @@ use Illuminate\Support\Facades\Log;
  *   4. Si erreur → log + fichier laissé en place (retry au prochain run)
  *   5. Log des compteurs : traités, inchangés, erreurs
  *
- * Architecture Phase 1 (cette story) :
+ * Architecture Phase 1 :
  *   poste Windows → écrit HOSTNAME.txt sur SMB → ce worker lit → POST /api/wpkg/reports/{hostname}
  *
  * En Phase 2 : les postes POSTent directement (ce worker devient inutile).

@@ -10,8 +10,8 @@ use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 
 /**
- * Story 56.4 — `OidcErrorCodes::all()` est le catalogue EXHAUSTIF des codes
- * internes (55.1). Il n'a d'utilité — audits, tests d'invariance,
+ * `OidcErrorCodes::all` est le catalogue EXHAUSTIF des codes
+ * internes. Il n'a d'utilité — audits, tests d'invariance,
  * documentation d'exploitation — que s'il est réellement exhaustif : une
  * constante ajoutée sans y être reportée en ferait une liste qui MENT, et
  * personne ne s'en apercevrait avant d'en avoir besoin.

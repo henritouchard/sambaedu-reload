@@ -7,7 +7,7 @@ namespace App\Services\Filesystem\Backend\Posix;
 use App\Services\Filesystem\Plan\PlanSubject;
 
 /**
- * Story 62.5 — UN COULOIR D'ACCÈS DÉRIVÉ : « ce sujet doit pouvoir PASSER par ce
+ * UN COULOIR D'ACCÈS DÉRIVÉ : « ce sujet doit pouvoir PASSER par ce
  * nœud, parce qu'un nœud plus profond lui accorde quelque chose ».
  *
  * Ce n'est PAS un octroi. Le plan n'en sait rien et n'a rien à en savoir : il ne

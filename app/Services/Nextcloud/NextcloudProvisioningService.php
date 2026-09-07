@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 61.1 — L'ORCHESTRATION DU PROVISIONNEMENT : sonde, montages, comptes.
+ * L'ORCHESTRATION DU PROVISIONNEMENT : sonde, montages, comptes.
  *
  * Un seul service exécuté par DEUX portes — la commande `nextcloud:provision` et
  * le bouton de l'écran (via un traitement en file). C'est la doctrine
@@ -29,7 +29,7 @@ use Illuminate\Support\Facades\Log;
  *
  * **Ce service n'écrit AUCUN droit et n'exécute AUCUN processus.** Ni partage
  * Nextcloud, ni groupe Nextcloud, ni restriction d'applicabilité — et aucune
- * commande système : cette story est 100 % HTTP + SQL. La seule instance qui
+ * commande système : ce service est 100 % HTTP + SQL. La seule instance qui
  * tranche un accès est Samba/POSIX, avec les identifiants de l'utilisateur de
  * session. Un test d'architecture l'épingle sur tout le namespace, commentaires
  * compris — d'où la description des interdits par leur FONCTION plutôt que par
@@ -166,10 +166,6 @@ final class NextcloudProvisioningService
         }
     }
 
-    // =========================================================================
-    // Interne
-    // =========================================================================
-
     private function execute(
         NextcloudProvisioningReport $report,
         bool $dryRun,
@@ -217,7 +213,7 @@ final class NextcloudProvisioningService
     }
 
     /**
-     * AC3 — les deux montages, idempotents par SIGNATURE.
+     * Les deux montages, idempotents par SIGNATURE.
      *
      * L'ordre est : lire l'existant, apparier par signature canonique, puis créer
      * ou mettre à jour. Jamais l'inverse : créer d'abord et dédoublonner ensuite
@@ -230,7 +226,6 @@ final class NextcloudProvisioningService
      * l'administrateur de l'instance. Cette méthode n'appelle donc AUCUNE
      * suppression, et un test l'épingle.
      *
-     * ---------------------------------------------------------------------------
      * **LE CHAMP `status` DE L'INSTANCE N'EST PAS UN CRITÈRE DE SUCCÈS.** Mesuré le
      * 2026-08-08 : un montage fraîchement créé revient `status: 4`,
      * `statusMessage: "Storage unauthorized. Session unavailable"`. C'est la
@@ -239,7 +234,6 @@ final class NextcloudProvisioningService
      * est inévaluable. Le lire ferait échouer un provisionnement parfaitement
      * abouti, à chaque fois. Ce code ne le lit pas ; le runbook explique à
      * l'exploitant pourquoi il le verra dans l'écran d'administration Nextcloud.
-     * ---------------------------------------------------------------------------
      */
     private function provisionMounts(
         NextcloudAdminClient $client,
@@ -328,7 +322,7 @@ final class NextcloudProvisioningService
     }
 
     /**
-     * AC5/AC6 — le balayage du stock : adoption, jamais création.
+     * Le balayage du stock : adoption, jamais création.
      *
      * **Périmètre** : `source = 'ad'` et comptes actifs. Les identités fédérées
      * sont exclues et COMPTÉES — elles n'ont ni répertoire personnel ni mot de

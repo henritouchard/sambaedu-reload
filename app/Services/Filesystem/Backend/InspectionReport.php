@@ -10,10 +10,10 @@ use App\Exceptions\Filesystem\InvalidBackendReportException;
 use App\Services\Filesystem\Plan\FilePlan;
 
 /**
- * Story 60.3 — état RELU d'un plan : une observation PAR NŒUD.
+ * État RELU d'un plan : une observation PAR NŒUD.
  *
  * **Le balayage est dans la SIGNATURE, pas dans la bonne volonté du backend.** Le
- * sondage d'ouverture d'epic a mesuré qu'une lecture unique de sous-arbre, sur une
+ * sondage d'ouverture a mesuré qu'une lecture unique de sous-arbre, sur une
  * instance réelle, rend les sous-chemins **mais pas la racine** : une relecture
  * « en un appel » est structurellement incomplète, et sous une politique d'écart
  * STRICTE l'incomplétude se lit comme une conformité. La signature reçoit donc un
@@ -22,7 +22,7 @@ use App\Services\Filesystem\Plan\FilePlan;
  *
  * **La comparaison désiré/observé n'est PAS ici.** Ce rapport dit ce qui EST ; il
  * ne dit pas si c'est ce qu'on voulait. La comparaison s'implémentera UNE fois
- * au-dessus de la ligne, en 60.4 — patron déjà en service ailleurs dans le dépôt :
+ * au-dessus de la ligne — patron déjà en service ailleurs dans le dépôt :
  * la précédence s'implémente une fois, jamais dans le fournisseur d'état. La
  * mettre ici obligerait chaque backend à la réécrire, et deux backends
  * l'écriraient différemment.
@@ -133,10 +133,6 @@ final class InspectionReport
 
         return new self($backend, $ordered);
     }
-
-    // =========================================================================
-    // Vues DÉRIVÉES
-    // =========================================================================
 
     /** @return list<NodeObservation> */
     public function withStatus(FileBackendObservation $status): array

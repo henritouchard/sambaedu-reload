@@ -15,7 +15,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * L'édition de la nature des postes (`environment`, Story 26.1) a quitté
+ * L'édition de la nature des postes (`environment`) a quitté
  * l'onglet « Environnement » de parc-settings pour rejoindre le formulaire
  * d'édition d'UN groupe — là où l'on gère déjà ses propriétés. Ces tests
  * couvrent la persistance via `updateGroup` (cast enum), la remise à « non

@@ -19,8 +19,7 @@ use Tests\Support\WpkgSchemaBootstrapper;
 use Tests\TestCase;
 
 /**
- * Story 15.4 / Correction post-review #5 — Test d'intégration Livewire pour
- * la page `parc-settings/profiles/index`.
+ * Test d'intégration Livewire pour la page `parc-settings/profiles/index`.
  *
  * Complémentaire à `ProfileAttachModalsExtractionTest` (qui ne vérifie que
  * la structure des fichiers). Ici on monte le composant Livewire, on appelle
@@ -44,7 +43,7 @@ class ProfileAttachModalsIntegrationTest extends TestCase
         WpkgSchemaBootstrapper::bootstrap();
 
         // Permission `wpkg.assign` pas requise par le composant
-        // parc-settings/profiles (Décision permissions Story 15.4 :
+        // parc-settings/profiles (Décision permissions :
         // wpkg.assign est utilisé par les pages parc/groups & parc/machines,
         // pas par parc-settings/profiles). On bypass tout de même les
         // gates pour éviter un crash si une protection latente est

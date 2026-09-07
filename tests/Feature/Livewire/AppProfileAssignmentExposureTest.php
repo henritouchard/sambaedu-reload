@@ -21,7 +21,7 @@ use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
 /**
- * Story 36.7 (AC4) — exposition d'assignation du mécanisme `app_profile` (sortie
+ * Exposition d'assignation du mécanisme `app_profile` (sortie
  * du socle) : il DOIT apparaître comme assignable dans la section « Capacités »
  * des GROUPES D'UTILISATEURS (son provider résout les assignations UserGroup) et
  * NE DOIT PAS être proposé sur la surface PARC (override poste/parc inerte — un
@@ -131,7 +131,7 @@ class AppProfileAssignmentExposureTest extends TestCase
     }
 
     /**
-     * Review 36.7 #1 (leçon 35.4) : le refus par parc ne peut PAS vivre seulement
+     * Le refus par parc ne peut PAS vivre seulement
      * dans le listing. Un rejeu Livewire de `openAdd()` sur app_profile doit être
      * refusé côté SERVEUR (defense-in-depth) — sinon override parc inerte posé.
      */

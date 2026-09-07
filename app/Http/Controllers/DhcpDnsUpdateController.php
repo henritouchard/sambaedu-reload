@@ -9,7 +9,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 
 /**
- * Story 8.4 — Endpoint DDNS appelé par `dhcp-dyndns.sh`, lui-même déclenché
+ * Endpoint DDNS appelé par `dhcp-dyndns.sh`, lui-même déclenché
  * par les événements `on commit` / `on release` / `on expiry` de dhcpd.
  *
  * Remplace le legacy `dhcp/dnsupdate.php` (qui répondait 500 depuis
@@ -30,7 +30,7 @@ class DhcpDnsUpdateController extends Controller
     {
         // `se4_key` est encore posté par les scripts non redéployés : ignoré.
         // La protection est `local.request` (allowlist LAN) + throttle, iso
-        // 17.6 — pas d'auth par clé partagée.
+        // pas d'auth par clé partagée.
         $outcome = $dns->apply(
             action: strtolower(trim((string) $request->input('action', ''))),
             name: (string) $request->input('name', ''),

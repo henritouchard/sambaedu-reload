@@ -23,11 +23,11 @@ use Tests\Traits\InstallsCollegeRoleProfile;
 use Tests\Unit\Services\Filesystem\Plan\ClassTreeRecipe;
 
 /**
- * Story 62.3 — AC9 : renommer un libellé LOCAL ne touche AUCUNE donnée dérivée.
+ * Renommer un libellé LOCAL ne touche AUCUNE donnée dérivée.
  *
- * C'est le pendant exact de `GroupTypeRenameHasNoDerivedEffectTest` (62.2) et de
- * son homologue 62.1, et il ferme la boucle sur le dernier objet administrable de
- * l'epic. On renomme `classe`×`manager` « Enseignant » → « Professeur », et on
+ * C'est le pendant exact de `GroupTypeRenameHasNoDerivedEffectTest`, et il ferme
+ * la boucle sur le dernier objet administrable du modèle. On renomme
+ * `classe`×`manager` « Enseignant » → « Professeur », et on
  * constate que le plan de fichiers résolu est identique OCTET POUR OCTET : la
  * résolution ne lit que des CLÉS, jamais un libellé.
  *
@@ -45,7 +45,7 @@ class RoleLabelRenameHasNoDerivedEffectTest extends TestCase
         parent::setUp();
         $this->seed(GroupTypeSeeder::class);
         $this->seed(GroupRoleSeeder::class);
-        // Story 62.3 — on ne peut RENOMMER un libellé local que s'il en existe un.
+        // On ne peut RENOMMER un libellé local que s'il en existe un.
         // La migration n'en pose plus aucun : le profil scolaire s'installe ici,
         // et c'est lui qu'on renomme ensuite.
         $this->installCollegeRoleProfile();

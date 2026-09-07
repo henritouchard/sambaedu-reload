@@ -18,7 +18,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 37.1 (AC1, AC6) — onglet « État cible » de la fiche POSTE (SFC Livewire,
+ * Onglet « État cible » de la fiche POSTE (SFC Livewire,
  * consultation pure). Rendu des sections Raccourcis/Applications, badges d'origine,
  * liens vers les groupes sources, note session, poste nu.
  */
@@ -79,7 +79,7 @@ class MachineDesiredStateTabTest extends TestCase
             ->assertSee('Ce poste')          // origine app directe
             ->assertSee('ParcBureautique')   // origine parc (raccourci) + lien
             ->assertSee(route('app.parc.groups.show', $parc->id))
-            // Note session (D3).
+            // Note de session.
             ->assertSee('dépendent de la session', false);
     }
 
@@ -121,7 +121,7 @@ class MachineDesiredStateTabTest extends TestCase
     #[Test]
     public function workstation_id_mutation_is_rejected_by_locked(): void
     {
-        // Review #4 — le verrou #[Locked] doit RÉELLEMENT rejeter une mutation
+        // Le verrou #[Locked] doit RÉELLEMENT rejeter une mutation
         // client (le simple assertSet initial ne prouve pas le verrou : le retrait
         // de #[Locked] resterait vert). Une tentative de set côté client lève.
         $ws = Workstation::create(['name' => 'PCLOCK2', 'status' => 'active']);

@@ -21,9 +21,8 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 61.2 — AC2 / AC6 / AC10 : l'écran de configuration de la connexion.
+ * L'écran de configuration de la connexion.
  *
- * ---------------------------------------------------------------------------
  * **RECADRAGE DU 2026-08-08.** Ce fichier s'appelait `FilePolicyNextcloudModeTest`
  * et éprouvait le choix entre deux positions (instance administrée / compte porteur
  * délégué). Le mode délégué a été supprimé : un compte ordinaire ne peut créer ni
@@ -31,7 +30,6 @@ use Tests\TestCase;
  * reste est ce qui avait de la valeur, et qui se formule maintenant d'une seule
  * façon : **une configuration que le compte ne peut pas honorer est refusée avec son
  * motif, jamais acceptée puis dégradée en silence**.
- * ---------------------------------------------------------------------------
  *
  * Deux tests pivots :
  *  - {@see self::a_configuration_the_account_cannot_honour_is_refused_and_nothing_is_persisted()} :
@@ -89,10 +87,6 @@ class FilePolicyNextcloudConnectionGuardTest extends TestCase
         ];
     }
 
-    // =====================================================================
-    // AC2 — la configuration fail-closed
-    // =====================================================================
-
     /**
      * **LE TEST PIVOT.** Le compte saisi n'est pas administrateur de l'instance :
      * la configuration est refusée, RIEN n'est persisté, et le motif nomme le
@@ -135,17 +129,13 @@ class FilePolicyNextcloudConnectionGuardTest extends TestCase
         self::assertSame('https://cloud.etab.fr', FilePolicyService::globalConfig()['nextcloud_server_url']);
     }
 
-    // =====================================================================
-    // AC2 — la sonde-garde ne s'exécute QUE sur ce qui définit la connexion
-    // =====================================================================
-
     /**
-     * **Retouché par la correction de revue #1** : `nextcloudVerifyTls` a QUITTÉ ce
-     * test. Le drapeau TLS n'est pas un réglage orthogonal — il décide de ce qui est
-     * joignable, donc il fait partie de ce qui définit la connexion et il déclenche
-     * la sonde-garde ({@see self::changing_only_the_tls_flag_re_probes()}).
+     * `nextcloudVerifyTls` ne fait PAS partie de ce test. Le drapeau TLS n'est pas
+     * un réglage orthogonal — il décide de ce qui est joignable, donc il fait partie
+     * de ce qui définit la connexion et il déclenche la sonde-garde
+     * ({@see self::changing_only_the_tls_flag_re_probes()}).
      *
-     * **Retouché par la story 63.3** : les deux capacités de montage ont QUITTÉ ce
+     * Les deux capacités de montage ne vivent pas non plus sur ce
      * composant — elles sont dérivées des emplacements, réglés sur l'écran voisin.
      * Reste ici le seul réglage qui ne concerne VRAIMENT pas l'instance : l'hôte
      * SMB. Et une assertion de plus, qui compte : les quatre booléens ne bougent
@@ -173,16 +163,6 @@ class FilePolicyNextcloudConnectionGuardTest extends TestCase
             FilePolicyService::capabilities(),
         );
     }
-
-    // =====================================================================
-    // CORRECTION DE REVUE #1 — LE CHANGEMENT D'URL (ET DE TLS) DÉCLENCHE LA
-    // SONDE-GARDE
-    //
-    // Le défaut fermé ici : la comparaison ne portait que sur l'identifiant du
-    // compte. Changer la SEULE URL — nouvel hébergeur, ou faute de frappe —
-    // traversait la garde sans le moindre appel HTTP, et `setGlobal()` persistait
-    // une cible que le compte n'avait JAMAIS été vérifié capable d'administrer.
-    // =====================================================================
 
     #[Test]
     public function changing_only_the_url_re_probes(): void
@@ -294,20 +274,6 @@ class FilePolicyNextcloudConnectionGuardTest extends TestCase
         self::assertSame('admin', FilePolicyService::globalConfig()['nextcloud_admin_user']);
     }
 
-    // =====================================================================
-    // CORRECTION DE REVUE 63.3 — LA CAPACITÉ EST RELUE À CHAQUE ÉCRITURE,
-    // JAMAIS CELLE DU MONTAGE
-    //
-    // Ce composant est monté au CLIC sur la position « Nextcloud » du choix de
-    // cloud, donc AVANT que le miroir n'allume la capacité. Tant qu'elle vivait
-    // dans une propriété lue au seul `mount()`, la sonde-garde rendait `true`
-    // sans le moindre appel pour toute la session de page : le fail-closed de
-    // 61.2 était annulé sur le parcours de PREMIÈRE configuration — le seul qui
-    // compte. Invisible autrement : `Livewire::test()` re-monte les enfants à
-    // chaque rendu du parent, un navigateur non. Ces deux tests montent donc
-    // l'enfant AVANT l'allumage et n'en remontent JAMAIS un second.
-    // =====================================================================
-
     #[Test]
     public function a_capability_switched_on_after_mount_still_probes_and_refuses(): void
     {
@@ -368,10 +334,6 @@ class FilePolicyNextcloudConnectionGuardTest extends TestCase
         Http::assertNothingSent();
     }
 
-    // =====================================================================
-    // Le mode délégué N'EXISTE PLUS : l'écran n'en porte aucune trace
-    // =====================================================================
-
     /**
      * Garde de non-régression du recadrage du 2026-08-08. Un écran qui offrirait de
      * nouveau un choix d'administration proposerait une position que le produit ne
@@ -391,16 +353,6 @@ class FilePolicyNextcloudConnectionGuardTest extends TestCase
         // …et l'exigence est DITE là où le compte se saisit.
         self::assertStringContainsString('administrateur', $html);
     }
-
-    // =====================================================================
-    // CORRECTION DE REVUE #3 — REMPLACER UN SECRET NE LAISSE PLUS UNE
-    // CONFIGURATION « VÉRIFIÉE » QU'ELLE N'EST PLUS
-    //
-    // La variante retenue est NON BLOQUANTE : l'enregistrement du secret n'est
-    // jamais annulé par le résultat de la sonde (refuser de stocker un app
-    // password que l'instance ne confirme pas rendrait une instance
-    // momentanément injoignable impossible à reconfigurer — un deadlock réel).
-    // =====================================================================
 
     #[Test]
     public function a_secret_confirmed_by_the_probe_is_stored_and_shown_as_verified(): void
@@ -501,10 +453,6 @@ class FilePolicyNextcloudConnectionGuardTest extends TestCase
         $component->assertSet('probeResult', null);
     }
 
-    // =====================================================================
-    // AC10 — « Tester la connexion »
-    // =====================================================================
-
     #[Test]
     public function testing_the_connection_probes_the_configured_account(): void
     {
@@ -517,10 +465,6 @@ class FilePolicyNextcloudConnectionGuardTest extends TestCase
         self::assertTrue($component->get('probeResult')['administrator']);
     }
 
-    // =====================================================================
-    // AC5 — le provisionnement
-    // =====================================================================
-
     #[Test]
     public function the_provision_button_queues_the_job(): void
     {
@@ -531,10 +475,6 @@ class FilePolicyNextcloudConnectionGuardTest extends TestCase
 
         Queue::assertPushed(ProvisionNextcloudJob::class);
     }
-
-    // =====================================================================
-    // AC7 — la modale de rattachement
-    // =====================================================================
 
     private function seedReportWithMissingUser(string $candidate = 'p.durand-martin'): void
     {
@@ -614,8 +554,7 @@ class FilePolicyNextcloudConnectionGuardTest extends TestCase
     }
 
     /**
-     * CORRECTION DE REVUE #4 — UNE DONNÉE D'ORIGINE DISTANTE N'EST PAS INTERPOLÉE
-     * NUE DANS UN `wire:click`.
+     * UNE DONNÉE D'ORIGINE DISTANTE N'EST PAS INTERPOLÉE NUE DANS UN `wire:click`.
      *
      * Blade échappe en entités HTML, mais le navigateur les DÉCODE avant que
      * Livewire n'évalue l'expression : une apostrophe dans un candidat suffisait à
@@ -651,10 +590,6 @@ class FilePolicyNextcloudConnectionGuardTest extends TestCase
             ->call('openLinkModal', 'p.durand', 'o\'brien"x')
             ->assertSet('linkNextcloudId', 'o\'brien"x');
     }
-
-    // =====================================================================
-    // Le secret ne sort par aucun canal
-    // =====================================================================
 
     #[Test]
     public function no_secret_ever_appears_in_the_rendered_html(): void

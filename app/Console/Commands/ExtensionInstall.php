@@ -10,18 +10,18 @@ use App\Services\Extensions\ExtensionInstallService;
 use Illuminate\Console\Command;
 
 /**
- * Story 56.2 (AC2, AR1) — `php artisan ext:install <key> [--source=]`.
+ * `php artisan ext:install <key> [--source=]`.
  *
  * Façade CLI du moteur {@see ExtensionInstallService}. Elle n'a AUCUNE logique
  * propre : elle résout les arguments, délègue, et met en forme. L'UI de la
- * Story 56.3 sera une seconde façade sur le MÊME moteur — il n'existera jamais
+ * sera une seconde façade sur le MÊME moteur — il n'existera jamais
  * deux chemins d'installation (doctrine AR1, patron `ext:sources:sync`).
  *
  * L'acteur est `null` : la commande s'exécute sans utilisateur connecté, et
  * l'audit la journalise sous l'acteur conventionnel `system` (convention posée
- * par 56.1 pour la synchro planifiée, reconduite ici).
+ * par pour la synchro planifiée, reconduite ici).
  *
- * ⚠️ **NFR3 — aucun secret n'est affiché.** Le `client_secret` du client OIDC
+ * ⚠️ **Aucun secret n'est affiché.** Le `client_secret` du client OIDC
  * de l'extension n'existe en clair que le temps d'être poussé sur le stdin du
  * helper : ni la sortie de cette commande, ni les journaux, ni le tableau
  * retourné par le moteur ne le portent. Un secret dans l'historique du terminal
@@ -99,7 +99,7 @@ class ExtensionInstall extends Command
         $this->line('  unité        : sambaedu-ext-'.$key.'.service');
         $this->line('');
         $this->warn('Le secret du client OIDC n\'est PAS affiché : il n\'existe que dans '
-            .'/etc/sambaedu/extensions/'.$key.'.env (0600 root) — NFR3.');
+            .'/etc/sambaedu/extensions/'.$key.'.env (0600 root).');
 
         return self::SUCCESS;
     }
@@ -107,9 +107,9 @@ class ExtensionInstall extends Command
     /**
      * @param  list<string>  $steps
      *
-     * ⚠️ Story 56.3 — la map de libellés a QUITTÉ cette classe pour
+     * ⚠️ — la map de libellés a QUITTÉ cette classe pour
      * {@see ExtensionInstallService::stepLabels()} : l'UI en avait besoin, et
-     * la dupliquer aurait garanti la divergence (leçon review 56.1 #3). Les
+     * la dupliquer aurait garanti la divergence. Les
      * libellés sont repris verbatim — la sortie de cette commande est
      * inchangée, un test le verrouille.
      */

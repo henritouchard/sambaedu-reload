@@ -17,10 +17,10 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 29.3 (AC #3 contrepoint) — un item amont `permissive` NE verrouille PAS
+ * Un item amont `permissive` NE verrouille PAS
  * l'override par parc : l'écriture/retrait `capability_assignments` reste
- * autorisée (le gate 29.2 ne refuse QUE `locked`). C'est le pendant côté ÉCRITURE
- * de la relaxation : 29.3 fait MORDRE l'override au compilé, et confirme ici qu'il
+ * autorisée (le gate ne refuse QUE `locked`). C'est le pendant côté ÉCRITURE
+ * de la relaxation : fait MORDRE l'override au compilé, et confirme ici qu'il
  * peut être POSÉ. Le refus du `locked` reste couvert par
  * {@see CapabilitiesTabUpstreamLockTest} (non-régression).
  */
@@ -106,7 +106,7 @@ class CapabilitiesTabPermissiveOverrideTest extends TestCase
             ->set('formValue', 'off')
             ->call('saveOverride');
 
-        // L'override est ÉCRIT (permissif n'est PAS un verrou — FR4).
+        // L'override est ÉCRIT : un item permissif n'est PAS un verrou.
         $this->assertDatabaseHas('capability_assignments', [
             'capability_id' => $cap->id,
             'assignable_id' => $this->parc->id,
@@ -145,7 +145,7 @@ class CapabilitiesTabPermissiveOverrideTest extends TestCase
         Livewire::test(self::COMPONENT, ['groupId' => $this->parc->id])
             ->call('removeOverride', $cap->id);
 
-        // Le retrait est AUTORISÉ : le refnum reprend la baseline amont/défaut (FR4).
+        // Le retrait est AUTORISÉ : le refnum reprend la baseline amont/défaut.
         $this->assertDatabaseMissing('capability_assignments', [
             'capability_id' => $cap->id,
             'assignable_id' => $this->parc->id,

@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// Handler `app_config` (aggregate PAR app_kind / scope session) — Story 27.4.
+// Handler `app_config` (aggregate PAR app_kind / scope session).
 // Logique PURE, OS-agnostique (les chemins natifs des apps + l'écriture fichier
 // réelle sont injectés via AppConfigOps) → testée sur l'hôte ; agent/windows ne
 // fait que câbler le chemin natif d'install + l'écriture atomique de fichier.
@@ -20,7 +20,7 @@ import (
 // l'agent fait le OÙ/COMMENT (chemin natif par app, écriture atomique,
 // idempotence, drift STRICT).
 //
-// CONVERGENCE level-triggered (piège n° 5), JAMAIS accumulation :
+// CONVERGENCE level-triggered, JAMAIS accumulation :
 //   - test  : pour chaque app cible, le `policies.json` GÉRÉ présent == la
 //     config cible (à l'octet près, forme canonique) ? ET tout `policies.json`
 //     GÉRÉ d'une app sortie des règles est-il absent ?
@@ -28,23 +28,22 @@ import (
 //     apps sorties des règles. IDEMPOTENT (2 passes sur état stable = aucune
 //     écriture).
 //
-// MARQUEUR de périmètre (piège n° 7, iso 27.1 n° 5) : seuls les `policies.json`
+// MARQUEUR de périmètre : seuls les `policies.json`
 // posés par l'agent (marqueur) sont gérés. L'app butée — qui écrirait localement
 // un réglage SANS mécanisme enterprise — n'est JAMAIS bricolée : on ne touche
 // que le `policies.json` (mécanisme enterprise documenté).
 //
-// `policies.json` HORS PÉRIMÈTRE (review #7, décision Henri 2026-06-17) : un
+// `policies.json` HORS PÉRIMÈTRE : un
 // fichier posé hors SambaEdu (autre outil, admin) occupe le chemin natif d'une
 // app CIBLE. La non-ingérence est PRÉSERVÉE (on ne l'écrase ni ne le supprime
 // JAMAIS), mais le statut N'EST PLUS `compliant` (trompeur : nos policies ne
 // sont PAS actives, c'est le fichier étranger qui pilote l'app). On rapporte
 // `error` avec un détail explicite (« policies.json hors-périmètre présent,
 // policy agent non appliquée ») → le défaut « signaler sans écraser » SURFACE le
-// conflit à l'admin. (Une future « prise de possession » SYSTEM pourra être
-// décidée par Henri ; par défaut on signale.) L'isolation par item (engine.go
+// conflit à l'admin. L'isolation par item (engine.go
 // RunPass) garantit que les autres types continuent.
 //
-// ISOLATION des erreurs (AC4) : un chemin verrouillé / une app absente → l'op
+// ISOLATION des erreurs : un chemin verrouillé / une app absente → l'op
 // renvoie une erreur → le moteur (engine.go RunPass) rend {status: error,
 // detail} pour le SEUL type `app_config` ; les autres types continuent. La
 // convergence interne est EFFORT MAXIMAL : une app en échec n'empêche pas les
@@ -52,7 +51,7 @@ import (
 // toutes les apps (le moteur n'a qu'un verdict par type).
 
 // AppConfigManagedMarker : sentinel écrit dans le `policies.json` posé par
-// l'agent (piège n° 7). Distingue un `policies.json` GÉRÉ d'un fichier posé par
+// l'agent. Distingue un `policies.json` GÉRÉ d'un fichier posé par
 // un autre outil / un admin — seuls les gérés sont comparés/supprimés. Inscrit
 // comme une clé d'extension dédiée du document (l'impl OS l'ajoute à l'écriture
 // et la cherche à la lecture) — invisible pour Firefox/Thunderbird (clé inconnue
@@ -78,7 +77,7 @@ type AppConfigOps interface {
 	// Erreur = app non gérée (app_kind inconnu) → l'item devient error, les
 	// autres apps continuent. App NON installée n'est PAS une erreur ici (le
 	// chemin se résout même sans install) : c'est Write qui échouera si le
-	// dossier parent est absent et non créable (isolation AC4).
+	// dossier parent est absent et non créable (isolation).
 	PolicyPath(appKind string) (string, error)
 
 	// Inspect renvoie l'état du chemin `policies.json` pour le périmètre agent :
@@ -148,7 +147,7 @@ func (h *AppConfigHandler) desiredSpecs(items []StateItem) ([]AppConfigSpec, err
 //   - chemin LIBRE (absent) pour une app cible → non conforme (apply écrira) ;
 //   - chemin GÉRÉ divergent → non conforme ;
 //   - chemin occupé HORS périmètre pour une app CIBLE → ERREUR de conflit
-//     (review #7) : jamais touché, mais surfacé en `error` (nos policies ne sont
+//     — jamais touché, mais surfacé en `error` (nos policies ne sont
 //     pas actives) ;
 //   - `policies.json` géré ORPHELIN (app hors cible) présent → non conforme.
 //
@@ -174,7 +173,7 @@ func (h *AppConfigHandler) Test(items []StateItem) (bool, error) {
 			return false, fmt.Errorf("inspection de %q : %w", path, err)
 		}
 		if exists && !managed {
-			// Conflit hors-périmètre (review #7) : fichier étranger sur une app
+			// Conflit hors-périmètre : fichier étranger sur une app
 			// CIBLE → JAMAIS écrasé, mais rapporté error (policy agent inactive).
 			return false, foreignPolicyConflictError(spec.AppKind, path)
 		}
@@ -215,9 +214,9 @@ func (h *AppConfigHandler) Test(items []StateItem) (bool, error) {
 // Apply : converge — (ré)écrit les `policies.json` divergents + retire les
 // gérés des apps sorties des règles. Idempotent + level-triggered. EFFORT
 // MAXIMAL : on tente TOUTES les apps ; la première erreur est remontée à la fin
-// (les apps saines convergent quand même, isolation inter-items AC4). Ne touche
+// (les apps saines convergent quand même, isolation inter-items). Ne touche
 // JAMAIS un `policies.json` hors périmètre (app butée / fichier d'un autre
-// outil) : il est sauté, jamais écrasé ni supprimé (piège n° 7).
+// outil) : il est sauté, jamais écrasé ni supprimé.
 func (h *AppConfigHandler) Apply(items []StateItem) error {
 	specs, err := h.desiredSpecs(items)
 	if err != nil {
@@ -251,7 +250,7 @@ func (h *AppConfigHandler) Apply(items []StateItem) error {
 		}
 
 		// Fichier posé HORS SambaEdu au chemin natif d'une app CIBLE : laissé tel
-		// quel (JAMAIS écrasé — non-ingérence préservée, review #7) MAIS rapporté
+		// quel (JAMAIS écrasé — non-ingérence préservée) MAIS rapporté
 		// error de conflit (policy agent inactive). Effort maximal : non fatal pour
 		// les AUTRES apps (qui convergent quand même), mais le type rend error.
 		if exists && !managed {
@@ -325,7 +324,7 @@ func (h *AppConfigHandler) Apply(items []StateItem) error {
 	return firstErr
 }
 
-// foreignPolicyConflictError : conflit hors-périmètre (review #7). Un
+// foreignPolicyConflictError : conflit hors-périmètre. Un
 // `policies.json` posé hors SambaEdu occupe le chemin natif d'une app cible :
 // jamais écrasé (non-ingérence), mais surfacé en `error` (la policy agent n'est
 // PAS active — c'est le fichier étranger qui pilote l'app). Détail exploitable
@@ -388,7 +387,7 @@ func parseAppConfigSpec(raw any) (AppConfigSpec, bool) {
 // marqueur de gestion n'est PAS inclus ici (l'impl OS l'ajoute à l'écriture et
 // l'exclut de la comparaison).
 //
-// Délègue à CanonicalJSON — la SEULE fonction de canonicalisation (review #3) :
+// Délègue à CanonicalJSON — la SEULE fonction de canonicalisation :
 // la forme CIBLE (calculée ici) et la forme RELUE du fichier (côté windows)
 // passent par le MÊME code → idempotence garantie, y compris sur des nombres
 // décodés `json.Number` (payload réseau décodé `UseNumber`).
@@ -402,7 +401,7 @@ func canonicalPolicies(policies map[string]any) ([]byte, error) {
 // JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE ; '\n' final
 // retiré). UNIQUE fonction appelée DES DEUX côtés (forme cible `shared` +
 // forme relue `agent/windows`) pour garantir l'idempotence à l'octet près, y
-// compris sur des `json.Number` (review #3).
+// compris sur des `json.Number`.
 func CanonicalJSON(v any) ([]byte, error) {
 	sorted := sortMaps(v)
 	buf := &jsonBuffer{}

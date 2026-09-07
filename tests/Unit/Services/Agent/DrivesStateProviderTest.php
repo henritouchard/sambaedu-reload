@@ -33,8 +33,8 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Tests Unit `DrivesStateProvider` — lecteurs réseau NATIFS (décision Henri
- * 2026-06-29) : jeu standard FIXE {K: home, H: classes} pour toute session user,
+ * Tests Unit `DrivesStateProvider` — lecteurs réseau NATIFS : jeu standard
+ * FIXE {K: home, H: classes} pour toute session user,
  * lettres figées serveur, tokens `<se4fs>`/`<user>` non substitués, ZÉRO AD,
  * indépendant du WorkstationEnvironment ET de l'appartenance à une classe.
  */
@@ -169,15 +169,6 @@ class DrivesStateProviderTest extends TestCase
         self::assertCount(2, $this->provider->itemsFor($this->ctx()));
     }
 
-    // =========================================================================
-    // Story 63.2 — LES EMPLACEMENTS gouvernent les lecteurs, pas les capacités
-    //
-    // Une lettre ne désigne QUE du SMB : `K:` si et seulement si l'espace perso
-    // y vit, `H:` si et seulement si l'espace partagé y vit. Les répertoires
-    // réseau gérés, eux, ne sont gouvernés par AUCUN des deux : leur autorité
-    // est la leur, choisie à leur création.
-    // =========================================================================
-
     /** Pose une décision d'emplacements — l'arrangement de toute cette section. */
     private function locations(
         FileBackendName $perso,
@@ -197,7 +188,7 @@ class DrivesStateProviderTest extends TestCase
     #[Test]
     public function no_recorded_decision_emits_home_and_classes(): void
     {
-        // Aucune ligne persistée ⇒ défauts 63.1 (`posix`/`posix`/`aucun`) ⇒ jeu
+        // Aucune ligne persistée ⇒ défauts (`posix`/`posix`/`aucun`) ⇒ jeu
         // fixe émis (garde-fou golden : sortie identique à l'historique).
         self::assertNull(SystemSetting::get(FileLocationService::SETTING_KEY));
         self::assertSame(['K:', 'H:'], $this->letters());
@@ -217,7 +208,7 @@ class DrivesStateProviderTest extends TestCase
     #[Test]
     public function the_shared_space_in_the_cloud_removes_H_and_nothing_else(): void
     {
-        // ⚠️ LE changement de comportement de la story : les répertoires réseau
+        // ⚠️ LE changement de comportement : les répertoires réseau
         // gérés SORTENT de la garde de l'espace partagé. Leur autorité est
         // `network_shares.backend`, pas le plan de fichiers — celui-ci ne les
         // gouverne pas, il refuse seulement une lettre à ce qui n'est pas POSIX.
@@ -260,8 +251,8 @@ class DrivesStateProviderTest extends TestCase
      * l'écran affirmerait que tout est en place. L'accès réel de ces répertoires est
      * le web et le client de synchronisation.
      *
-     * Le filtre est une LISTE BLANCHE depuis la 63.2 : `opencloud` (vocabulaire
-     * ouvert en 61.4) passait au travers de l'exclusion nominative `!= nextcloud`.
+     * Le filtre est désormais une LISTE BLANCHE : `opencloud` (vocabulaire
+     * ouvert) passait au travers de l'exclusion nominative `!= nextcloud`.
      *
      * @return array<string, array{string}>
      */
@@ -339,10 +330,6 @@ class DrivesStateProviderTest extends TestCase
             ],
         ], $payloads);
     }
-
-    // =========================================================================
-    // Story 34.1 — répertoires réseau gérés (network_shares)
-    // =========================================================================
 
     private function assign(NetworkShare $share, string $type, int $id, string $access = 'ro'): void
     {
@@ -454,7 +441,7 @@ class DrivesStateProviderTest extends TestCase
     {
         // Un même share assigné au userGroup (du user) ET au WG (du poste) → 2
         // candidats au MÊME payload (lettre/unc/label) → le StateCompiler
-        // dédoublonne par contenu (AC4). Le provider, lui, étiquette 2 mailles.
+        // dédoublonne par contenu. Le provider, lui, étiquette 2 mailles.
         $group = UserGroup::create(['name' => 'profs', 'type' => 'equipe']);
         $this->user->groups()->attach($group->id);
         $wg = WorkstationGroup::factory()->logical()->create();
@@ -574,7 +561,7 @@ class DrivesStateProviderTest extends TestCase
     #[Test]
     public function explicit_reserved_letter_falls_back_to_auto_assignment(): void
     {
-        // Garde-fou #1 (piège #4) : une lettre explicite réservée (ici 'K:', le
+        // Garde-fou : une lettre explicite réservée (ici 'K:', le
         // home) NE doit PAS écraser le lecteur fixe. Le share bascule sur une
         // lettre sûre du pool (M:) ; le home K: reste intact.
         $share = NetworkShare::factory()->create([
@@ -603,7 +590,7 @@ class DrivesStateProviderTest extends TestCase
     #[Test]
     public function exhausted_letter_pool_omits_the_extra_share(): void
     {
-        // Garde-fou #3 : 15 répertoires auto (lettre null) > pool M..Z (14
+        // Garde-fou : 15 répertoires auto (lettre null) > pool M..Z (14
         // lettres) → 14 émis, le 15ᵉ omis (fail-soft tracé, pas de lettre
         // invalide montée par l'agent).
         for ($i = 1; $i <= 15; $i++) {

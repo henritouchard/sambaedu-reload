@@ -13,10 +13,10 @@ use App\Services\PermissionService;
 use Illuminate\Contracts\Auth\Authenticatable;
 
 /**
- * Story 36.4 (D6) — Policy DÉDIÉE des règles d'accès aux dossiers
+ * Policy DÉDIÉE des règles d'accès aux dossiers
  * (`folder_access_rules`).
  *
- * Calquée sur {@see WorkstationGroupPolicy} (patron 7.1 : délégation scopée
+ * Calquée sur {@see WorkstationGroupPolicy} (patron : délégation scopée
  * ATTEIGNABLE) sur des permissions DÉDIÉES `folderrule.view` /
  * `folderrule.manage` (module SE5-natif, aucune GPO/bit legacy). Accordées au
  * `ReferentNumerique` et au `ComputerAdmin`.
@@ -26,11 +26,11 @@ use Illuminate\Contracts\Auth\Authenticatable;
  *  - `view-folderrule`    → `view` (avec la règle en ressource) ;
  *  - `manage-folderrule`  → `manage` (avec la règle en ressource).
  *
- * **Délégation scopée par parc ATTEIGNABLE (correction review #1, patron 7.1).**
+ * **Délégation scopée par parc ATTEIGNABLE.**
  * Le gate `folderrule.view` (permission Spatie GLOBALE) fermait la porte AVANT
  * que `canOnWorkstationGroup` (dans le service) ne s'exécute : un délégué scopé
  * parc, SANS droit global, prenait 403. Comme `WorkstationGroupPolicy::viewAny`
- * (story 7.1), les gates policy-backed acceptent désormais AUSSI un délégué
+ * les gates policy-backed acceptent désormais AUSSI un délégué
  * scopé :
  *  - `viewAny` : droit global OU au moins un parc délégué `folderrule.manage` ;
  *  - `view($rule)` / `manage($rule)` : droit global OU `canOnWorkstationGroup`

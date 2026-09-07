@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace App\Ipxe\Services;
 
 /**
- * Story 3.3 — D6 / AC1.1.
- *
  * Service auxiliaire stateless qui porte natif les transformations
  * `q2a()` (legacy `sambaedu/includes/ipxe_functions.inc.php:48-57`) et
  * `add_hostname_suffix()` (legacy `sambaedu/includes/ldap.inc.php:380-394`)
@@ -29,16 +27,14 @@ final class IpxeHostnameSanitizer
      * Regex stricte post-sanitization — refuse tout char hors `[a-z0-9_\-\.\$]`
      * et limite à 32 chars.
      *
-     * Q4 (review 3.3) : le cap était initialement à 15 (NetBIOS legacy), mais
-     * `applyHostnameSuffix()` peut produire `substr($name,0,9) . $suffix` qui
-     * dépasse 15 dès que `strlen($suffix) > 6`. Une régression silencieuse
-     * apparaissait en prod si `config('sambaedu.legacy_ldap.suffix')` était
-     * configuré : le nom sanitizé était rejeté ici sans log explicite côté
-     * enrollment. 32 chars couvre les suffixes legacy_ldap connus tout en
-     * restant en-dessous de la limite AD (64). La validation char-by-char
-     * (`[a-z0-9_\-\.\$]`) reste strict — pas de relâchement anti-injection.
+     * Le cap n'est PAS à 15 (limite NetBIOS legacy) : `applyHostnameSuffix()`
+     * produit `substr($name, 0, 9) . $suffix`, qui dépasse 15 dès que le suffixe
+     * `config('sambaedu.legacy_ldap.suffix')` fait plus de 6 caractères — le nom
+     * était alors rejeté ici sans log côté enrollment. 32 couvre les suffixes
+     * legacy connus tout en restant sous la limite AD (64). La validation
+     * char-by-char (`[a-z0-9_\-\.\$]`) reste stricte.
      *
-     * Note iso 16.7 `AdMachineManager::MACHINE_REGEX` qui autorise majuscules
+     * Note iso `AdMachineManager::MACHINE_REGEX` qui autorise majuscules
      * + 64 chars : ici on impose la contrainte stricte post-`strtolower`.
      */
     private const HOSTNAME_REGEX = '/^[a-z0-9_\-\.\$]{1,32}$/';
@@ -104,7 +100,7 @@ final class IpxeHostnameSanitizer
      * — c'est la même source utilisée par `AdMachineManager::setOs()` /
      * `AdUserManager`, donc cohérent cross-namespace.
      *
-     * @param  string       $name    Nom déjà sanitizé via {@see sanitize()}.
+     * @param string $name Nom déjà sanitizé via {@see sanitize()}.
      * @param  string|null  $suffix  Suffix optionnel (défaut = config).
      */
     public function applyHostnameSuffix(string $name, ?string $suffix = null): string
@@ -154,7 +150,7 @@ final class IpxeHostnameSanitizer
      *
      *  - tronqués à 15 chars stricts (pas de suffix appliqué)
      *  - non créés/renommés dans l'AD via le flow iPXE (cf.
-     *    `AdMachineManager::check()` qui skip les `se4fs|se4ad`)
+     *  `AdMachineManager::check()` qui skip les `se4fs|se4ad`)
      *
      * Pattern matché : `se4fs.*` (n'importe quoi commençant par `se4fs`,
      * case-insensitive) ou `se4ad-NNNNNNNa` (7 digits + 1 lowercase letter
@@ -172,7 +168,7 @@ final class IpxeHostnameSanitizer
      * hors `0x20-0x7E` (et tab) est remplacé par `?`. Bloque newline injection
      * (`\n`/`\r` → `?`), control chars exotiques et ASCII étendu (accents fr).
      *
-     * F2 + Opus-1 (review 3.3) : invariant à appliquer dans les factories
+     * Invariant à appliquer dans les factories
      * {@see \App\Ipxe\Support\EnrollNameResult::*} pour garantir que tout
      * `sanitizedName`/`reasonLabel` injecté dans un template Blade est safe.
      */

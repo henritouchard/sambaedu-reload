@@ -11,8 +11,7 @@ use Illuminate\Support\Facades\Schema;
  * postés. Un signal `workstation_group_id = X` matche tout poll dont le poste
  * appartient au groupe X (jointure résolue au poll). null = joker.
  *
- * Maille de ciblage retenue (décision 2026-06-09) : salle + poste + user +
- * broadcast. Cf. spike-wallpaper-overlay-tools-2026-06-09.md.
+ * Mailles de ciblage possibles : salle, poste, utilisateur, broadcast.
  */
 return new class extends Migration
 {

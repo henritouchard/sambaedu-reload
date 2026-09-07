@@ -15,7 +15,6 @@ use Tests\Support\IpxeSchemaBootstrapper;
 use Tests\TestCase;
 
 /**
- * Story 3.4 — AC2.1 / AC2.2 / AC2.3.
  *
  * Tests unitaires de {@see LinuxPreseedService} — assemblage des fragments
  * + interpolation des placeholders + sécurité anti-injection + log audit.
@@ -226,9 +225,8 @@ class LinuxPreseedServiceTest extends TestCase
     #[Test]
     public function it_preserves_fragment_order_for_debian_gnome(): void
     {
-        // Post-review #M1 — Gel de l'ordre des fragments contre régression
-        // silencieuse. Ordre attendu pour Debian/Gnome (parité legacy
-        // `preseed.php:86-159`) :
+        // L'ordre des fragments est gelé : une permutation change le preseed
+        // sans rien casser de visible. Ordre attendu pour Debian/Gnome :
         //   nocache.cfg → debian_gnome.cfg → debian.cfg → sambaedu.cfg
         //   → simple_boot.cfg.
         //
@@ -287,10 +285,10 @@ class LinuxPreseedServiceTest extends TestCase
     #[Test]
     public function it_logs_preseed_generated_with_sha256_only(): void
     {
-        // Post-review #4 — Réécriture du test tautologique : on injecte
-        // des CANARY secrets connus dans la config, on capture tous les events
-        // Monolog via TestHandler, et on assert qu'AUCUN log ne contient une
-        // canary. On vérifie aussi positivement que le sha256 attendu est loggé.
+        // Des secrets CANARY connus sont posés en config, tous les événements
+        // Monolog sont capturés par un TestHandler, et on exige qu'aucun log
+        // n'en contienne un. Le contrôle positif est le sha256 attendu, lui
+        // bien présent.
         config([
             'sambaedu.admin_passwd' => 'CANARY-admin-pwd-123',
             'sambaedu.ldap_admin_passwd' => 'CANARY-ldap-pwd-456',

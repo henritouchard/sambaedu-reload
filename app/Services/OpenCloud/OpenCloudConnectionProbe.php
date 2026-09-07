@@ -19,7 +19,6 @@ namespace App\Services\OpenCloud;
  * Les confondre ferait chercher au mauvais endroit — la panne la plus coûteuse
  * n'est pas celle qui échoue, c'est celle qui envoie ailleurs.
  *
- * ---------------------------------------------------------------------------
  * **LA SONDE N'ÉCRIT RIEN, JAMAIS.** Elle lit l'identité du compte connecté, puis
  * l'inventaire des espaces et l'annuaire — deux lectures que seul un compte
  * administrateur obtient (mesuré : un compte ordinaire rend `403 accessDenied`
@@ -29,7 +28,6 @@ namespace App\Services\OpenCloud;
  *
  * Ce qu'elle ne peut PAS constater sans écrire — qu'une création d'espace
  * aboutira réellement — est DIT dans son message vert plutôt que présumé.
- * ---------------------------------------------------------------------------
  */
 final class OpenCloudConnectionProbe
 {

@@ -7,20 +7,18 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 4-2 — correction review #1 (NFR2) & #2 (race condition restart).
- *
  * Table persistante pour suivre l'état des actions power dispatchées en
  * asynchrone via DispatchMachinePowerActionJob. Permet à l'UI Livewire
  * (pages/parc/machines/[id]/index.blade.php) de :
  *
  *  - retourner immédiatement un toast "Action lancée" sans attendre le
- *    Process::run (NFR2 : feedback < 500 ms — review #1 option A),
+ *    Process::run (le toast doit partir en moins de 500 ms),
  *  - suivre la progression via polling (`wire:poll`) en lisant la ligne
  *    `machine_power_action_tasks` correspondante (status=queued/dispatched/
  *    running/completed/failed),
  *  - gérer la machine à états d'un `restart` via `restart_phase`
  *    (waiting-down → waiting-up) et éviter le faux succès "machine déjà up"
- *    détecté à t+3s (review #2 option A).
+ *    détecté à t+3s.
  */
 return new class extends Migration {
     public function up(): void
@@ -71,7 +69,7 @@ return new class extends Migration {
             // trier / filtrer facilement côté UI sans parser le JSON.
             $table->text('error_message')->nullable();
 
-            // Machine à états spécifique au restart (review #2).
+            // Machine à états spécifique au restart.
             // - waiting-down : on attend que la machine cesse de répondre
             // - waiting-up   : la machine a été détectée offline, on attend le retour
             // - null         : non applicable (autres actions)

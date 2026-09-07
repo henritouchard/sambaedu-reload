@@ -9,7 +9,7 @@ use PHPUnit\Framework\TestCase;
 use Symfony\Component\Finder\Finder;
 
 /**
- * Story 61.1 — **CETTE STORY N'ÉCRIT AUCUN DROIT, ET N'EXÉCUTE RIEN.**
+ * **CE NAMESPACE N'ÉCRIT AUCUN DROIT, ET N'EXÉCUTE RIEN.**
  *
  * Elle ajoute un CHEMIN D'ACCÈS (le web), pas une autorité. Le montage
  * `files_external` relaie à Samba les identifiants de l'utilisateur connecté, et
@@ -18,16 +18,16 @@ use Symfony\Component\Finder\Finder;
  *
  *  1. **Un partage OCS** (`files_sharing/api/v1/shares`) — la « solution » la plus
  *     naturelle quand un accès manque. Il crée un SECOND plan de permissions sur
- *     la même zone, et le sondage 60.0 a mesuré qu'il ment : une instruction de
- *     retrait est acceptée `200 OK` et relue à `1`. Le garde-fou d'epic
+ *     la même zone, et le sondage a mesuré qu'il ment : une instruction de
+ *     retrait est acceptée `200 OK` et relue à `1`. Le garde-fou
  *     (« une seule autorité d'écriture par zone ») ne survivrait pas à son ajout.
  *  2. **Un groupe Nextcloud** (`cloud/groups`) — indissociable du précédent : il
  *     n'existe que pour restreindre l'applicabilité d'un montage ou porter un
  *     partage. Restreindre l'applicabilité, c'est déplacer le filtre de Samba vers
  *     Nextcloud.
- *  3. **Un shell-out** — cette story est 100 % HTTP + SQL. La première commande
+ *  3. **Un shell-out** — ce namespace est 100 % HTTP + SQL. La première commande
  *     système écrite ici serait le début d'un backend, et un backend a un contrat
- *     (Epic 60) que cette story a promis de ne pas toucher.
+ *     qu'on a promis de ne pas toucher.
  *
  * Chaque règle est adossée à un MÉTA-TEST : un scan qui ne détecte rien parce
  * qu'il ne regarde rien passerait sinon éternellement au vert. Le scan est
@@ -39,7 +39,7 @@ class NextcloudNamespaceTest extends TestCase
     private const NEXTCLOUD_DIR = 'app/Services/Nextcloud';
 
     /**
-     * Le code NOUVEAU de la story qui vit hors du namespace. Il est tenu par les
+     * Le code qui vit hors du namespace. Il est tenu par les
      * mêmes règles : c'est par la commande et le traitement en file qu'un
      * shell-out « juste pour dépanner » arriverait.
      *
@@ -49,7 +49,7 @@ class NextcloudNamespaceTest extends TestCase
         'app/Console/Commands/NextcloudProvisionCommand.php',
         'app/Jobs/ProvisionNextcloudJob.php',
         'app/Exceptions/Nextcloud/NextcloudConfigurationException.php',
-        // Story 61.2 — le code nouveau qui vit hors du namespace obéit aux mêmes
+        // Le code nouveau qui vit hors du namespace obéit aux mêmes
         // règles : c'est par la commande de rattachement qu'un « juste un petit
         // partage pour dépanner » arriverait. (L'enum de mode figurait ici jusqu'au
         // recadrage du 2026-08-08 ; il n'existe plus.)
@@ -67,19 +67,6 @@ class NextcloudNamespaceTest extends TestCase
     private const FORBIDDEN_RULES = [
         // 1. Aucun droit écrit côté Nextcloud.
         //
-        // ---------------------------------------------------------------------
-        // **LA RÈGLE S'EST RESSERRÉE (recadrage du 2026-08-08).** Elle portait sur
-        // `files_sharing` nu ; la story 61.2 l'avait ÉLARGIE à `apps/files_sharing`
-        // — c'est-à-dire au seul préfixe de route — pour laisser la sonde du mode
-        // délégué lire `files_sharing.api_enabled` dans l'inventaire des capacités
-        // de l'instance. Le mode délégué était la seule raison d'envisager ces
-        // routes ; il a disparu, et la garde revient donc à sa forme LARGE : plus
-        // aucun code de ce dépôt n'a de motif de prononcer `files_sharing`, sous
-        // quelque forme que ce soit.
-        //
-        // Une garde qu'on resserre parce que le besoin qui l'avait desserrée a
-        // disparu est le sens de marche attendu.
-        // ---------------------------------------------------------------------
         'partage OCS' => '#files_sharing#i',
         'groupe Nextcloud' => '#cloud/groups#i',
 
@@ -91,7 +78,7 @@ class NextcloudNamespaceTest extends TestCase
         // 3. Un seul point de sortie HTTP, et c'est le client du framework.
         'client HTTP en curl nu' => '/\bcurl_(init|exec|setopt|setopt_array|close)\s*\(/',
 
-        // 4. La ligne de contrat de l'Epic 60 reste INTOUCHÉE : cette story
+        // 4. La ligne de contrat reste INTOUCHÉE : ce namespace
         //    n'implémente pas de backend, ne nomme aucune case d'enum, n'écrit
         //    pas la colonne. Le jour où l'un de ces noms apparaît ici, ce n'est
         //    plus un chemin d'accès qu'on ajoute, c'est une autorité.
@@ -151,7 +138,7 @@ class NextcloudNamespaceTest extends TestCase
 
         // Méta-test de PÉRIMÈTRE : client, configuration, fabrique, définition de
         // montage, provisionnement, provisionneur d'utilisateurs, rapport, sonde,
-        // résultat, échec, action de montage — plus, depuis 61.2, le rattachement
+        // résultat, échec, action de montage — plus, depuis, le rattachement
         // d'identité et le vérificateur de connexion. (La configuration, le client
         // et la sonde du compte porteur ont été retirés le 2026-08-08 : le seuil
         // baisse de 14 à 13, il ne se relâche pas. Il remonte à 14 le 2026-08-17
@@ -204,7 +191,7 @@ class NextcloudNamespaceTest extends TestCase
             );
         }
 
-        // Contrôles NÉGATIFS : le vocabulaire LÉGITIME de la story ne déclenche
+        // Contrôles NÉGATIFS : le vocabulaire LÉGITIME ne déclenche
         // rien. Sans eux, une règle trop large rendrait le namespace inécrivable
         // et finirait désactivée — pire qu'absente.
         foreach ([
@@ -220,7 +207,7 @@ class NextcloudNamespaceTest extends TestCase
     }
 
     /**
-     * **LE CLIENT N'A PAS DE MÉTHODE POUR CE QU'IL NE DOIT PAS FAIRE** (AC4).
+     * **LE CLIENT N'A PAS DE MÉTHODE POUR CE QU'IL NE DOIT PAS FAIRE**.
      *
      * Le scan textuel ci-dessus attrape l'étourderie. Celui-ci constate la
      * PROPRIÉTÉ : la surface publique du client est fermée, et elle ne contient
@@ -243,7 +230,7 @@ class NextcloudNamespaceTest extends TestCase
             'autocompleteUser',
             'createGlobalStorage',
             // 2026-08-17 — LES QUATRE MÉTHODES DE LA SYNCHRO D'ANNUAIRE, énumérées
-            // ici pour la même raison que le plafond de 61.3 : leur ajout doit être
+            // ici pour la même raison que le plafond : leur ajout doit être
             // un geste. Elles n'écrivent AUCUN droit et ne créent AUCUN objet de
             // partage — elles disent à l'instance de LIRE l'annuaire que SE5
             // compile déjà. C'est le seul chemin par lequel les comptes du stock
@@ -259,11 +246,11 @@ class NextcloudNamespaceTest extends TestCase
             'listGlobalStorages',
             'probe',
             'readLdapConfig',
-            // Story 61.3 — LA SEULE MÉTHODE QUI S'AJOUTE, et elle est énumérée ici
+            // LA SEULE MÉTHODE QUI S'AJOUTE, et elle est énumérée ici
             // pour que son ajout soit un GESTE, pas une dérive. Ce n'est pas un
             // droit : c'est le budget d'une PERSONNE, et l'état par-utilisateur est
-            // exactement ce que ce client gouverne. Le plafond d'une ZONE reste hors
-            // d'ici (frontière D8).
+            // exactement ce que ce client gouverne. Le plafond d'une ZONE reste
+            // hors d'ici.
             'setUserPassword',
             'setUserQuota',
             'updateGlobalStorage',
@@ -272,7 +259,7 @@ class NextcloudNamespaceTest extends TestCase
     }
 
     /**
-     * Story 61.3 — le NAMESPACE DU BACKEND, seul écrivain légitime des deux canaux
+     * Le NAMESPACE DU BACKEND, seul écrivain légitime des deux canaux
      * que les aiguilles ci-dessous interdisent partout ailleurs.
      */
     private const BACKEND_NAMESPACE_DIR = 'app/Services/Filesystem/Backend/Nextcloud';
@@ -303,7 +290,7 @@ class NextcloudNamespaceTest extends TestCase
     /**
      * **LA CRÉATION D'ARBORESCENCE DISTANTE A DÉSORMAIS UN PROPRIÉTAIRE — UN SEUL.**
      *
-     * L'aiguille de la story 61.1 interdisait le verbe de création de collection
+     * L'aiguille de la interdisait le verbe de création de collection
      * dans TOUT le code de production, parce qu'aucun code de production n'avait de
      * raison de le prononcer : le backend qui en a besoin n'existait pas. Il existe.
      * L'aiguille n'est donc pas RETIRÉE — elle est RE-PÉRIMÉTRÉE : elle interdit ce
@@ -376,10 +363,10 @@ class NextcloudNamespaceTest extends TestCase
     /**
      * **LES GROUPES DE L'INSTANCE : MÊME RE-PÉRIMÉTRAGE, MÊME MOTIF.**
      *
-     * La story 61.1 interdisait ce canal parce que, à l'époque, un groupe distant
+     * La interdisait ce canal parce que, à l'époque, un groupe distant
      * n'existait que pour restreindre un montage ou porter un partage — c'est-à-dire
      * pour déplacer l'arbitrage des droits hors de l'autorité de la zone. Depuis
-     * 61.3, un groupe distant est l'ARTEFACT COMPILÉ d'une audience du plan, dans une
+     * un groupe distant est l'ARTEFACT COMPILÉ d'une audience du plan, dans une
      * zone dont Nextcloud EST l'autorité. Le motif de l'interdiction a disparu là, et
      * seulement là.
      */
@@ -419,9 +406,9 @@ class NextcloudNamespaceTest extends TestCase
      * **LE PARTAGE OCS RESTE INTERDIT PARTOUT — Y COMPRIS AU BACKEND.**
      *
      * C'est la seule des trois aiguilles qui ne bouge pas, et c'est le point : le
-     * mécanisme de partage est celui dont le sondage d'ouverture d'epic a MESURÉ
+     * mécanisme de partage est celui dont le sondage d'ouverture a MESURÉ
      * qu'il ment (une instruction de retrait acceptée en succès, sans effet, relue
-     * avec un accès). Le backend de 61.3 ne s'en sert pas — il emploie un dossier
+     * avec un accès). Le backend ne s'en sert pas — il emploie un dossier
      * d'équipe et ses permissions avancées, qui savent, eux, refermer. Le jour où ce
      * nom réapparaît dans le code de production, la clôture a cessé d'être effective
      * sans que rien d'autre ne le dise.
@@ -451,9 +438,9 @@ class NextcloudNamespaceTest extends TestCase
     }
 
     /**
-     * Story 61.3 — **AUCUN OUTIL EN LIGNE DE COMMANDE DANS LE BACKEND.**
+     * **AUCUN OUTIL EN LIGNE DE COMMANDE DANS LE BACKEND.**
      *
-     * L'outil d'administration de l'instance sait tout faire, et le sondage 60.0 s'en
+     * L'outil d'administration de l'instance sait tout faire, et le sondage s'en
      * servait pour poser sa clôture. Il suppose un accès système AU SERVEUR
      * NEXTCLOUD — qu'on n'a pas sur une instance distante, et qu'on n'aura jamais sur
      * une instance tierce. S'y replier serait la simplification qui rend le backend
@@ -513,9 +500,9 @@ class NextcloudNamespaceTest extends TestCase
     }
 
     /**
-     * Story 61.3 — **LE `sub` D'UN JETON N'EST PAS UNE CLÉ DE JOINTURE.**
+     * **LE `sub` D'UN JETON N'EST PAS UNE CLÉ DE JOINTURE.**
      *
-     * L'Epic 55 publie `sub = login`. C'est un choix de CLAIM, révocable, pas un
+     * L' publie `sub = login`. C'est un choix de CLAIM, révocable, pas un
      * contrat de jointure — et s'en servir pour retrouver un compte marcherait
      * aujourd'hui, sur cette instance, avec ce réglage. La vérité de liaison est le
      * cache d'identité : reconstructible, vérifié à distance, porteur d'une garde
@@ -553,12 +540,13 @@ class NextcloudNamespaceTest extends TestCase
     }
 
     /**
-     * Story 61.3 — **LA FRONTIÈRE D8, TENUE DES DEUX CÔTÉS.**
+     * **LA FRONTIÈRE ZONE / PERSONNE, TENUE DES DEUX CÔTÉS.**
      *
      * Deux plafonds, deux objets, et ils ne se recouvrent jamais : la recette
      * plafonne une ZONE (le dossier d'équipe), la règle de quota budgète une
      * PERSONNE (son compte sur l'instance). Les confondre ferait écrire un quota
-     * d'utilisateur par une recette de partage — la violation exacte que D8 nomme.
+     * d'utilisateur par une recette de partage — la violation exacte qu'on
+     * interdit ici.
      *
      * La garde est symétrique, parce qu'une frontière tenue d'un seul côté n'est
      * pas une frontière : le backend n'a aucun chemin vers les comptes, et le

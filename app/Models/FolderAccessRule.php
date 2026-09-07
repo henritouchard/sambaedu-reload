@@ -11,21 +11,21 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphToMany;
 
 /**
- * Story 36.4 — Règle d'accès à un dossier (feature à formulaire, D8).
+ * Règle d'accès à un dossier.
  *
- * SECONDE surface d'authoring du mécanisme `fs_acl` (36.1) : « interdire/autoriser
+ * SECONDE surface d'authoring du mécanisme `fs_acl` : « interdire/autoriser
  * CE dossier à CE groupe ». Une règle ACTIVE assignée à un parc du poste se
  * projette en item `fs_acl` IDENTIQUE à celui d'une capacité (6 clés `{path,
  * trustee, ace_type, rights, applies_to, ensure}`) via
  * {@see \App\Services\Agent\Providers\FolderAccessRulesStateProvider} — l'agent
- * ignore qui l'a produite. Calque STRUCTUREL de {@see NetworkShare} (34.1).
+ * ignore qui l'a produite. Calque STRUCTUREL de {@see NetworkShare}.
  *
- * **Pas de ciblage par utilisateur** (piège #10 36.1) : « quel utilisateur est
- * bridé » = le `trustee` DÉRIVÉ du groupe (D9), « quels postes » = les parcs
+ * **Pas de ciblage par utilisateur** : « quel utilisateur est bridé » = le
+ * `trustee` DÉRIVÉ du groupe, « quels postes » = les parcs
  * assignés. Le mécanisme est de portée MACHINE (service SYSTEM).
  *
- * **Trustee dérivé (D9, piège #4)** : le nom SQL est FOLDÉ au nom nu (mémoire
- * `usergroup_sql_fold_bare_name` : `user_groups.name = '3A'` pour
+ * **Trustee dérivé** : le nom SQL est FOLDÉ au nom nu (`user_groups.name = '3A'`
+ * pour
  * `ad_dn = 'CN=Classe_3A,…'`). Émettre `name` casserait la résolution LSA côté
  * poste. On dérive le CN de `ad_dn` (fallback `name`) — UN seul foyer
  * ({@see deriveTrustee()}), consommé par le provider ET le service/validator.
@@ -49,8 +49,8 @@ class FolderAccessRule extends Model
     /**
      * Types polymorphes autorisés sur le pivot (validés applicativement, calque
      * `NetworkShare::ALLOWED_ASSIGNABLE_TYPES`). v1 : parc SEULEMENT — le
-     * mécanisme est machine (un override User/UserGroup serait sans effet, piège
-     * #10). Extensible SANS migration.
+     * mécanisme est machine (un override User/UserGroup serait sans effet).
+     * Extensible SANS migration.
      *
      * @var list<class-string>
      */
@@ -76,19 +76,20 @@ class FolderAccessRule extends Model
     ];
 
     /**
-     * Dérivation du trustee à ÉMETTRE au payload (D9, piège #4). Dernier segment
+     * Dérivation du trustee à ÉMETTRE au payload. Dernier segment
      * `CN=` de `ad_dn` (le CN propre du groupe — leftmost RDN, ex.
      * `CN=Classe_3A,OU=…` → `Classe_3A`) quand `ad_dn` est renseigné ; sinon le
-     * `name` verbatim (fallback). Un groupe SANS `ad_dn` déclenche l'avertissement
-     * D9 côté formulaire (résolution potentiellement impossible au poste).
+     * `name` verbatim (fallback). Un groupe SANS `ad_dn` déclenche un
+     * avertissement côté formulaire (résolution potentiellement impossible au
+     * poste).
      *
      * Foyer UNIQUE : consommé par le provider (à l'émission, par jointure — un
      * rename de groupe suit) ET le validator/service (guard, overlap). Zéro SID
-     * en SQL (D5 36.1 : la résolution LSA est côté POSTE).
+     * en SQL : la résolution LSA est côté POSTE.
      */
     public static function deriveTrustee(?string $adDn, string $name): string
     {
-        // Correction review #4 : la regex naïve `CN=([^,]+)` tronquait un CN
+        // La regex naïve `CN=([^,]+)` tronquerait un CN
         // contenant une virgule ÉCHAPPÉE (`\,`, DN RFC 4514 valide — ex.
         // `CN=Salle B\, annexe,OU=Groups`) → trustee irrésoluble côté LSA.
         // Ici la valeur du CN est une suite de caractères non spéciaux

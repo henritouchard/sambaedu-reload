@@ -13,7 +13,7 @@ use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 
 /**
- * Story 61.3 — LE CANAL DES DOSSIERS D'ÉQUIPE ET DES GROUPES, à surface FERMÉE.
+ * LE CANAL DES DOSSIERS D'ÉQUIPE ET DES GROUPES, à surface FERMÉE.
  *
  * Deux familles d'appels, et une seule règle de lecture.
  *
@@ -26,7 +26,6 @@ use Illuminate\Support\Facades\Http;
  *    écrivain légitime de ce canal dans le dépôt : la garde d'architecture qui
  *    l'interdisait ailleurs n'a pas été retirée, elle a été RE-PÉRIMÉTRÉE.
  *
- * ---------------------------------------------------------------------------
  * **LE CODE HTTP MENT, ET C'EST MESURÉ.** Une opération d'administration refusée
  * peut rendre un `200` avec un refus dans le CORPS, et ne rien faire. Toute
  * réponse passe donc par {@see interpret()}, qui lit l'enveloppe applicative quand
@@ -35,16 +34,16 @@ use Illuminate\Support\Facades\Http;
  *
  * **Ce que ce client N'A PAS.** Aucune méthode de partage : les octrois de ce
  * backend passent par les dossiers d'équipe et leurs règles, jamais par le
- * mécanisme de partage — dont le sondage d'ouverture d'epic a mesuré qu'il ment
+ * mécanisme de partage — dont le sondage d'ouverture a mesuré qu'il ment
  * (retrait accepté sans effet). Aucune méthode de quota d'UTILISATEUR non plus :
  * budgéter une personne est l'affaire du provisionnement des comptes, pas d'une
- * recette de partage (frontière D8, épinglée par test des deux côtés).
+ * recette de partage — frontière épinglée par test des deux côtés.
  *
  * **{@see deleteFolder()} n'est appelée par AUCUN chemin de production**, et un
  * test l'épingle. Elle existe pour la seule obligation du test d'intégration :
  * laisser l'instance dans l'état où il l'a trouvée. Détruire un dossier d'équipe
- * depuis une réconciliation contredirait la doctrine (aucune suppression implicite,
- * D9) — la révocation retire les octrois, elle ne détruit pas les données.
+ * depuis une réconciliation contredirait la doctrine « aucune suppression
+ * implicite » — la révocation retire les octrois, elle ne détruit pas les données.
  */
 final class NextcloudTeamFolderClient
 {
@@ -62,10 +61,6 @@ final class NextcloudTeamFolderClient
     public function __construct(private readonly NextcloudConnectionConfig $config)
     {
     }
-
-    // =========================================================================
-    // Dossiers d'équipe
-    // =========================================================================
 
     /**
      * L'inventaire des dossiers d'équipe, tel que l'instance le REND.
@@ -167,7 +162,7 @@ final class NextcloudTeamFolderClient
     }
 
     /**
-     * ⚠️ **AUCUN CHEMIN DE PRODUCTION N'APPELLE CECI** (D9, épinglé par test).
+     * ⚠️ **AUCUN CHEMIN DE PRODUCTION N'APPELLE CECI** (épinglé par test).
      * Réservée au nettoyage du test d'intégration.
      */
     public function deleteFolder(int $folderId): NextcloudResult
@@ -179,10 +174,6 @@ final class NextcloudTeamFolderClient
             'suppression du dossier d\'équipe',
         );
     }
-
-    // =========================================================================
-    // Groupes de l'instance
-    // =========================================================================
 
     /** Crée un groupe. « Existe déjà » est une idempotence : le résultat est conforme. */
     public function ensureGroup(string $groupId): NextcloudResult
@@ -246,10 +237,6 @@ final class NextcloudTeamFolderClient
             sprintf('retrait d\'un compte du groupe « %s »', $groupId),
         );
     }
-
-    // =========================================================================
-    // Interne
-    // =========================================================================
 
     /**
      * @param  array<string, mixed>  $payload
@@ -378,14 +365,14 @@ final class NextcloudTeamFolderClient
 
         // `format=json` posé dans la chaîne de requête, jamais en second argument
         // du verbe : le client HTTP écraserait la chaîne existante et l'instance
-        // répondrait du XML que ce code ne sait pas lire (piège 61.1).
+        // répondrait du XML que ce code ne sait pas lire (piège).
         $query = ['format' => 'json'] + ($method === 'GET' ? $payload : []);
         $url = $this->config->url($path) . '?' . http_build_query($query);
 
         return match ($method) {
             'GET' => $request->get($url),
             // Corps en FORMULAIRE, mesuré. Jamais de JSON, jamais de booléen dans
-            // un corps de formulaire (piège mesuré en 61.1).
+            // un corps de formulaire (piège mesuré).
             'POST' => $request->asForm()->post($url, $payload),
             'PUT' => $request->asForm()->put($url, $payload),
             default => $request->send($method, $url, $payload === [] ? [] : ['form_params' => $payload]),
@@ -407,7 +394,7 @@ final class NextcloudTeamFolderClient
      * Le point de montage RELU d'une entrée d'inventaire, normalisé.
      *
      * L'instance rend parfois une barre oblique de tête que personne n'a écrite —
-     * deuxième occurrence du piège « le relu n'est pas l'envoyé » dans cet epic. On
+     * deuxième occurrence du piège « le relu n'est pas l'envoyé ». On
      * normalise ICI, à la source, pour que personne n'ait à s'en souvenir.
      *
      * @param  array<string, mixed>  $folder

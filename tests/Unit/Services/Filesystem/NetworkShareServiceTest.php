@@ -29,7 +29,7 @@ use Tests\TestCase;
 use Tests\Unit\Services\Filesystem\Support\RecordingBackend;
 
 /**
- * Story 34.1 → 60.4 — l'ORCHESTRATEUR, testé AU-DESSUS DE LA LIGNE.
+ * → — l'ORCHESTRATEUR, testé AU-DESSUS DE LA LIGNE.
  *
  * **Aucune simulation de processus dans ce fichier, et c'est une garde.** Les
  * tests historiques de ce service simulaient `mkdir`, `setfacl`, `chown` et
@@ -80,10 +80,6 @@ class NetworkShareServiceTest extends TestCase
         ]);
     }
 
-    // =========================================================================
-    // Nommage — la seule règle qui reste au-dessus de la ligne
-    // =========================================================================
-
     #[Test]
     public function the_directory_name_rule_rejects_traversal_and_metacharacters(): void
     {
@@ -95,10 +91,6 @@ class NetworkShareServiceTest extends TestCase
         }
         self::assertFalse($this->service->isValidDirectoryName(null));
     }
-
-    // =========================================================================
-    // Délégation
-    // =========================================================================
 
     #[Test]
     public function provisioning_projects_a_neutral_plan_and_delegates_to_the_backend_of_the_column(): void
@@ -161,10 +153,6 @@ class NetworkShareServiceTest extends TestCase
         self::assertSame((int) $group->id, $subject->id);
     }
 
-    // =========================================================================
-    // Le booléen d'adaptation est CALCULÉ, jamais lu dans un rapport
-    // =========================================================================
-
     #[Test]
     public function the_boolean_kept_for_historic_callers_is_derived_from_the_report_lists(): void
     {
@@ -191,10 +179,6 @@ class NetworkShareServiceTest extends TestCase
         self::assertFalse($this->service->provision($share));
         self::assertSame([], $this->backend->calls);
     }
-
-    // =========================================================================
-    // Régimes d'exécution (AC4)
-    // =========================================================================
 
     #[Test]
     public function a_screen_enqueues_and_writes_nothing_in_the_request(): void
@@ -244,7 +228,7 @@ class NetworkShareServiceTest extends TestCase
      * traitement en file : ni réessai, ni consignation d'échec. Si le rapport
      * « en attente » posé à l'enfilage restait en place, l'écran dirait « c'est
      * engagé » pour toujours, et le seul témoin serait une ligne de journal que
-     * personne ne lit. C'est la signature de défaut que cet epic traque.
+     * personne ne lit. C'est la signature de défaut qu'on traque.
      */
     #[Test]
     public function a_queued_reconciliation_that_fails_replaces_the_pending_state_by_a_readable_failure(): void
@@ -285,10 +269,6 @@ class NetworkShareServiceTest extends TestCase
         self::assertNull($this->service->lastFailure($share));
         self::assertNotNull($this->service->lastReport($share));
     }
-
-    // =========================================================================
-    // Trace applicative
-    // =========================================================================
 
     #[Test]
     public function the_audit_row_keeps_its_shape_and_its_author(): void

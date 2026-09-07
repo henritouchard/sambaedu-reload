@@ -12,7 +12,7 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
 /**
  * Mixin pour les modèles scopables (User, UserGroup, WorkstationGroup).
  *
- * Story 4.8 — AC 3. Factorise la relation morphMany + les méthodes wrapper
+ * Factorise la relation morphMany + les méthodes wrapper
  * `customizationFor(AppKind)` et `setCustomization(AppKind, array, User)`.
  */
 trait HasAppCustomizations

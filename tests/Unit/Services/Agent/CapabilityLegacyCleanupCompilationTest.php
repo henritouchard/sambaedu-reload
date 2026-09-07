@@ -22,13 +22,13 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 38.3 (AC2) — compilation BOUT-EN-BOUT capacité `legacy_hooks_cleanup`
+ * Compilation BOUT-EN-BOUT capacité `legacy_hooks_cleanup`
  * → item de contrat via le `StateCompiler` INCHANGÉ. Prouve : (a) le patron
  * « défaut Broadcast + override parc » dans LES DEUX SENS (armement par parc,
  * retrait au silence par parc) ; (b) l'identité FIXE `legacy_cleanup` — deux
  * capacités concurrentes ⇒ UN seul item (la maille la plus spécifique gagne
  * l'item ENTIER) ; (c) le hash compilé est BYTE-IDENTIQUE au golden
- * `state.v1.json` (jumelage croisé PHP↔Go de l'AC1).
+ * `state.v1.json` (jumelage croisé PHP↔Go).
  */
 class CapabilityLegacyCleanupCompilationTest extends TestCase
 {
@@ -102,7 +102,7 @@ class CapabilityLegacyCleanupCompilationTest extends TestCase
         ));
     }
 
-    // ── (a) Défaut Broadcast + override parc, deux sens ───────────────────
+    // (a) Défaut Broadcast + override parc, deux sens
 
     #[Test]
     public function parc_on_arms_the_cleanup_over_broadcast_unmanaged(): void
@@ -133,8 +133,8 @@ class CapabilityLegacyCleanupCompilationTest extends TestCase
         // providers) : la sentinelle N'ÉMET PAS de candidat à sa maille — elle
         // ne peut donc PAS masquer un candidat Broadcast existant. Un parc
         // « repassé à Non géré » sous un Broadcast `on` reste nettoyé (sans
-        // conséquence ici : le nettoyage est one-way et idempotent, piège #7 —
-        // le retrait du gating global passe par le default_value Broadcast).
+        // conséquence ici : le nettoyage est one-way et idempotent — le retrait
+        // du gating global passe par le default_value Broadcast).
         $cap = $this->makeCapability('legacy_hooks_cleanup', 'on');
         $this->assign($cap, 'unmanaged');
 
@@ -143,7 +143,7 @@ class CapabilityLegacyCleanupCompilationTest extends TestCase
         self::assertSame(['mozilla' => 'vanilla'], $items[0]['payload']);
     }
 
-    // ── (b) Identité FIXE : deux capacités ⇒ UN item ─────────────────────
+    // (b) Identité FIXE : deux capacités ⇒ UN item
 
     #[Test]
     public function fixed_exclusive_key_yields_a_single_item_across_capabilities(): void
@@ -159,7 +159,7 @@ class CapabilityLegacyCleanupCompilationTest extends TestCase
         self::assertSame(['mozilla' => 'vanilla'], $items[0]['payload']);
     }
 
-    // ── (c) Byte-identité avec le golden (AC1, jumelage PHP↔Go) ──────────
+    // (c) Byte-identité avec le golden (jumelage PHP↔Go)
 
     #[Test]
     public function compiled_item_hash_matches_the_golden_fixture(): void

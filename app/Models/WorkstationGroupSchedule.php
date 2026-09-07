@@ -12,16 +12,16 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
- * Story 4-4 — Programmation horaire sur un WorkstationGroup.
+ * Programmation horaire sur un WorkstationGroup.
  *
- * Deux modes mutuellement exclusifs (D7, contrainte CHECK DB) :
+ * Deux modes mutuellement exclusifs (contrainte CHECK DB) :
  *  - `recurring` : triplet `days_of_week` (ISO 8601 SMALLINT[]) + `time_of_day` + `timezone`.
  *    Exécution à chaque minute où dayOfWeekIso ∈ days_of_week et now matche
  *    `time_of_day` à la minute près (dans la timezone du schedule).
  *  - `one_shot` : `run_at` TIMESTAMPTZ unique futur. Auto-complétion :
  *    `enabled=false` + `completed_at=ran_at` après exécution. Ne re-fire jamais.
  *
- * Actions MVP (D5) : `wake` + `shutdown` seulement.
+ * Actions supportées : `wake` + `shutdown` seulement.
  * Idempotence : 4 couches (CHECK DB + index unique sur runs + garde `exists()`
  * service + `withoutOverlapping(5)` scheduler).
  *
@@ -82,7 +82,7 @@ class WorkstationGroupSchedule extends Model
 
     /**
      * Timezones autorisées : France métropolitaine + DOM-TOM + UTC.
-     * Liste courte validée côté FormRequest via Rule::in() (Q3 review 4.4).
+     * Liste courte validée côté FormRequest via Rule::in().
      *
      * @var list<string>
      */
@@ -128,10 +128,6 @@ class WorkstationGroupSchedule extends Model
         ];
     }
 
-    // ========================================
-    // Relations
-    // ========================================
-
     public function workstationGroup(): BelongsTo
     {
         return $this->belongsTo(WorkstationGroup::class, 'workstation_group_id');
@@ -146,10 +142,6 @@ class WorkstationGroupSchedule extends Model
     {
         return $this->hasMany(WorkstationGroupScheduleRun::class, 'schedule_id');
     }
-
-    // ========================================
-    // Scopes (D7)
-    // ========================================
 
     public function scopeRecurring(Builder $query): Builder
     {
@@ -195,10 +187,6 @@ class WorkstationGroupSchedule extends Model
             });
     }
 
-    // ========================================
-    // Helpers (D7)
-    // ========================================
-
     public function isRecurring(): bool
     {
         return $this->mode === self::MODE_RECURRING;
@@ -224,7 +212,7 @@ class WorkstationGroupSchedule extends Model
      * Matching fin minute-courante selon le mode.
      *
      * Recurring : dayOfWeekIso ∈ days_of_week ET `now ∈ [time_of_day, time_of_day + 1min)`
-     * dans la timezone du schedule (robuste DST — AC11).
+     * dans la timezone du schedule (robuste DST —).
      *
      * One-shot : run_at <= now (+ pas complété + enabled true) — ramassé au
      * premier tick qui voit la fenêtre. Catch-up post-downtime automatique.

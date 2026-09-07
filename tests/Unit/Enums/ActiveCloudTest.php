@@ -11,7 +11,7 @@ use PHPUnit\Framework\TestCase;
 use ReflectionEnum;
 
 /**
- * Story 63.1 — AC1 : le cloud actif est UNE VALEUR, et l'état « les deux »
+ * Le cloud actif est UNE VALEUR, et l'état « les deux »
  * est irreprésentable.
  *
  * `TestCase` PUR, aucune application, aucune base — c'est ce qui prouve que
@@ -69,7 +69,7 @@ class ActiveCloudTest extends TestCase
     }
 
     /**
-     * AC1 — aucune combinaison de valeurs ne représente « les deux clouds » :
+     * Aucune combinaison de valeurs ne représente « les deux clouds » :
      * le type ne porte qu'UNE valeur, il n'existe ni setter ni tableau de
      * booléens. On tente d'écrire « les deux » sous toutes les formes
      * plausibles et on constate `null` à chaque fois — pas une case

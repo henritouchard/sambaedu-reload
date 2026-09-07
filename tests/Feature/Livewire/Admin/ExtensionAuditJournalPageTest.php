@@ -16,22 +16,19 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 56.5 (AC5, AC6) — `/admin/extensions/journal` : le journal d'audit FR36,
- * enfin LISIBLE.
+ * `/admin/extensions/journal` : le journal d'audit des extensions.
  *
- * ══════════════════════════════════════════════════════════════════════════
  *  LES QUATRE PROPRIÉTÉS QUI COMPTENT
  *
- *  1. Le journal affiche des lignes de TOUTES les époques (54.2 → 56.4) et de
+ *  1. Le journal affiche des lignes de TOUTES les époques et de
  *     toutes les FORMES : cible extension, cible source, acteur `system`,
  *     `details` vide, FK nulle après suppression de la cible.
  *  2. Une action INCONNUE du mapping s'affiche telle quelle, badge neutre — la
- *     page verra un jour des actions écrites par une story future.
+ *     page verra un jour des actions écrites plus tard.
  *  3. Aucune URL de source, aucun secret : la page ne rend QUE les colonnes du
  *     journal.
- *  4. Le bandeau « journal peut-être incomplet » (legs review 56.3 #4) et son
- *     acquittement — qui n'écrit AUCUNE ligne d'audit.
- * ══════════════════════════════════════════════════════════════════════════
+ *  4. Le bandeau « journal peut-être incomplet » et son acquittement — qui
+ *     n'écrit AUCUNE ligne d'audit.
  */
 class ExtensionAuditJournalPageTest extends TestCase
 {
@@ -90,7 +87,7 @@ class ExtensionAuditJournalPageTest extends TestCase
             ->installed(9300)
             ->create(['key' => 'hello', 'name' => 'Hello']);
 
-        // 54.2 — acte humain sur une extension.
+        // acte humain sur une extension.
         ExtensionAuditLog::log(
             $extension->id,
             (string) $extension->key,
@@ -100,7 +97,7 @@ class ExtensionAuditJournalPageTest extends TestCase
             $this->admin->login,
         );
 
-        // 56.1 — acte de SOURCE, colonnes d'extension vides, acteur planifié.
+        // acte de SOURCE, colonnes d'extension vides, acteur planifié.
         ExtensionAuditLog::logSource(
             $source->id,
             (string) $source->key,
@@ -109,7 +106,7 @@ class ExtensionAuditJournalPageTest extends TestCase
             ExtensionAuditLog::ACTOR_SYSTEM,
         );
 
-        // 56.2 — échec avec catégorie courte.
+        // échec avec catégorie courte.
         ExtensionAuditLog::log(
             $extension->id,
             (string) $extension->key,
@@ -120,7 +117,6 @@ class ExtensionAuditJournalPageTest extends TestCase
             'sha256 non concordant',
         );
 
-        // 56.3 / 56.4.
         ExtensionAuditLog::log(
             $extension->id,
             (string) $extension->key,
@@ -142,9 +138,7 @@ class ExtensionAuditJournalPageTest extends TestCase
         return ['extension' => $extension, 'source' => $source];
     }
 
-    // ══════════════════════════════════════════════════════════════════════
-    // AC5 — le journal se lit
-    // ══════════════════════════════════════════════════════════════════════
+    // Le journal se lit
 
     #[Test]
     public function the_journal_lists_entries_of_every_epoch_and_every_shape(): void
@@ -206,9 +200,7 @@ class ExtensionAuditJournalPageTest extends TestCase
         self::assertCount(5, $component->get('rows')->items());
     }
 
-    // ══════════════════════════════════════════════════════════════════════
-    // AC5 — filtres
-    // ══════════════════════════════════════════════════════════════════════
+    // Filtres
 
     #[Test]
     public function the_action_filter_narrows_the_list(): void
@@ -287,13 +279,11 @@ class ExtensionAuditJournalPageTest extends TestCase
             ->assertSet('action', '');
     }
 
-    // ══════════════════════════════════════════════════════════════════════
-    // AC5 — RENDU TOLÉRANT
-    // ══════════════════════════════════════════════════════════════════════
+    // RENDU TOLÉRANT
 
     /**
      * LE test de tolérance. `action` est un string libre par construction : une
-     * action écrite par une story future doit s'AFFICHER, pas faire tomber la
+     * action écrite plus tard doit s'AFFICHER, pas faire tomber la
      * page ni disparaître de l'écran.
      */
     #[Test]
@@ -362,9 +352,7 @@ class ExtensionAuditJournalPageTest extends TestCase
         Livewire::test(self::PAGE)->assertSee('—');
     }
 
-    // ══════════════════════════════════════════════════════════════════════
     // Sécurité — aucune fuite, trois couches
-    // ══════════════════════════════════════════════════════════════════════
 
     /**
      * L'URL du dépôt est en base, avec un jeton dedans. Elle ne doit apparaître
@@ -432,10 +420,6 @@ class ExtensionAuditJournalPageTest extends TestCase
             ->assertOk();
     }
 
-    // ══════════════════════════════════════════════════════════════════════
-    // AC6 — bandeau et acquittement (legs review 56.3 #4)
-    // ══════════════════════════════════════════════════════════════════════
-
     #[Test]
     public function no_banner_is_shown_without_a_marker(): void
     {
@@ -484,10 +468,6 @@ class ExtensionAuditJournalPageTest extends TestCase
             'l\'acquittement n\'est PAS un acte de conformité : l\'auditer créerait une boucle',
         );
     }
-
-    // ══════════════════════════════════════════════════════════════════════
-    // NFR6 — une table illisible ne rend pas une 500
-    // ══════════════════════════════════════════════════════════════════════
 
     #[Test]
     public function an_unreadable_journal_degrades_to_an_empty_page_instead_of_500ing(): void

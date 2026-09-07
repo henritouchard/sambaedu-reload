@@ -14,7 +14,7 @@ use Tests\TestCase;
 use Tests\Traits\CreatesDhcpSchema;
 
 /**
- * Story 8.1 — T8b / AC9 : parsing du fichier legacy `reservations.inc` +
+ * T8b / : parsing du fichier legacy `reservations.inc` +
  * upsert idempotent dans `dhcp_reservations`.
  *
  * Couvre :
@@ -68,8 +68,8 @@ class DhcpServiceImportLegacyTest extends TestCase
         $stats = $this->service->importFromLegacyFile($this->fixture, $this->logger());
 
         // Fixture : 3 blocs valides (poste01, poste02, poste03), 1 dup MAC
-        // (poste99) → skipped, 1 malformé (posteBroken) → désormais comptabilisé
-        // en errors[] (cf. review code 8.1 #5), 1 MAC invalide (posteBadMac) → error.
+        // (poste99) → skipped, 1 malformé (posteBroken) → comptabilisé en
+        // errors[], 1 MAC invalide (posteBadMac) → error.
         $this->assertSame(3, DhcpReservation::count());
         $this->assertSame(3, $stats['created']);
         $this->assertSame(0, $stats['updated']);
@@ -79,7 +79,7 @@ class DhcpServiceImportLegacyTest extends TestCase
     #[Test]
     public function it_reports_malformed_host_block_as_error(): void
     {
-        // Review code 8.1 #5 — la fixture contient `host posteBroken { … ` sans
+        // La fixture contient `host posteBroken { … ` sans
         // accolade fermante. Doit produire au moins une erreur identifiant
         // ce bloc, plutôt qu'un skip silencieux.
         $stats = $this->service->importFromLegacyFile($this->fixture, $this->logger());
@@ -160,7 +160,7 @@ class DhcpServiceImportLegacyTest extends TestCase
 
         $reservation = DhcpReservation::where('name', 'poste01')->first();
         $this->assertNotNull($reservation);
-        // AC9 : la source d'origine est préservée lors d'un update
+        // La source d'origine est préservée lors d'un update
         $this->assertSame('manual', $reservation->source);
     }
 

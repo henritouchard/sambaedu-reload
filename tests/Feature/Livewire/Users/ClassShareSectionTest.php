@@ -20,9 +20,9 @@ use Tests\TestCase;
 use Tests\Traits\CreatesPermissionSchema;
 
 /**
- * Story 5.2 — Tests Feature Livewire SFC `class-share-section`.
+ * Tests Feature Livewire SFC `class-share-section`.
  *
- * Couvre AC 7 / 8 / 17 :
+ * Couvre :
  *  - rendu conditionnel `type === 'classe'`
  *  - double guard manage-share (UI + serveur)
  *  - bouton actions désactivé sans permission `share.manage`
@@ -108,10 +108,6 @@ class ClassShareSectionTest extends TestCase
         return UserGroup::create(['name' => $name, 'type' => 'classe', 'display_name' => "Classe $name"]);
     }
 
-    // =========================================================================
-    // AC 7 — rendu conditionnel
-    // =========================================================================
-
     #[Test]
     public function it_renders_section_for_classe_type(): void
     {
@@ -147,10 +143,6 @@ class ClassShareSectionTest extends TestCase
             ->assertStatus(404);
     }
 
-    // =========================================================================
-    // AC 7 — état FS reflété
-    // =========================================================================
-
     #[Test]
     public function it_reflects_existing_share_state_with_subdirs(): void
     {
@@ -170,10 +162,6 @@ class ClassShareSectionTest extends TestCase
             ->assertSet('subdirs._echange', false)
             ->assertSee('Partage créé');
     }
-
-    // =========================================================================
-    // AC 8 — double guard manage-share
-    // =========================================================================
 
     #[Test]
     public function it_blocks_create_share_without_manage_permission(): void
@@ -219,10 +207,6 @@ class ClassShareSectionTest extends TestCase
             && str_contains($p->command, 'Classe_6A'));
     }
 
-    // =========================================================================
-    // AC 17 — share.view seul → readonly
-    // =========================================================================
-
     #[Test]
     public function it_shows_readonly_for_view_only_permission(): void
     {
@@ -248,10 +232,6 @@ class ClassShareSectionTest extends TestCase
         Livewire::test($this->componentPath(), ['groupId' => $classe->id])
             ->assertSee('Accès restreint');
     }
-
-    // =========================================================================
-    // refresh — pas de side effect FS
-    // =========================================================================
 
     #[Test]
     public function refresh_action_does_not_require_manage_permission(): void

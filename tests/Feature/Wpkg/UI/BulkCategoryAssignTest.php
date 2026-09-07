@@ -18,7 +18,7 @@ use Tests\Support\WpkgSchemaBootstrapper;
 use Tests\TestCase;
 
 /**
- * Story 15.4 / AC3 + Décision C — Bulk catégorie : N apps de même catégorie
+ * + Décision C — Bulk catégorie : N apps de même catégorie
  * assignées en 1 mutation, 1 event pluriel `AppProfileApplicationsChanged`
  * (vs N events) pour minimiser les invalidations cache redondantes.
  */

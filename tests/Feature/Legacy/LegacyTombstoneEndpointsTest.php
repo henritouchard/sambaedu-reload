@@ -13,7 +13,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 38.2 — Tombstones natifs du canal client legacy.
+ * Tombstones natifs du canal client legacy.
  *
  * Vérifie par famille de format : statut + Content-Type exact + corps inerte,
  * POST multipart sans CSRF accepté, ligne DB `source='tombstone'` (+ machine/user
@@ -78,7 +78,7 @@ class LegacyTombstoneEndpointsTest extends TestCase
     }
 
     /**
-     * AC2 — `applications.php` répond 200 script no-op à TOUTE combinaison de
+     * `applications.php` répond 200 script no-op à TOUTE combinaison de
      * params (action, user, machine, ret=0, context…) — aucune branche 4xx/5xx.
      */
     #[Test]
@@ -134,7 +134,7 @@ class LegacyTombstoneEndpointsTest extends TestCase
     }
 
     /**
-     * AC3 (review 38.2 #3) — les DEUX routes Linux hors tombstone atteignent
+     * Les DEUX routes Linux hors tombstone atteignent
      * toujours le CATCHALL (proxy) : aucune route native ne doit jamais les
      * shadow (le canal Linux vivant de lab1 en dépend jusqu'à extinction
      * mesurée ou agent Linux).
@@ -205,7 +205,7 @@ class LegacyTombstoneEndpointsTest extends TestCase
     }
 
     /* ================================================================
-     * Famille BASH STRICT (/ipxe/linux/action.php — toujours #)
+     * Famille BASH STRICT (ipxe/linux/action.php — toujours #)
      * ================================================================ */
 
     #[Test]

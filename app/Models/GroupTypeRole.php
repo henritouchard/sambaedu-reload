@@ -12,10 +12,10 @@ use Illuminate\Support\Facades\Schema;
 use InvalidArgumentException;
 
 /**
- * Story 62.3 — UNE DÉCLARATION : « ce rôle a un sens dans ce type de groupe, et
+ * UNE DÉCLARATION : « ce rôle a un sens dans ce type de groupe, et
  * voici comment il s'y dit ».
  *
- * C'est l'ARÊTE entre les deux catalogues livrés par 62.1 (les rôles) et 62.2
+ * C'est l'ARÊTE entre les deux catalogues livrés par (les rôles) et
  * (les types). Elle n'invente aucun vocabulaire : elle relie deux clés existantes
  * et leur attache un libellé LOCAL optionnel.
  *
@@ -37,7 +37,7 @@ use InvalidArgumentException;
  * ({@see \App\Support\RoleCatalog::assertAssignable()}), jamais sur le pivot ni
  * sur un événement Eloquent. Le balayage d'annuaire, l'import d'utilisateurs, le
  * fold legacy et des dizaines de tests attachent en direct, et l'annuaire reste
- * autoritaire sur son propre flux — c'est exactement le précédent posé par 62.2,
+ * autoritaire sur son propre flux — c'est exactement le précédent posé par,
  * qui a mis sa garde de vocabulaire au service et pas sur `UserGroup`.
  *
  * @property int $id
@@ -50,9 +50,9 @@ class GroupTypeRole extends Model
     protected $table = 'group_type_roles';
 
     /**
-     * Le seul type sur lequel `owner` a un sens (review 62.3 #1).
+     * Le seul type sur lequel `owner` a un sens.
      *
-     * Même littéral que la garde D3 des points de rattachement — volontairement,
+     * Même littéral que la garde des points de rattachement — volontairement,
      * pour qu'un `grep 'classe'` les trouve ensemble le jour où cette règle
      * changera.
      */
@@ -76,7 +76,7 @@ class GroupTypeRole extends Model
         // « Tuteur » sur les projets continue de lire l'ancienne carte. La mémo
         // des déclarations vit dans `RoleCatalog` et son `flush()` vide les DEUX
         // mémos — c'est ce qui fait hériter gratuitement du `Queue::before` de
-        // `AppServiceProvider` (review 62.1 #1) et du `setUp()` des tests, sans
+        // `AppServiceProvider` et du `setUp()` des tests, sans
         // y ajouter un troisième flush à tenir à jour.
         static::saved(fn () => RoleCatalog::flush());
         static::deleted(fn () => RoleCatalog::flush());
@@ -114,7 +114,7 @@ class GroupTypeRole extends Model
      * Le rôle déclaré appartient au catalogue de rôles — comparaison EXACTE.
      *
      * Les clés de RÔLE, elles, SONT des slugs : {@see GroupRole::KEY_PATTERN} les
-     * y contraint depuis 62.1, et le plancher historique ne contient que
+     * y contraint depuis, et le plancher historique ne contient que
      * `member|manager|owner`. Aucune valeur héritée exotique n'existe de ce
      * côté-là de l'arête.
      */
@@ -136,9 +136,9 @@ class GroupTypeRole extends Model
      * Le type déclarant existe au catalogue de types — comparaison EXACTE, et
      * AUCUNE garde de format.
      *
-     * Review 62.2 #1 — les clés de type héritées ne sont PAS des slugs :
+     * Les clés de type héritées ne sont PAS des slugs :
      * `Custom`, `class` sont des lignes légitimes de `group_types`, découvertes
-     * en base par la migration 62.2, et on s'est justement interdit de les
+     * en base par la migration, et on s'est justement interdit de les
      * renormaliser. Une déclaration doit pouvoir s'y accrocher. On vérifie donc
      * l'EXISTENCE de la clé, jamais sa forme — la ligne se crée depuis la ligne
      * du catalogue, et c'est sa valeur stockée qui fait référence.
@@ -170,16 +170,17 @@ class GroupTypeRole extends Model
     }
 
     /**
-     * Review 62.3 #1 — `owner` ne se déclare que sur `classe`.
+     * `owner` ne se déclare que sur `classe`.
      *
-     * La règle D3 vit en littéraux aux trois points d'écriture, et elle y reste :
+     * La règle vit en littéraux aux trois points d'écriture, et elle y reste :
      * c'est elle qui garde le rattachement, indépendamment de toute déclaration.
      * Mais rien n'empêchait de DÉCLARER `owner` sur un projet — et le bouton
      * « tous les rôles du catalogue » de la modale le faisait en un clic.
      *
      * La déclaration était alors mort-née : `assignableKeys('projet')` rendait
      * `owner`, un badge « Propriétaire » s'affichait, et pas un seul chemin ne
-     * pouvait jamais l'attribuer. Cosmétique aujourd'hui ; un piège pour **62.6**,
+     * pouvait jamais l'attribuer. Cosmétique aujourd'hui ; un piège pour l'éditeur
+     * d'arborescences à venir,
      * qui construira sa matrice rôles × verbes à partir de `assignableKeys()` et y
      * proposerait un octroi que personne ne pourra jamais recevoir.
      *
@@ -207,7 +208,7 @@ class GroupTypeRole extends Model
     }
 
     /**
-     * Story 62.3 — le REFUS de retrait, nommé et chiffré, ou `null` si le retrait
+     * Le REFUS de retrait, nommé et chiffré, ou `null` si le retrait
      * est légitime.
      *
      * Retirer `manager` de `classe` alors que des enseignants sont `manager` dans
@@ -243,7 +244,7 @@ class GroupTypeRole extends Model
      * L'asymétrie avec {@see GroupType::countGroups()} (exact) est la même que
      * celle de {@see GroupType::countTemplates()}, et pour la même raison : **on
      * compte comme la RÉSOLUTION apparie**. `RoleCatalog::label()` abaisse et
-     * trime le type entrant depuis la story 60.2 ; un groupe stocké `Classe`
+     * trime le type entrant ; un groupe stocké `Classe`
      * lit donc bien les libellés déclarés sur `classe`, et son appartenance
      * `manager` DOIT compter quand on retire cette déclaration. Compter en exact
      * ici laisserait passer un retrait qui casse un affichage réel.

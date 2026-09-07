@@ -14,10 +14,10 @@ import (
 	"sambaedu/agent/shared"
 )
 
-// Watchdog Rainmeter côté COMPAGNON (Story 27.1bis, volet 3 / D5) — primitives
+// Watchdog Rainmeter côté COMPAGNON — primitives
 // OS injectées dans shared.RainmeterWatchdog. Le compagnon tourne aux droits de
 // la SESSION : la relance est triviale (os/exec), et le process meurt au logoff
-// (acceptable). PAS d'obfuscation (D7) : on relance, on ne masque rien.
+// (acceptable). PAS d'obfuscation : on relance, on ne masque rien.
 //
 // Le portable Rainmeter et sa config verrouillée sont posés par le SERVICE
 // SYSTEM (provisioning au bootstrap) ; le watchdog ne fait que MAINTENIR le
@@ -35,7 +35,7 @@ func (o *rainmeterOps) Installed() bool {
 }
 
 // Running : un process Rainmeter.exe tourne-t-il DANS LA SESSION COURANTE ?
-// (#12) Énumération des process via CreateToolhelp32Snapshot (Win32 plat, zéro
+// Énumération des process via CreateToolhelp32Snapshot (Win32 plat, zéro
 // shell-out, zéro WMI). On compare le nom d'image (Rainmeter.exe, insensible à
 // la casse) ET on filtre par session : sur un poste multi-utilisateurs (RDS,
 // bascule rapide), le Rainmeter d'une AUTRE session ne doit pas masquer
@@ -95,8 +95,8 @@ func (o *rainmeterOps) currentSessionID() (uint32, error) {
 	return session, nil
 }
 
-// Launch : lance Rainmeter.exe SANS argument (#8). En MODE INSTALLÉ (Story
-// 27.1ter — plus de Rainmeter.ini sous ProgramData), Rainmeter lit son
+// Launch : lance Rainmeter.exe SANS argument. En MODE INSTALLÉ (plus de
+// Rainmeter.ini sous ProgramData), Rainmeter lit son
 // Rainmeter.ini dans %APPDATA%\Rainmeter\ (writable, posé par le compagnon avant
 // ce lancement). Ce .ini durci déclare la skin SambaEduOverlay en Active=1,
 // pointe les skins verrouillées via SkinPath (ProgramData RX) et porte
@@ -105,7 +105,7 @@ func (o *rainmeterOps) currentSessionID() (uint32, error) {
 // chemin en argument (le faire courcircuiterait le chargement automatique).
 // HideWindow : pas de console parasite.
 //
-// Détachement réel (#13) : CREATE_NEW_PROCESS_GROUP + DETACHED_PROCESS placent
+// Détachement réel : CREATE_NEW_PROCESS_GROUP + DETACHED_PROCESS placent
 // Rainmeter dans son propre groupe, SANS console héritée du compagnon — la mort
 // du compagnon (logoff partiel, crash, redémarrage du résident) ne propage pas
 // de signal qui tuerait Rainmeter. Il survit tant que la session vit. Start
@@ -121,16 +121,17 @@ func (o *rainmeterOps) Launch() error {
 	return cmd.Start()
 }
 
-// ensureUserRainmeterIni : primitive Windows de la story 27.1ter (mode installé)
-// injectée dans shared.Companion.EnsureUserRainmeterIni. Elle résout %APPDATA%
-// (toujours présent dans la session user, local — dispo même nomade, cf.
-// project_nomade_local_fr29_closed), compose %APPDATA%\Rainmeter\Rainmeter.ini et
+// EnsureUserRainmeterIni : primitive Windows de l'écriture du Rainmeter.ini
+// utilisateur (mode installé), injectée dans
+// shared.Companion.EnsureUserRainmeterIni. Elle résout %APPDATA% (toujours
+// présent dans la session user, et local — donc disponible même en nomade),
+// compose %APPDATA%\Rainmeter\Rainmeter.ini et
 // y écrit le contenu durci (UTF-16 LE + BOM) de façon ATOMIQUE et IDEMPOTENTE,
-// SANS aucune ACL (le fichier doit rester WRITABLE — c'est tout l'objet de la
-// story : plus de modale « not writable » / « Safe Start »). Toute la logique
+// SANS aucune ACL (le fichier doit rester WRITABLE, sinon Rainmeter ouvre une
+// modale « not writable » / « Safe Start »). Toute la logique
 // (contenu, atomicité, idempotence) vit dans shared.WriteUserRainmeterIni ; ici
 // on ne fait QUE résoudre le chemin Windows. Gracieux : l'erreur remonte à
-// Companion.Run qui la logge sans bloquer (NFR1).
+// Companion.Run qui la logge sans bloquer.
 func ensureUserRainmeterIni(log *shared.Logger) error {
 	appData := os.Getenv("APPDATA")
 	if appData == "" {

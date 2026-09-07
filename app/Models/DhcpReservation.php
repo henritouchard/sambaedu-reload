@@ -10,7 +10,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * Story 8.1 — Modèle Eloquent d'une réservation DHCP.
+ * Modèle Eloquent d'une réservation DHCP.
  *
  * Source de vérité SER pour les réservations DHCP. L'export vers
  * `/etc/sambaedu/reservations.inc` est dérivé de cette table par
@@ -18,7 +18,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  *
  * Sources possibles (colonne `source`) :
  *  - `manual`           : créée depuis l'UI Livewire (cas courant).
- *  - `import`           : créée par import CSV (FR22).
+ *  - `import`           : créée par import CSV.
  *  - `legacy-migration` : créée par l'étape 10 `/sync-from-ad`
  *                         (parsing one-shot `/etc/sambaedu/reservations.inc`).
  *
@@ -64,7 +64,7 @@ class DhcpReservation extends Model
     ];
 
     /**
-     * Story 8.1 — La réservation peut être liée à un poste de l'inventaire.
+     * La réservation peut être liée à un poste de l'inventaire.
      * Lien optionnel (la suppression de la machine met `workstation_id` à
      * NULL — la réservation survit indépendamment).
      */

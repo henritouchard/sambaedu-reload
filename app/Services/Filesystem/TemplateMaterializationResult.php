@@ -7,14 +7,14 @@ namespace App\Services\Filesystem;
 use App\Models\NetworkShare;
 
 /**
- * Story 34.3 → 60.4 — résultat de {@see DirectoryTemplateService::materialize()}.
+ * → — résultat de {@see DirectoryTemplateService::materialize}.
  *
  * Porte le {@see NetworkShare} matérialisé, les avertissements NON bloquants à
- * surfacer en `toastWarning` (WG-montage-seul — vide en 34.3 puisque les recettes
- * n'assignent jamais de parc, mais conservé pour homogénéité avec la page détail
- * 34.2), et l'ÉTAT du provisionnement.
+ * surfacer en `toastWarning` (WG-montage-seul — vide puisque les recettes
+ * n'assignent jamais de parc, mais conservé pour homogénéité avec la page détail),
+ * et l'ÉTAT du provisionnement.
  *
- * **Pourquoi cet état n'est plus un booléen** (story 60.4). Quand la
+ * **Pourquoi cet état n'est plus un booléen**. Quand la
  * matérialisation vient d'un écran, la pose des droits n'est plus faite dans le
  * cycle de la requête : elle est ENFILÉE. Un booléen n'aurait alors eu que deux
  * réponses possibles, toutes deux fausses — `true` aurait affirmé un

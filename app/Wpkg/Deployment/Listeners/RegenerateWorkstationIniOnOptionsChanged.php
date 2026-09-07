@@ -10,7 +10,7 @@ use App\Wpkg\Deployment\Generators\WorkstationIniGenerator;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 15.2 / AC4.3 — Listener regen `.ini` sur changement d'options.
+ * Listener regen `.ini` sur changement d'options.
  */
 final class RegenerateWorkstationIniOnOptionsChanged
 {

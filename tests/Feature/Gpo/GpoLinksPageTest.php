@@ -20,12 +20,12 @@ use Tests\Support\FakesGpoService;
 use Tests\TestCase;
 
 /**
- * Story 16.5 — AC6.2 / Volet 6.
+ * Volet 6.
  *
- * Tests Feature de la page Livewire `/admin/settings/gpo/{guid}/links` (renommée par 16.9).
+ * Tests Feature de la page Livewire `/admin/settings/gpo/{guid}/links`.
  *
- * Stratégie : `FakesGpoService` builder fluide + container binding (iso Story
- * 16.2 / `GpoDetailPageTest`). `OrganizationalUnitRepository` est mocké
+ * Stratégie : `FakesGpoService` builder fluide + container binding (iso
+ * `GpoDetailPageTest`). `OrganizationalUnitRepository` est mocké
  * pour retourner une liste fixe d'OUs.
  */
 class GpoLinksPageTest extends TestCase
@@ -122,10 +122,6 @@ class GpoLinksPageTest extends TestCase
         $this->app->bind(OrganizationalUnitRepository::class, fn () => $repo);
     }
 
-    // =====================================================================
-    // AC2.1 — accessibilité + permission
-    // =====================================================================
-
     #[Test]
     public function it_renders_links_page_for_server_admin(): void
     {
@@ -189,10 +185,6 @@ class GpoLinksPageTest extends TestCase
         }
     }
 
-    // =====================================================================
-    // AC2.2 — affichage des liens existants
-    // =====================================================================
-
     #[Test]
     public function it_displays_existing_links_with_status_badges(): void
     {
@@ -229,10 +221,6 @@ class GpoLinksPageTest extends TestCase
             ->assertSee('data-testid="empty-links"', false)
             ->assertSee('liée à aucune OU');
     }
-
-    // =====================================================================
-    // AC2.3 + AC2.4 — add / remove via modale
-    // =====================================================================
 
     #[Test]
     public function it_adds_a_link_through_modal_confirmation(): void
@@ -276,10 +264,6 @@ class GpoLinksPageTest extends TestCase
             ->call('confirmPendingAction')
             ->assertSet('isModalOpen', false);
     }
-
-    // =====================================================================
-    // AC2.5 — toggle disabled / toggle enforced
-    // =====================================================================
 
     #[Test]
     public function it_toggles_disabled_flag_via_remove_then_setlink(): void
@@ -325,10 +309,6 @@ class GpoLinksPageTest extends TestCase
             ->assertSet('isModalOpen', false);
     }
 
-    // =====================================================================
-    // AC2.6 — reorder via move modal
-    // =====================================================================
-
     #[Test]
     public function it_reorders_links_via_move_modal(): void
     {
@@ -363,10 +343,6 @@ class GpoLinksPageTest extends TestCase
             ->assertSet('isModalOpen', false);
     }
 
-    // =====================================================================
-    // AC2.7 — toggle inheritance
-    // =====================================================================
-
     #[Test]
     public function it_toggles_inheritance(): void
     {
@@ -388,10 +364,6 @@ class GpoLinksPageTest extends TestCase
             ->assertSet('isModalOpen', false);
     }
 
-    // =====================================================================
-    // AC2.10 — gestion d'erreur (toast error sur exception)
-    // =====================================================================
-
     #[Test]
     public function it_handles_setlink_failure_gracefully(): void
     {
@@ -411,10 +383,6 @@ class GpoLinksPageTest extends TestCase
             // La modale est fermée mais l'action a échoué (toast émis).
             ->assertSet('isModalOpen', false);
     }
-
-    // =====================================================================
-    // Story 16.5 review #4 — Échappement wildcards SQL dans countWorkstationsByOu
-    // =====================================================================
 
     #[Test]
     public function workstation_count_escapes_sql_wildcards_in_dn(): void
@@ -449,10 +417,6 @@ class GpoLinksPageTest extends TestCase
             // Sans échappement : 2 matches (faux positif). Avec échappement : 1.
             ->assertSet('workstationCountByOu.' . $weirdDn, 1);
     }
-
-    // =====================================================================
-    // Story 16.5 review #2 — Rollback toggle disabled/enforced
-    // =====================================================================
 
     #[Test]
     public function toggle_disabled_rolls_back_when_set_link_fails_after_remove(): void
@@ -515,10 +479,6 @@ class GpoLinksPageTest extends TestCase
             ->call('confirmPendingAction')
             ->assertSet('isModalOpen', false);
     }
-
-    // =====================================================================
-    // Story 16.5 review #S2 — Garde serveur "OU déjà liée"
-    // =====================================================================
 
     #[Test]
     public function add_link_rejects_ou_already_linked_at_server_level(): void

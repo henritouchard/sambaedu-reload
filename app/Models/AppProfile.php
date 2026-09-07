@@ -26,8 +26,8 @@ use App\Models\Workstation;
  * @property string $name
  * @property string|null $description
  * @property string|null $ad_guid GUID dans AD (après synchronisation)
- * @property string|null $ad_dn Distinguished Name dans AD (Story 15.3)
- * @property \DateTimeInterface|null $archived_at Archivage logique (Story 15.3, AC3.4)
+ * @property string|null $ad_dn Distinguished Name dans AD
+ * @property \DateTimeInterface|null $archived_at Archivage logique
  * @property \DateTime $created_at
  * @property \DateTime $updated_at
  */
@@ -143,7 +143,7 @@ class AppProfile extends Model implements Wireable
     }
 
     /**
-     * Story 15.3 — Trouve un profil par son AD DN (symétrie
+     * Trouve un profil par son AD DN (symétrie
      * `WorkstationGroup::findByAdDn()`).
      */
     public static function findByAdDn(string $adDn): ?self
@@ -152,7 +152,7 @@ class AppProfile extends Model implements Wireable
     }
 
     /**
-     * Story 15.3 / AC3.4 — Scope pour exclure les profils archivés.
+     * Scope pour exclure les profils archivés.
      */
     public function scopeNotArchived(Builder $query): Builder
     {

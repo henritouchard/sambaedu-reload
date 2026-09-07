@@ -10,8 +10,6 @@ use App\Models\Workstation;
 use Illuminate\Support\Str;
 
 /**
- * Story 3.1 — D4 / AC2.1.
- *
  * Résout un poste de travail à partir de ses identifiants iPXE
  * (`mac`, `uuid`, `product`).
  *
@@ -30,22 +28,22 @@ use Illuminate\Support\Str;
  *      - Étape A : `Workstation::where('uuid', $normalized)` (priorité).
  *      - Étape B : `Workstation::where('mac', $normalized)` (fallback).
  *  5. Si trouvé : eager load `physicalRoom`, `groups`, `appProfiles` pour
- *     usage 3.2+ (pas utilisé en 3.1 mais évite le N+1 en aval).
- *  6. Si non trouvé : retourner `null` → menu default minimal (D6).
+ *  (pas utilisé aujourd'hui, mais évite le N+1 en aval).
+ *  6. Si non trouvé : retourner `null` → menu default minimal.
  *
  * **Source de vérité** : PostgreSQL exclusivement. **Aucun appel** LdapRecord
  * ni `search_machine()` legacy (architecture.md §"Modèle de Données — Source
  * de Vérité").
  *
  * **Pas d'effet de bord** : pas d'update de la Workstation trouvée, pas de
- * création à la volée d'une nouvelle row (= scope 3.3 enrollment).
+ * création à la volée d'une nouvelle row (= scope enrollment).
  */
 final class WorkstationLocator
 {
     /**
      * Tente de résoudre la Workstation correspondant aux identifiants iPXE.
      *
-     * **Contrat UUID-only utilisé par 3.4 (post-review #M5)** : si
+     * **Contrat UUID-only** : si
      * `$mac === ''` (ou null) ET `$uuid !== ''`, la résolution doit toujours
      * fonctionner en se contentant de l'UUID. C'est notamment le cas du
      * controller {@see \App\Ipxe\Http\Controllers\IpxeLinuxActionController}
@@ -77,7 +75,7 @@ final class WorkstationLocator
             );
         }
 
-        // Story 4.11 — `physicalRooms` (pivot filtré is_physical) remplace
+        // `physicalRooms` (pivot filtré is_physical) remplace
         // l'ancienne relation FK `physicalRoom` ; l'accessor singulier
         // `$ws->physicalRoom` réutilise cette relation eager-loadée.
         $relations = ['physicalRooms', 'groups', 'appProfiles'];
@@ -124,7 +122,7 @@ final class WorkstationLocator
             }
         }
 
-        // Étape 3 — poste inconnu (= menu default minimal D6).
+        // Étape 3 — poste inconnu (= menu default minimal).
         return null;
     }
 

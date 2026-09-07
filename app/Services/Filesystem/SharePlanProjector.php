@@ -17,7 +17,7 @@ use App\Services\Filesystem\Plan\PlanNode;
 use App\Services\Filesystem\Plan\PlanSubject;
 
 /**
- * Story 60.3 — un répertoire réseau PLAT, projeté en PLAN neutre.
+ * Un répertoire réseau PLAT, projeté en PLAN neutre.
  *
  * C'est le pont qui rend l'aperçu possible AVANT que la chaîne recette→arbre ne
  * soit accrochée. Un partage 34.x n'a pas d'arborescence : il EST sa racine,
@@ -38,7 +38,7 @@ use App\Services\Filesystem\Plan\PlanSubject;
  * introuvable ou le nom indérivable, tandis que le plan la PORTE. Les deux
  * comportements sont défendables — l'un protège une exécution, l'autre décrit une
  * intention — et les départager demande d'avoir la référence de permissions en
- * face. C'est un legs NOMMÉ à la story 60.4.
+ * face. C'est un legs NOMMÉ, laissé en l'état.
  *
  * **Nature `contenu_libre` pour la racine**, et pas autre chose : le plan gouverne
  * les DROITS de la racine, jamais l'existence de son contenu. Un partage plat est
@@ -107,7 +107,7 @@ final class SharePlanProjector
     }
 
     /**
-     * Story 60.5 — SURCHARGE D'INSTANCE : les assignations d'un partage issu d'une
+     * SURCHARGE D'INSTANCE : les assignations d'un partage issu d'une
      * recette ajoutent des octrois SUR SA RACINE.
      *
      * Un partage d'arbre tire ses audiences de sa recette. Mais l'administrateur
@@ -118,7 +118,7 @@ final class SharePlanProjector
      *
      * **Union AU PLUS PERMISSIF, et rien d'autre.** Deux octrois qui visent le même
      * sujet se fondent en un seul, au niveau le plus élevé des deux. C'est la règle
-     * additive de l'epic — jamais un sous-ensemble silencieux — et c'est aussi ce
+     * additive — jamais un sous-ensemble silencieux — et c'est aussi ce
      * qui empêche une même audience d'être écrite deux fois : un doublon d'entrée
      * ferait relire l'état comme non conforme à chaque passage, et le partage se
      * réécrirait indéfiniment sans jamais converger.
@@ -153,12 +153,11 @@ final class SharePlanProjector
 
                 continue;
             }
-            // Story 62.4 — l'union est celle des ENSEMBLES DE VERBES. Le niveau
+            // L'union est celle des ENSEMBLES DE VERBES. Le niveau
             // n'est plus une échelle à deux barreaux qu'on pouvait comparer : deux
             // octrois peuvent être incomparables (« lire+éditer » et
             // « lire+créer »), et le plus permissif des deux est leur RÉUNION.
-            // C'est la règle additive de l'epic, dite dans le vocabulaire qui la
-            // rend exacte.
+            // C'est la règle additive, dite dans le vocabulaire qui la rend exacte.
             $union = array_values(array_unique([...$kept->verbs, ...$grant->verbs]));
             if ($union !== $kept->verbs) {
                 $merged[$key] = new PlanGrant($kept->roleKey, $kept->subject, $union, $kept->suspendable);
@@ -187,7 +186,7 @@ final class SharePlanProjector
      * Les octrois de la racine, dérivés des assignations.
      *
      * **Une assignation de parc ne produit AUCUN octroi** — invariant du modèle à
-     * deux axes (décision Henri, 2026-06-29) : un parc rend le lecteur VISIBLE, il
+     * deux axes : un parc rend le lecteur VISIBLE, il
      * ne donne aucun accès. L'exprimer comme un octroi serait faux dans le plan
      * comme sur le disque, et un backend distant, lui, l'appliquerait pour de bon.
      *
@@ -214,7 +213,7 @@ final class SharePlanProjector
     }
 
     /**
-     * Story 62.4 — LA TRADUCTION DU BORD : une assignation BINAIRE devient une
+     * LA TRADUCTION DU BORD : une assignation BINAIRE devient une
      * liste de VERBES.
      *
      * **Les assignations restent binaires, et ce n'est pas un retard.** Le pivot
@@ -223,10 +222,10 @@ final class SharePlanProjector
      * niveaux, « Lire » et « Modifier ». Y faire entrer quatre verbes reviendrait à
      * demander à l'administrateur de composer une matrice là où il choisit un
      * montage. La finesse appartient au PLAN, qui décrit un arbre de dossiers ;
-     * elle se règlera à l'écran des recettes (story 62.6).
+     * Elle se règlera à l'écran des recettes.
      *
      * La frontière a donc DEUX bords, et la traduction vit sur chacun :
-     *  - ici, assignation → plan : le mappage Q3, celui qui ne retire rien —
+     *  - ici, assignation → plan : le mappage qui ne retire rien —
      *    « Modifier » donne les QUATRE verbes, « Lire » donne `lire` seul ;
      *  - à l'autre bord ({@see \App\Services\Filesystem\DirectoryTemplateService}),
      *    recette → assignation : une liste de verbes redevient « Modifier » dès

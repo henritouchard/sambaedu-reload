@@ -5,7 +5,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Migration pour le système de gestion des droits SambaEdu 4.6
+ * Migration pour le système de gestion des droits SambaEdu
  * 
  * Tables créées :
  * - users : Utilisateurs (cache SQL des utilisateurs AD, future source de vérité)
@@ -16,9 +16,6 @@ use Illuminate\Support\Facades\Schema;
 return new class extends Migration {
     public function up(): void
     {
-        // =====================================================================
-        // USERS - Utilisateurs
-        // =====================================================================
         if (!Schema::hasTable('users')) {
             Schema::create('users', function (Blueprint $table) {
                 $table->id();
@@ -41,15 +38,11 @@ return new class extends Migration {
                 $table->rememberToken();
                 $table->timestamps();
 
-                // Index
                 $table->index('role');
                 $table->index('is_active');
             });
         }
 
-        // =====================================================================
-        // USER_GROUPS - Groupes d'utilisateurs
-        // =====================================================================
         if (!Schema::hasTable('user_groups')) {
             Schema::create('user_groups', function (Blueprint $table) {
                 $table->id();
@@ -59,14 +52,10 @@ return new class extends Migration {
                 $table->text('ad_dn')->nullable()->comment('DN dans l\'AD (sync proxy)');
                 $table->timestamps();
 
-                // Index
                 $table->index('type');
             });
         }
 
-        // =====================================================================
-        // USER_GROUP_USER - Pivot user_group ↔ user
-        // =====================================================================
         if (!Schema::hasTable('user_group_user')) {
             Schema::create('user_group_user', function (Blueprint $table) {
                 $table->foreignId('user_group_id')
@@ -80,9 +69,6 @@ return new class extends Migration {
             });
         }
 
-        // =====================================================================
-        // DELEGATIONS - Délégations de droits scopées par WorkstationGroup
-        // =====================================================================
         if (!Schema::hasTable('delegations')) {
             Schema::create('delegations', function (Blueprint $table) {
                 $table->id();
@@ -117,7 +103,6 @@ return new class extends Migration {
                     'delegations_unique'
                 );
 
-                // Index
                 $table->index('workstation_group_id');
                 $table->index('permission_id');
                 $table->index('is_negative');

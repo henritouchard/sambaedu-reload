@@ -8,16 +8,16 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 /**
- * Story 27.11 — Application NATIVE CURÉE (built-in Windows Win32).
+ * Application NATIVE CURÉE (built-in Windows Win32).
  *
  * Référentiel CURÉ MANUELLEMENT des programmes livrés avec Windows dont le ProgId
  * canonique est CONNU et toujours présent (Bloc-notes/`txtfile`, Paint/`Paint.Picture`,
  * WordPad, Visionneuse de photos). Source 2 du dropdown du composer d'associations
- * (Source 1 = {@see Application} WPKG). **UWP modernes EXCLUES** (D-Henri n°2).
+ * (Source 1 = {@see Application} WPKG). **UWP modernes EXCLUES**.
  *
  * Une native curée → {@see \App\Services\Agent\Resolvers\AssociationResolver}
  * émet son `progid` canonique avec `source=native`, `wpkg_package=null` — TOUJOURS
- * applicable (aucune dépendance de paquet, piège n°7).
+ * applicable (aucune dépendance de paquet).
  *
  * @property int $id
  * @property string $key Clé technique unique (slug)
@@ -50,8 +50,8 @@ class NativeApplication extends Model
 
     /**
      * Ce built-in déclare-t-il un ProgId canonique POUR cet identifiant
-     * (extension/protocole) ? (piège n°2 : un ProgId est par (app × type de
-     * contenu) — un built-in ne couvre pas n'importe quelle extension.) Insensible
+     * (extension/protocole) ? Un ProgId est par (app × type de contenu) : un
+     * built-in ne couvre pas n'importe quelle extension. Insensible
      * à la casse (Windows l'est sur extensions/protocoles).
      */
     public function supportsIdentifier(string $identifier): bool

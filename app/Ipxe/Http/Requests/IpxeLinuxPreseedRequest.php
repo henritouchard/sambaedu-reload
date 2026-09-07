@@ -8,12 +8,10 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
 /**
- * Story 3.4 — AC5.5 / AC5.2.
- *
  * Validation du body de `GET|POST /ipxe/linux/preseed`.
  *
  * **Whitelist stricte os/type** : `os` et `type` doivent appartenir aux
- * listes définies dans `config/ipxe.php` (D11). Toute autre valeur
+ * listes définies dans `config/ipxe.php`. Toute autre valeur
  * retourne 422 + log warning (cf. controller).
  *
  * Note : la validation est permissive sur le nullable car le legacy

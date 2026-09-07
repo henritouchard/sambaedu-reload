@@ -11,10 +11,10 @@ use Tests\Support\IpxeSchemaBootstrapper;
 use Tests\TestCase;
 
 /**
- * Story 3.5 — AC5.6 / T6.3.
+ * T6.3.
  *
  * Tests feature de la route native `POST /ipxe/windows/action` (hook
- * post-install Windows multi-étapes — scope 3.5 = winpe + oobe seuls).
+ * post-install Windows multi-étapes — scope = winpe + oobe seuls).
  */
 class IpxeWindowsActionEndpointTest extends TestCase
 {
@@ -53,7 +53,7 @@ class IpxeWindowsActionEndpointTest extends TestCase
         self::assertSame('', (string) $response->getContent());
 
         $ws->refresh();
-        // Fix 22001 — status non touché (domaine fermé varchar(20)).
+        // Status non touché : la colonne est un domaine fermé varchar(20).
         self::assertSame('active', $ws->status);
 
         $log = MachineBootLog::where('action', 'ipxe_win_install')->first();
@@ -76,7 +76,7 @@ class IpxeWindowsActionEndpointTest extends TestCase
 
         $ws->refresh();
         self::assertSame('windows', $ws->os);
-        // Fix 22001 — status non touché (domaine fermé varchar(20)).
+        // Status non touché : la colonne est un domaine fermé varchar(20).
         self::assertSame('active', $ws->status);
         self::assertNotNull($ws->last_report_at);
 
@@ -97,21 +97,20 @@ class IpxeWindowsActionEndpointTest extends TestCase
         $response->assertStatus(200);
         self::assertSame('', (string) $response->getContent());
 
-        // Aucun MachineBootLog inséré (D4 silent unknown).
+        // Aucun MachineBootLog inséré : un poste inconnu est ignoré en silence.
         self::assertSame(0, MachineBootLog::count());
     }
 
     #[Test]
     public function it_rejects_unsupported_step(): void
     {
-        // Review #8 — MAJ post-3.8 : 'sysprep' est désormais un step VALIDE
-        // (étendu en 3.8, plus "déférée 3.7"). Ce test cible donc un step qui
+        // 'sysprep' est un step VALIDE : ce test cible donc un step qui
         // restera toujours inconnu ('unknown_v3') pour préserver son intent de
         // non-régression : un step hors des 8 cases enum est rejeté par le
         // FormRequest (Rule::in) → 422, sans toucher la Workstation.
         $ws = $this->seedWorkstation();
 
-        // postJson → 422 JSON (cohérent avec le test 3.8 it_rejects_etape_arbitrary_with_422 ;
+        // postJson → 422 JSON (cohérent avec le test it_rejects_etape_arbitrary_with_422 ;
         // un POST form classique ferait un redirect 302 web).
         $response = $this->postJson('/ipxe/windows/action', [
             'uuid' => $ws->uuid,

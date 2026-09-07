@@ -11,7 +11,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 16.10 — Review finding #A.
+ * Review finding #A.
  */
 class EnsureSecureApiHeadersTest extends TestCase
 {

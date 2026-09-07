@@ -34,48 +34,46 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 32.2 (PRD §5.3 panne≠rupture + NFR5) — PREUVE que l'indisponibilité amont
- * (silence) NE libère PAS les verrous, et que la couverture d'audit NFR5 est complète.
- *
- * Verdict d'investigation : story PREUVE DOMINANTE (Q1=A — aucune construction).
+ * PREUVE que l'indisponibilité amont (silence) NE libère PAS les verrous, et que
+ * la couverture d'audit des transitions de lien est complète.
  *
  * Ce fichier PROUVE par tests que :
  *
- *   AC1 — Un contrat `active` avec un `received_at` arbitrairement ancien conserve
- *          TOUS ses effets (active() non-null, verrous, bornage catalogue, refus de modif).
+ * Un contrat `active` avec un `received_at` arbitrairement ancien conserve
+ *  TOUS ses effets (active() non-null, verrous, bornage catalogue, refus de modif).
  *          La panne = SILENCE PUR, jamais matérialisée.
  *
- *   AC2 — (a) Silence = strictement no-op (aucune écriture, aucun audit, aucun event,
- *          contrat reste `active`). (b) Seule la rupture EXPLICITE (32.1) libère.
+ * (a) Silence = strictement no-op (aucune écriture, aucun audit, aucun event,
+ *  contrat reste `active`). (b) Seule la rupture EXPLICITE libère.
  *
- *   AC3/Q1=A — Aucune API de fraîcheur n'est introduite. `active()` ignore `received_at`
+ * Aucune API de fraîcheur n'est introduite. `active` ignore `received_at`
  *               et tout TTL. L'indisponibilité est une absence non matérialisée.
- *               GARDE-FOU ANTI-RÉGRESSION : si quelqu'un couplait un jour `active()` à
+ *  GARDE-FOU ANTI-RÉGRESSION : si quelqu'un couplait un jour `active()` à
  *               `received_at`/TTL, ces assertions échoueraient.
  *
- *   AC4/NFR5 — L'enum `{Active, Severed}` n'a que 2 états → l'unique transition possible
- *               est `active → severed` (déjà tracée par 32.1). Le silence n'écrit aucun
- *               audit. Couverture NFR5 complète par construction.
+ * L'enum `{Active, Severed}` n'a que 2 états → l'unique transition possible
+ *  est `active → severed`, tracée par `sever()`. Le silence n'écrit aucun
+ *               audit : la couverture est complète par construction.
  *
- *   AC5/NFR4 — Reprise après silence : réception identique = no-op (`received_at`
+ * Reprise après silence : réception identique = no-op (`received_at`
  *               inchangé, aucun event) ; réception différente = `received_at` rafraîchi
  *               + `ControlHubContractChanged` émis. Aucun traitement spécial « sortie
- *               d'indisponibilité » — NFR4 acquis par construction via `ingest()`.
+ *  d'indisponibilité » : `ingest()` suffit.
  *
- *   AC6/NFR3 — Standalone : comportement strictement inchangé (aucun contrat, aucun audit,
+ * Standalone : comportement strictement inchangé (aucun contrat, aucun audit,
  *               aucune écriture). Zéro requête sur `controlhub_contract_items` (court-circuit).
  *
- *   AC7       — Contrat agent figé, invisible de l'agent : `active()` non-null pendant la
+ * Contrat agent figé, invisible de l'agent : `active` non-null pendant la
  *               panne → le dernier état compilé reste servi. Prouvé ici par
- *               `upstream_tier_still_feeds_agent_state_during_silence()` (la contribution
+ *  `upstream_tier_still_feeds_agent_state_during_silence()` (la contribution
  *               amont reste exposée en maille `Upstream` après 1 an de silence) ; la
  *               non-régression du wire agent figé (golden/`ContractV1`/`StateCompiler`)
- *               relève des suites dédiées (T8). Aucune touche agent/golden ici.
+ *               relève des suites dédiées. Aucune touche agent/golden ici.
  *
  * ⚠️ GARDE-FOU CENTRAL : `active()` n'interroge JAMAIS `received_at` / TTL / staleness.
  *    Coupler ces deux concepts libérerait les verrous sur une simple panne (anti-pattern).
- * ⚠️ GARDE-FOU R3 : aucun mot « central » ; vocabulaire « amont » / `ControlHub*`.
- *    [Source: prd-contrat-manage-se5.md#R3]
+ * ⚠️ RÈGLE DE NOMMAGE : aucun identifiant livré ne contient « central » ;
+ *    vocabulaire « amont » / `ControlHub*`.
  *
  * Tests HÔTE (php8.4 + pdo_sqlite, CACHE_DRIVER=array), RefreshDatabase.
  * SQLite n'applique pas les enums/varchar PG → on teste des DÉCISIONS (état, count,
@@ -101,12 +99,10 @@ class UpstreamUnavailabilityTest extends TestCase
         parent::tearDown();
     }
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // AC1 — active() ignore received_at (non-libération acquise par construction)
-    // ═══════════════════════════════════════════════════════════════════════
+    // Active ignore received_at (non-libération acquise par construction)
 
     /**
-     * AC1 — Le contrat `active` reste actif quelle que soit l'ancienneté de `received_at`.
+     * Le contrat `active` reste actif quelle que soit l'ancienneté de `received_at`.
      * Prouve que `active()` filtre `link_state` SEUL, jamais `received_at`.
      */
     #[Test]
@@ -125,7 +121,7 @@ class UpstreamUnavailabilityTest extends TestCase
     }
 
     /**
-     * AC1/AC3 — `active()` filtre uniquement `link_state`, pas `received_at`.
+     * `active` filtre uniquement `link_state`, pas `received_at`.
      *
      * Trois scénarios :
      *   A) received_at = null  + link_state = active → retourné (aucun TTL imposé)
@@ -164,12 +160,10 @@ class UpstreamUnavailabilityTest extends TestCase
         );
     }
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // AC1 — Resolvers restent verrouillés pendant l'indisponibilité
-    // ═══════════════════════════════════════════════════════════════════════
+    // Resolvers restent verrouillés pendant l'indisponibilité
 
     /**
-     * AC1 — `UpstreamCatalogResolver::isBounded()` reste `true` durant la panne amont.
+     * `UpstreamCatalogResolver::isBounded` reste `true` durant la panne amont.
      * Preuve que le bornage catalogue ne dépend pas de la fraîcheur du contrat.
      */
     #[Test]
@@ -193,7 +187,7 @@ class UpstreamUnavailabilityTest extends TestCase
     }
 
     /**
-     * AC1 — `UpstreamLockResolver::isCapabilityLocked()` reste `true` durant la panne.
+     * `UpstreamLockResolver::isCapabilityLocked` reste `true` durant la panne.
      * Preuve que le verrou de capacité ne dépend pas de la fraîcheur du contrat.
      */
     #[Test]
@@ -214,7 +208,7 @@ class UpstreamUnavailabilityTest extends TestCase
     }
 
     /**
-     * AC1 — `CapabilityPolicy::modify()` retourne `false` durant la panne amont.
+     * `CapabilityPolicy::modify` retourne `false` durant la panne amont.
      * Preuve que le refus de modif ne dépend pas de la fraîcheur du contrat.
      */
     #[Test]
@@ -234,12 +228,10 @@ class UpstreamUnavailabilityTest extends TestCase
         );
     }
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // AC2 — Panne = silence pur : aucune écriture, aucun audit, aucun event
-    // ═══════════════════════════════════════════════════════════════════════
+    // Panne = silence pur : aucune écriture, aucun audit, aucun event
 
     /**
-     * AC2(a) — Le silence (panne) est strictement no-op : aucune écriture sur la table
+     * Le silence (panne) est strictement no-op : aucune écriture sur la table
      * des contrats, aucun audit, aucun event, `received_at` inchangé.
      */
     #[Test]
@@ -276,7 +268,7 @@ class UpstreamUnavailabilityTest extends TestCase
     }
 
     /**
-     * AC2(b) — Panne ≠ rupture : seule la rupture EXPLICITE via `sever()` libère les
+     * Panne ≠ rupture : seule la rupture EXPLICITE via `sever` libère les
      * verrous. Le silence, lui, est no-op : active()=non-null, bornage/verrous maintenus,
      * 0 audit, 0 event. La rupture explicite, elle, pose `severed`, lève tout, 1 audit.
      */
@@ -305,7 +297,7 @@ class UpstreamUnavailabilityTest extends TestCase
         self::assertSame(0, ControlHubLinkAuditLog::count(), 'Panne = 0 audit NFR5');
         Event::assertNotDispatched(ControlHubContractChanged::class);
 
-        // (b) RUPTURE EXPLICITE (32.1) : tout se lève, 1 audit, 1 event.
+        // (b) RUPTURE EXPLICITE : tout se lève, 1 audit, 1 event.
         /** @var ControlHubContractSeveranceService $svc */
         $svc = app(ControlHubContractSeveranceService::class);
         $result = $svc->sever(ControlHubLinkAuditLog::ORIGIN_COMMAND, 'test-actor');
@@ -321,17 +313,15 @@ class UpstreamUnavailabilityTest extends TestCase
         Event::assertDispatched(ControlHubContractChanged::class, 1);
     }
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // AC3/Q1=A — Aucune API de fraîcheur : active() indépendant de received_at
-    // ═══════════════════════════════════════════════════════════════════════
+    // Aucune API de fraîcheur : active indépendant de received_at
 
     /**
-     * AC3/Q1=A — Preuve structurelle que `active()` ne dépend d'aucun TTL ni de
+     * Preuve structurelle que `active` ne dépend d'aucun TTL ni de
      * `received_at`. L'indisponibilité amont est un SILENCE NON MATÉRIALISÉ.
      *
      * GARDE-FOU ANTI-RÉGRESSION : si ce test échoue un jour, c'est qu'un développeur
      * a couplé `active()` à `received_at` ou à un TTL — ce qui libérerait les verrous
-     * sur une simple panne, violant frontalement le PRD §5.3.
+     * sur une simple panne : une panne n'est pas une rupture.
      */
     #[Test]
     public function active_method_is_independent_of_received_at_and_any_ttl(): void
@@ -361,17 +351,15 @@ class UpstreamUnavailabilityTest extends TestCase
         );
     }
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // AC4/NFR5 — active→severed est l'unique transition auditée
-    // ═══════════════════════════════════════════════════════════════════════
+    // active→severed est l'unique transition auditée
 
     /**
-     * AC4/NFR5 — Preuve de couverture NFR5 complète.
+     * Preuve que la couverture d'audit des transitions est complète.
      *
      * L'enum `ControlHubLinkState` n'a que 2 états (`{Active, Severed}`). L'unique
-     * transition possible est donc `active → severed` — déjà tracée par 32.1.
-     * Le silence (panne) n'est PAS une transition d'état → aucun audit NFR5 produit.
-     * La couverture NFR5 est SATISFAITE PAR CONSTRUCTION.
+     * transition possible est donc `active → severed`, déjà tracée par `sever()`.
+     * Le silence (panne) n'est PAS une transition d'état → aucun audit produit.
+     * La couverture est SATISFAITE PAR CONSTRUCTION.
      */
     #[Test]
     public function nfr5_coverage_is_complete_silence_is_not_a_transition_and_produces_no_audit(): void
@@ -386,7 +374,7 @@ class UpstreamUnavailabilityTest extends TestCase
         self::assertSame('Active', $cases[0]->name);
         self::assertSame('Severed', $cases[1]->name);
 
-        // Silence de 6 mois → AUCUN audit NFR5 (la panne n'est pas une transition).
+        // Silence de 6 mois → AUCUN audit (la panne n'est pas une transition).
         $this->travel(180)->days();
         self::assertSame(
             0,
@@ -402,22 +390,23 @@ class UpstreamUnavailabilityTest extends TestCase
         $log = ControlHubLinkAuditLog::sole();
         self::assertSame(ControlHubLinkState::Active->value, $log->from_state);
         self::assertSame(ControlHubLinkState::Severed->value, $log->to_state);
-        // NFR5 complet : l'enum n'a que 2 états → 1 seule transition → 32.1 la trace → couverture totale.
+        // L'enum n'a que 2 états → 1 seule transition → la trace → couverture totale.
     }
 
     /**
-     * AC4/NFR5 — GARDE-FOU D'INVARIANT (Finding #2, review opus 2026-06-30).
+     * GARDE-FOU D'INVARIANT.
      *
      * « L'enum a 2 états » prouve seulement l'absence d'un 3e état — PAS que tout
-     * passage à `severed` est audité. La couverture NFR5 repose en réalité sur le
-     * fait que la SEULE écriture de `severed` est `sever()` (chemin audité de 32.1).
+     * passage à `severed` est audité. La couverture repose en réalité sur le
+     * fait que la SEULE écriture de `severed` est `sever()` (chemin audité).
      * Le chemin de réception (`ingest()`) — unique mutation entrante — ne doit JAMAIS
      * produire `severed`, même si le payload le réclame (le service ignore le
-     * `link_state` du payload, cf. ControlHubContractIngestionService §70/§144).
+     * `link_state` du payload, cf. `ControlHubContractIngestionService`).
      *
      * Scénario d'échec verrouillé : si un jour `ingest()` propageait un `severed`
      * reçu (ou tout autre chemin entrant écrivait `severed` sans audit), une
-     * transition NON tracée naîtrait → NFR5 violé. Cette assertion casserait.
+     * transition NON tracée naîtrait, et l'audit deviendrait incomplet. Cette
+     * assertion casserait.
      */
     #[Test]
     public function ingest_never_writes_severed_even_when_payload_claims_it(): void
@@ -452,13 +441,13 @@ class UpstreamUnavailabilityTest extends TestCase
     }
 
     /**
-     * AC1/AC4 — GARDE-FOU ANTI-DÉCROISSANCE (Finding #1, review opus 2026-06-30).
+     * GARDE-FOU ANTI-DÉCROISSANCE.
      *
      * La preuve « zéro write pendant le silence » ne mord pas un job PLANIFIÉ (que
      * `travel()` ne déclenche pas). Le vrai risque de régression est l'ajout d'une
      * commande planifiée qui ferait « décroître » un contrat selon son ancienneté
      * (ex. `controlhub:expire-stale` flippant active→severed sur TTL), libérant les
-     * verrous sur une simple panne — frontalement contraire au PRD §5.3.
+     * verrous sur une simple panne, alors qu'une panne n'est pas une rupture.
      *
      * On verrouille donc l'allowlist des commandes controlhub planifiées : seul
      * `controlhub:heartbeat` (transport sortant, ne touche jamais le contrat) est
@@ -488,10 +477,10 @@ class UpstreamUnavailabilityTest extends TestCase
         // Allowlist des commandes controlhub AUTORISÉES à être planifiées : uniquement
         // celles qui ne peuvent PAS faire « décroître » le contrat sur l'ancienneté.
         //  - controlhub:heartbeat          → transport sortant, ne touche jamais le contrat.
-        //  - controlhub:report-compliance  → émetteur de conformité (canal ③, story 39.2).
+        // - controlhub:report-compliance → émetteur de conformité (canal ③).
         //    STRICTEMENT read-only sur le contrat (lit items + link_state pour bâtir
         //    l'enveloppe, n'écrit JAMAIS link_state ni ne prune) → compatible PRD §5.3.
-        //    Confronté au §5.3 le 2026-07-06 (review epic 39, finding E2) : autorisé.
+        // Confronté au §5.3 le 2026-07-06 (review, finding E2) : autorisé.
         $decayAllowlist = ['controlhub:heartbeat', 'controlhub:report-compliance'];
 
         $nonAllowlisted = $controlhubCommands
@@ -510,12 +499,10 @@ class UpstreamUnavailabilityTest extends TestCase
         );
     }
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // AC5/NFR4 — Reprise après silence
-    // ═══════════════════════════════════════════════════════════════════════
+    // Reprise après silence
 
     /**
-     * AC5/NFR4 — Réception IDENTIQUE après silence = no-op.
+     * Réception IDENTIQUE après silence = no-op.
      * `received_at` inchangé, aucun event — la reprise ne provoque aucun effet de bord.
      * (Comportement acquis par construction via `ingest()` — prouvé ici.)
      */
@@ -551,7 +538,7 @@ class UpstreamUnavailabilityTest extends TestCase
     }
 
     /**
-     * AC5/NFR4 — Réception DIFFÉRENTE après silence = mutation normale.
+     * Réception DIFFÉRENTE après silence = mutation normale.
      * `received_at` rafraîchi, `ControlHubContractChanged` émis — reprise sans effet de
      * bord spécial (pas de traitement « sortie d'indisponibilité »).
      */
@@ -586,12 +573,10 @@ class UpstreamUnavailabilityTest extends TestCase
         Event::assertDispatchedTimes(ControlHubContractChanged::class, 2);
     }
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // AC6/NFR3 — Standalone strictement inchangé
-    // ═══════════════════════════════════════════════════════════════════════
+    // Standalone strictement inchangé
 
     /**
-     * AC6/NFR3 — Sans contrat, le comportement est byte-identique au standalone 27.x.
+     * Sans contrat, le comportement est byte-identique au standalone.
      * Le temps qui passe ne change rien : aucun contrat créé, aucun audit, aucune écriture.
      */
     #[Test]
@@ -614,7 +599,7 @@ class UpstreamUnavailabilityTest extends TestCase
     }
 
     /**
-     * AC6/NFR3 — En standalone, `active()` produit exactement 1 requête SELECT sur
+     * En standalone, `active` produit exactement 1 requête SELECT sur
      * `controlhub_contracts` et ZÉRO écriture — la table items n'est jamais touchée.
      */
     #[Test]
@@ -633,7 +618,7 @@ class UpstreamUnavailabilityTest extends TestCase
         );
         self::assertFalse($hasWrite, 'Standalone : aucune écriture sur la table des contrats (NFR3)');
 
-        // La table items n'est jamais interrogée (court-circuit NFR3 via active()→null).
+        // La table items n'est jamais interrogée (court-circuit via active()→null).
         $touchedItems = collect($queries)->contains(
             static fn (array $q): bool => str_contains((string) $q['query'], 'controlhub_contract_items'),
         );
@@ -642,12 +627,10 @@ class UpstreamUnavailabilityTest extends TestCase
         Event::assertNotDispatched(ControlHubContractChanged::class);
     }
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // AC7 — Le dernier état compilé reste servi à l'agent pendant la panne
-    // ═══════════════════════════════════════════════════════════════════════
+    // Le dernier état compilé reste servi à l'agent pendant la panne
 
     /**
-     * AC7 — Contrat agent figé : tant que `active()` est non-null (panne = silence),
+     * Contrat agent figé : tant que `active` est non-null (panne = silence),
      * la contribution amont continue d'alimenter l'état compilé servi à l'agent.
      *
      * Preuve fidèle et légère via `UpstreamContractSource::candidatesFor()` (la source
@@ -687,9 +670,7 @@ class UpstreamUnavailabilityTest extends TestCase
         );
     }
 
-    // ═══════════════════════════════════════════════════════════════════════
     // Helpers
-    // ═══════════════════════════════════════════════════════════════════════
 
     /**
      * Crée une capacité projetée registre (1 clé hive|path|name, map on=1/off=0).
@@ -731,7 +712,7 @@ class UpstreamUnavailabilityTest extends TestCase
     }
 
     /**
-     * Payload minimal reproductible pour les tests de reprise NFR4.
+     * Payload minimal reproductible pour les tests de reprise après silence.
      * Un seul item `capabilities/locked/instance` avec une clé paramétrable.
      *
      * @return array<string, mixed>

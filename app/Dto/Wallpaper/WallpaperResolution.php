@@ -10,7 +10,7 @@ namespace App\Dto\Wallpaper;
  * Produit par {@see \App\Services\Wallpaper\WallpaperResolver::resolve}.
  * Indique quel niveau legacy a matché + le chemin source effectif.
  *
- * Niveaux (cf. story 4.7, AC 4) :
+ * Niveaux :
  *   1 — default.jpg système
  *   2 — wallpaper.jpg (défaut étab)
  *   3 — wallpaper@<salle>.jpg

@@ -9,12 +9,12 @@ import (
 	"strings"
 )
 
-// Handler `fs_acl` (exclusive PAR ACE / scope MACHINE uniquement) — Story 36.1,
+// Handler `fs_acl` (exclusive PAR ACE / scope MACHINE uniquement),
 // contrat §7.7. Premier mécanisme HORS-REGISTRE. Logique PURE, OS-agnostique
 // (les accès NTFS réels sont injectés via FsAclOps) → testée sur l'hôte ;
 // agent/windows n'apporte que l'impl Win32 (LSA + chirurgie DACL).
 //
-// D4 — PROPRIÉTÉ CHIRURGICALE. Le handler possède SES ACE explicites
+// PROPRIÉTÉ CHIRURGICALE. Le handler possède SES ACE explicites
 // IDENTIFIÉES PAR LE STORE (« dernier appliqué »), JAMAIS la DACL entière : une
 // ACE NTFS ne porte aucun marqueur de propriété, alors le handler persiste, par
 // identité d'item, l'ACE exactement posée {path, trustee, sid, ace_type, mask,
@@ -25,9 +25,9 @@ import (
 // (aucune ACE orpheline). owner/SACL/ACE héritées/ACE tierces ne sont JAMAIS
 // touchés (SetNamedSecurityInfo DACL-only, merge — jamais de réécriture).
 //
-// CONVERGENCE level-triggered (§5, STRICT inconditionnel 27.8) :
+// CONVERGENCE level-triggered (§5, STRICT inconditionnel) :
 //   - Test  : pour chaque item `present`, une ACE EXPLICITE exactement égale
-//     (SID résolu, type, masque traduit, flags traduits — piège #6) existe dans
+//     (SID résolu, type, masque traduit, flags traduits) existe dans
 //     la DACL ; pour chaque `absent`, aucune ; ET aucune entrée du store hors
 //     état désiré n'a d'ACE encore présente (orphelin) ⇒ conforme ssi TOUT vrai ;
 //   - Apply : effort MAXIMAL par item (première erreur remontée à la FIN,
@@ -38,7 +38,7 @@ import (
 //     store ; (3) `absent` : retire l'ACE exactement égale si présente (déjà
 //     absente = idempotent) et purge l'entrée du store.
 //
-// REFUS AGENT = DÉFENSE EN PROFONDEUR (piège #8), INDÉPENDANT du serveur :
+// REFUS AGENT = DÉFENSE EN PROFONDEUR, INDÉPENDANT du serveur :
 //   - `deny` dont le SID résolu est well-known système (S-1-1-0 Everyone,
 //     S-1-5-11 Authenticated Users, S-1-5-18/19/20, préfixe S-1-5-32- BUILTIN
 //     dont Administrators, préfixe S-1-5-80- comptes de service dont
@@ -47,9 +47,9 @@ import (
 //   - trustee irrésoluble via LSA ⇒ erreur d'item.
 // Les AUTRES items convergent ; l'erreur remonte TOUJOURS (verdict `error` du
 // type au moteur — jamais d'application partielle silencieuse). Résolution SID
-// mémoïsée PAR PASSE seulement (piège #7).
+// mémoïsée PAR PASSE seulement.
 //
-// D3 — masques/flags SPÉCIFIQUES uniquement (piège #6) : les droits génériques
+// MASQUES/FLAGS SPÉCIFIQUES uniquement : les droits génériques
 // (GENERIC_*) seraient remappés par le noyau à l'écriture → relecture non
 // byte-égale → Test en dérive perpétuelle. Table de traduction ci-dessous.
 
@@ -59,7 +59,7 @@ import (
 // `absent` sur chemin inexistant est déjà satisfait.
 var ErrFsPathNotExist = errors.New("fs_acl : chemin inexistant")
 
-// Table de traduction rights → masque d'accès (bits SPÉCIFIQUES, piège #6).
+// Table de traduction rights → masque d'accès (bits SPÉCIFIQUES).
 const (
 	fileListDirectory  = 0x00000001 // FILE_LIST_DIRECTORY SEUL — masquer sans casser (traverse/execute/read intacts)
 	fileGenericRead    = 0x00120089 // FILE_GENERIC_READ (composite de bits spécifiques)
@@ -182,7 +182,7 @@ func (s FsAclSpec) targetAce(sid string) ExplicitAce {
 // parseFsAclSpec : extrait un FsAclSpec d'un payload §7.7 brut. Enveloppe
 // invalide (false → {status: error} pour le type) si : une clé manque, un champ
 // n'est pas string, un enum est hors domaine. `path`/`trustee` non vides
-// requis. Forme UNIQUE (piège #13 : `ensure` TOUJOURS présent) ⇒ parse trivial.
+// requis. Forme UNIQUE (`ensure` TOUJOURS présent) ⇒ parse trivial.
 func parseFsAclSpec(raw any) (FsAclSpec, bool) {
 	payload, ok := raw.(map[string]any)
 	if !ok || payload == nil {
@@ -230,7 +230,7 @@ func parseFsAclSpec(raw any) (FsAclSpec, bool) {
 }
 
 // isWellKnownSystemSID : le SID résolu est-il un principal SYSTÈME sur lequel un
-// `deny` briserait le poste (piège #8) ? Défense en profondeur agent,
+// `deny` briserait le poste ? Défense en profondeur agent,
 // INDÉPENDANTE de la validation serveur (FsAclAuthoringGuard).
 func isWellKnownSystemSID(sid string) bool {
 	s := strings.ToUpper(strings.TrimSpace(sid))
@@ -247,15 +247,14 @@ func isWellKnownSystemSID(sid string) bool {
 	return strings.HasPrefix(s, "S-1-5-32-") || strings.HasPrefix(s, "S-1-5-80-")
 }
 
-// --- Refus d'AUTHORING = défense en profondeur (Q2), miroir Go du guard PHP ----
 //
 // FsAclAuthoringGuard (serveur) refuse déjà ces combos à la SOURCE, mais le
 // serveur peut avoir tort (projection fautive servie) : l'agent REFUSE lui aussi,
 // INDÉPENDAMMENT, un `deny` à héritage DESCENDANT sur une racine protégée — cette
-// variante casserait le poste et doit être INEXPRIMABLE (piège #8, garde-fou
-// epic Q2). Constantes et normalisation IDENTIQUES au guard PHP.
+// variante casserait le poste et doit être INEXPRIMABLE. Constantes et
+// normalisation IDENTIQUES au guard PHP.
 
-// fsAclProtectedRoots : racines protégées (Q2 telle quelle), forme NORMALISÉE
+// fsAclProtectedRoots : racines protégées, forme NORMALISÉE
 // (minuscules, sans backslash final — cf. normalizeFsAclPath). Miroir EXACT de
 // FsAclAuthoringGuard::PROTECTED_ROOTS.
 var fsAclProtectedRoots = []string{
@@ -288,10 +287,10 @@ func isFsAclProtectedRoot(path string) bool {
 	return false
 }
 
-// hasShortName83 : un segment du chemin porte-t-il un marqueur de nom court 8.3
+// hasShortName83 : un segment du chemin porte-t-il un marqueur de nom court
 // (`~` suivi d'un chiffre, ex. PROGRA~1) ? Un nom court DÉSIGNE une racine
 // protégée sans la matcher littéralement (`C:\PROGRA~1` = `C:\Program Files`) →
-// contournement de Q2. Refusé côté agent comme côté guard.
+// contournement de la protection. Refusé côté agent comme côté guard.
 func hasShortName83(path string) bool {
 	for i := 0; i+1 < len(path); i++ {
 		if path[i] == '~' && path[i+1] >= '0' && path[i+1] <= '9' {
@@ -307,8 +306,8 @@ func fsAclDescendantAppliesTo(appliesTo string) bool {
 }
 
 // fsAclAuthoringViolation : raison NON vide si l'item `present` doit être REFUSÉ
-// (défense en profondeur, Q2), sinon "". Un `deny` à héritage DESCENDANT sur une
-// racine protégée — ou sur un chemin en nom court 8.3 qui pourrait en désigner
+// (défense en profondeur), sinon "". Un `deny` à héritage DESCENDANT sur une
+// racine protégée — ou sur un chemin en nom court qui pourrait en désigner
 // une — n'est JAMAIS posé. Un `absent` (retrait) reste toujours autorisé :
 // retirer une ACE dangereuse est sûr.
 func fsAclAuthoringViolation(spec FsAclSpec) string {
@@ -316,16 +315,14 @@ func fsAclAuthoringViolation(spec FsAclSpec) string {
 		return ""
 	}
 	if hasShortName83(spec.Path) {
-		return fmt.Sprintf("deny à héritage descendant refusé sur le chemin en nom court 8.3 %q (racine protégée potentielle — utiliser le nom long, Q2)", spec.Path)
+		return fmt.Sprintf("deny à héritage descendant refusé sur le chemin en nom court 8.3 %q (racine protégée potentielle — utiliser le nom long)", spec.Path)
 	}
 	if isFsAclProtectedRoot(spec.Path) {
-		return fmt.Sprintf("deny à héritage descendant interdit sur la racine protégée %q (Q2)", spec.Path)
+		return fmt.Sprintf("deny à héritage descendant interdit sur la racine protégée %q", spec.Path)
 	}
 
 	return ""
 }
-
-// --- Store « dernier appliqué » (piège #4) -----------------------------------
 
 // appliedFsAce : l'ACE exactement posée, persistée par identité d'item. Porte
 // le trustee (nom) et le SID résolu à l'instant de la pose — pour retirer
@@ -376,8 +373,6 @@ func writeFsAclState(path string, state fsAclAppliedState) error {
 	return WriteFileAtomic(path, raw)
 }
 
-// --- Résolution SID mémoïsée PAR PASSE (piège #7) -----------------------------
-
 type sidMemo struct {
 	ops   FsAclOps
 	cache map[string]string
@@ -406,8 +401,6 @@ func (m *sidMemo) resolve(name string) (string, error) {
 
 	return sid, nil
 }
-
-// --- Handler ------------------------------------------------------------------
 
 // FsAclHandler : handler exclusive-par-ACE branché dans le moteur (engine.go
 // INTOUCHÉ — la machine d'états §5 reste au moteur). SERVICE SYSTEM seul.
@@ -498,7 +491,7 @@ func (h *FsAclHandler) Test(items []StateItem) (bool, error) {
 	// (a)/(b) Items désirés.
 	memo := newSidMemo(h.Ops)
 	for _, spec := range specs {
-		// Refus d'authoring (Q2, défense en profondeur) : un item refusé ne sera
+		// Refus d'authoring (défense en profondeur) : un item refusé ne sera
 		// jamais posé → non conforme (l'Apply surfacera l'erreur d'item).
 		if fsAclAuthoringViolation(spec) != "" {
 			return false, nil
@@ -547,7 +540,7 @@ func (h *FsAclHandler) Test(items []StateItem) (bool, error) {
 }
 
 // Apply : converge en effort MAXIMAL par item (première erreur remontée à la
-// fin, idempotent). Chirurgie DACL uniquement (jamais de réécriture, D4). Le
+// fin, idempotent). Chirurgie DACL uniquement (jamais de réécriture). Le
 // store est relu au début et réécrit atomiquement à la fin s'il a changé.
 func (h *FsAclHandler) Apply(items []StateItem) error {
 	specs, err := h.desiredSpecs(items)
@@ -618,8 +611,8 @@ func (h *FsAclHandler) Apply(items []StateItem) error {
 	for _, spec := range specs {
 		id := spec.identity()
 
-		// Refus d'authoring (Q2, défense en profondeur, INDÉPENDANT du serveur) :
-		// un deny à héritage descendant sur racine protégée (ou nom court 8.3)
+		// Refus d'authoring (défense en profondeur, INDÉPENDANT du serveur) :
+		// un deny à héritage descendant sur racine protégée (ou nom court)
 		// n'est JAMAIS posé — erreur d'item isolée, les autres convergent.
 		if reason := fsAclAuthoringViolation(spec); reason != "" {
 			record(fmt.Errorf("fs_acl refusé (%s) : %s", id, reason))
@@ -634,7 +627,7 @@ func (h *FsAclHandler) Apply(items []StateItem) error {
 			continue
 		}
 
-		// Défense en profondeur (piège #8) : deny sur SID well-known système.
+		// Défense en profondeur : deny sur SID well-known système.
 		if spec.AceType == "deny" && isWellKnownSystemSID(sid) {
 			record(fmt.Errorf("deny refusé sur le principal système %q (SID %s, %s)", spec.Trustee, sid, id))
 

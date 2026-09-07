@@ -14,7 +14,7 @@ use Tests\Support\IpxeSchemaBootstrapper;
 use Tests\TestCase;
 
 /**
- * Story 4.9 — Tests unitaires du WorkstationAdSyncJob (4 actions).
+ * Tests unitaires du WorkstationAdSyncJob (4 actions).
  *
  * Le job dialogue avec :
  *  - `AdMachineManager` (samba-tool) → mocké via Mockery.
@@ -24,7 +24,7 @@ use Tests\TestCase;
  *    purs ; les tests qui nécessitent un appel LDAP réel sont marqués
  *    comme manuels dans le runbook QA `docs/qa/domains/ad-sync.md`.
  *
- * Couverture (AC9) :
+ * Couverture :
  *  - Factory methods : create, rename, delete, status.
  *  - tries = 3, backoff = 10.
  *  - handleRename : no-op si oldName === newName.
@@ -47,10 +47,6 @@ class WorkstationAdSyncJobTest extends TestCase
         Mockery::close();
         parent::tearDown();
     }
-
-    // ============================================================
-    // Factory methods + métadonnées du job
-    // ============================================================
 
     #[Test]
     public function create_factory_builds_action_create(): void
@@ -93,10 +89,6 @@ class WorkstationAdSyncJobTest extends TestCase
         self::assertSame(99, $job->workstationId);
         self::assertSame('inactive', $job->params['status']);
     }
-
-    // ============================================================
-    // Décision design #3 (review 4.9) — action fusionnée update
-    // ============================================================
 
     #[Test]
     public function update_factory_carries_old_new_name_and_status(): void
@@ -160,10 +152,6 @@ class WorkstationAdSyncJobTest extends TestCase
         self::assertSame(10, $job->backoff);
     }
 
-    // ============================================================
-    // handleCreate — workstation introuvable = no-op idempotent
-    // ============================================================
-
     #[Test]
     public function handle_create_is_noop_when_workstation_not_found(): void
     {
@@ -178,10 +166,6 @@ class WorkstationAdSyncJobTest extends TestCase
         // sans throw (success = true, branche `findWorkstation === null`).
         self::assertTrue(true);
     }
-
-    // ============================================================
-    // handleRename — idempotence sur paramètres
-    // ============================================================
 
     #[Test]
     public function handle_rename_is_noop_when_old_equals_new(): void
@@ -205,10 +189,6 @@ class WorkstationAdSyncJobTest extends TestCase
         $job->handle($adManager);
     }
 
-    // ============================================================
-    // handleDelete — paramètre name vide = erreur
-    // ============================================================
-
     #[Test]
     public function handle_delete_throws_when_name_empty(): void
     {
@@ -221,16 +201,12 @@ class WorkstationAdSyncJobTest extends TestCase
         $job->handle($adManager);
     }
 
-    // ============================================================
-    // handleStatus — mapping D5 + throw sur status inconnu
-    // ============================================================
-
     #[Test]
     public function handle_status_throws_invalid_argument_on_unsupported_status(): void
     {
-        // Auto-fix #4 (review 4.9) : la priorité est désormais `$ws->status`
-        // sur les params. On doit donc forcer un status invalide en DB
-        // (via bypass observer pour éviter le dispatch sur ce status mal formé).
+        // Le job lit `$ws->status` avant les paramètres : il faut donc forcer un
+        // status invalide EN BASE, observer court-circuité pour ne pas déclencher
+        // de synchronisation sur cette valeur mal formée.
         $ws = WorkstationObserver::withoutSync(fn () => Workstation::create([
             'name' => 'pc-status-test',
             'uuid' => 'aaaaaaaa-1234-1234-1234-aaaaaaaaaaaa',
@@ -256,10 +232,6 @@ class WorkstationAdSyncJobTest extends TestCase
         }
     }
 
-    // ============================================================
-    // Action inconnue
-    // ============================================================
-
     #[Test]
     public function handle_throws_on_unknown_action(): void
     {
@@ -270,10 +242,6 @@ class WorkstationAdSyncJobTest extends TestCase
 
         $job->handle($adManager);
     }
-
-    // ============================================================
-    // withoutSync helper de WorkstationObserver
-    // ============================================================
 
     #[Test]
     public function without_sync_helper_disables_and_restores_flag(): void

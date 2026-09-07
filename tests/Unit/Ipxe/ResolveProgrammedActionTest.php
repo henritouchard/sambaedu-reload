@@ -12,7 +12,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 /**
- * Story 3.11 — Tests unit de IpxeService::resolveProgrammedAction (AC4/9/11).
+ * Tests unit de IpxeService::resolveProgrammedAction (9/11).
  */
 class ResolveProgrammedActionTest extends TestCase
 {
@@ -84,7 +84,7 @@ class ResolveProgrammedActionTest extends TestCase
     }
 
     /**
-     * Fix review #2 — une planification future ne doit JAMAIS être servie avant
+     * Une planification future ne doit JAMAIS être servie avant
      * l'heure : `resolveProgrammedAction` retourne null, sans markFailed, sans
      * incrémenter boot_served_count, sans changer le statut.
      */

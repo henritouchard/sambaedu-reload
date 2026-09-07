@@ -92,7 +92,7 @@ class WorkstationSeeder extends Seeder
                     'last_report_at' => $status === 'online' ? now() : now()->subMinutes(rand(60, 10080)),
                 ]);
 
-                // Story 4.11 — l'appartenance « salle » vit dans le pivot global.
+                // L'appartenance « salle » vit dans le pivot global.
                 $workstation->groups()->attach($room->id);
 
                 // Collecter pour les groupes logiques

@@ -19,13 +19,13 @@ declare(strict_types=1);
 
 return [
 
-    // Échéance de rotation glissante du token agent (D5, FR13) : au premier
+    // Échéance de rotation glissante du token agent : au premier
     // check-in passé ce délai, le serveur ré-émet un token via le header
     // X-Agent-New-Token ; l'ancien reste valide jusqu'au premier usage du
     // nouveau (fenêtre de grâce — cf. docs/agent/token-lifecycle.md).
     'token_rotation_days' => (int) env('AGENT_TOKEN_ROTATION_DAYS', 30),
 
-    // Durée de vie du ticket d'enrôlement one-time (porte 1 — Story 23.3) :
+    // Durée de vie du ticket d'enrôlement one-time (porte 1 —) :
     // émis à la génération de l'unattend.xml, échangé contre le token au
     // premier logon. 240 min couvre une install lente (miroir froid, poste
     // poussif) sans laisser traîner un secret actif des jours — le ticket
@@ -33,46 +33,46 @@ return [
     // (cf. docs/agent/enrollment.md).
     'enroll_ticket_ttl_minutes' => (int) env('AGENT_ENROLL_TICKET_TTL_MINUTES', 240),
 
-    // Cadence de poll conseillée à l'agent (Story 23.5) : champ `ttl_seconds`
+    // Cadence de poll conseillée à l'agent : champ `ttl_seconds`
     // de l'enveloppe se5.desired-state/v1 servie par GET /api/v1/agent/state.
-    // 3600 s = 60 min (D7), aligné sur le golden file du contrat. Indicatif :
+    // 3600 s = 60 min, aligné sur le golden file du contrat. Indicatif :
     // le serveur ne refuse pas un poll plus fréquent (throttle à part).
     // Défaut global — abaisser cette valeur est une action OPÉRATEUR (env +
-    // config:cache), PAS une décision de code (Story 43.3, D5) : lire
+    // config:cache), PAS une décision de code : lire
     // docs/agent/state-endpoint.md § cadence AVANT de la changer (mesure de
     // charge, effets de bord sur les seuils de présence 2×ttl et l'adoption
     // paresseuse par les agents).
     'ttl_seconds' => max(1, (int) env('AGENT_STATE_TTL_SECONDS', 3600)),
 
-    // Story 43.3 (D4, FR-A4) — TTL COURT servi quand le contexte compilé est en
-    // « bascule sensible » (AgentTtlResolver::ttlSeconds()). Fenêtre epic
-    // 60-120 s, défaut 90 s ; plancher serveur max(60, …) — l'agent clampe de
+    // TTL COURT servi quand le contexte compilé est en
+    // « bascule sensible » (AgentTtlResolver::ttlSeconds()). Fenêtre 60-120 s,
+    // défaut 90 s ; plancher serveur max(60, …) — l'agent clampe de
     // toute façon à 60 s (loop.go MinServerIntervalSeconds), pas de dé-clamp
     // possible côté serveur.
     'ttl_sensitive_seconds' => max(60, (int) env('AGENT_STATE_TTL_SENSITIVE_SECONDS', 90)),
 
-    // Story 43.3 (D1) — liste des capacités (`capabilities.key`) dont un
+    // Liste des capacités (`capabilities.key`) dont un
     // `capability_assignments.value` non-null sur une maille du contexte fait
     // basculer ce contexte en TTL court. Array PHP volontaire (PAS d'env) :
     // c'est une liste de clés techniques, pas un scalaire d'exploitation.
     //
-    // Défaut = `['restrict_run']` : la capacité n'existe pas encore (41.2 non
+    // Défaut = `['restrict_run']` : la capacité n'existe pas encore (seed non
     // livrée à ce jour) → zéro ligne → comportement inchangé aujourd'hui ; le
-    // branchement de la bascule examen (41.3) se fait SANS une ligne de code
+    // branchement de la bascule examen se fait SANS une ligne de code
     // ici — poser un assignment `restrict_run` non-null sur le parc suffit.
     //
-    // ⚠️ Piège n°4 (43.3) : ne JAMAIS y mettre `internet_access` — l'exemption
-    // enseignante (FR-E4, epic 41) est un assignment PERMANENT sur le groupe
+    // ⚠️ Ne JAMAIS y mettre `internet_access` — l'exemption
+    // enseignante est un assignment PERMANENT sur le groupe
     // logique du poste prof ; un slug permanent ici donnerait un TTL court À
     // VIE (poll 90 s en continu, à tort). Réserver cette liste aux capacités
     // dont les assignments sont TRANSITOIRES par construction (posés au flag,
     // purgés au déflag).
     //
-    // ⚠️ CONTRAINTE IMPOSÉE au consommateur (41.3, correction post-review #1
-    // de la 43.3) : le critère TTL court est `whereNotNull('value')`
-    // (AgentTtlResolver, D2) — les capacités listées ici DOIVENT être
+    // ⚠️ CONTRAINTE IMPOSÉE au consommateur : le critère TTL court est
+    // `whereNotNull('value')`
+    // (AgentTtlResolver) — les capacités listées ici DOIVENT être
     // déflaguées par SUPPRESSION de l'assignment (DELETE), JAMAIS par
-    // écriture d'une valeur `off` non-null. Si 41.3 posait `value = 'off'`
+    // écriture d'une valeur `off` non-null. Si posait `value = 'off'`
     // au déflag (convention UI « off = vraie valeur »,
     // project_capability_value_map_symmetric_rule), la ligne resterait
     // non-null en base et le contexte resterait EN PERMANENCE au TTL court
@@ -80,30 +80,30 @@ return [
     // SUPPRIMER la ligne (pas mettre `off`) au déflag.
     'ttl_sensitive_capabilities' => ['restrict_run'],
 
-    // Historique de débogage des rapports agent (flag D3, consommé en 24.1) :
+    // Historique de débogage des rapports agent :
     // off par défaut — seuls le dernier état rapporté et le journal des
     // changements sont conservés en fonctionnement nominal.
     'report_history' => (bool) env('AGENT_REPORT_HISTORY', false),
 
     // Rétention du journal des changements rapportés par les agents
-    // (« rétention courte » D3, purge consommée en 24.1).
+    // (rétention courte, purgée automatiquement).
     'report_events_retention_days' => max(1, (int) env('AGENT_REPORT_EVENTS_RETENTION_DAYS', 14)),
 
     // Rétention de l'historique de débogage (si report_history est activé) :
     // purge automatique, l'historique ne grossit jamais sans borne.
     'report_history_retention_days' => max(1, (int) env('AGENT_REPORT_HISTORY_RETENTION_DAYS', 30)),
 
-    // Répertoire des binaires de release de l'agent (D6, Story 25.1 —
-    // distribution canari par rings). Dépôt direct sur le serveur (hors
+    // Répertoire des binaires de release de l'agent (distribution canari par
+    // rings). Dépôt direct sur le serveur (hors
     // git/inotify, convention storage), lisible www-admin (uid 599) sinon
     // hash_file()/serving échouent silencieusement. Surchargé en test vers
     // un répertoire temporaire (jamais d'écriture dans le vrai storage/).
     'releases_path' => env('AGENT_RELEASES_PATH', storage_path('agent/releases')),
 
     // Répertoire des artefacts d'OUTILS DE RENDU posés par l'agent au
-    // bootstrap (Story 27.1bis, D8 — aujourd'hui : l'archive PORTABLE de
+    // bootstrap (aujourd'hui : l'archive PORTABLE de
     // Rainmeter). DÉLIBÉRÉMENT distinct de `releases_path` : `agent_releases`
-    // est réservé au binaire agent + auto-update (25.2), un outil tiers vit
+    // est réservé au binaire agent + auto-update, un outil tiers vit
     // ailleurs. Dépôt direct sur le serveur (hors git/inotify, convention
     // storage), lisible www-admin (uid 599) sinon le serving échoue
     // silencieusement (404). Surchargé en test vers un répertoire temporaire.
@@ -117,7 +117,7 @@ return [
     // réel du dépôt — la prod garde le défaut, comportement INCHANGÉ.
     'tools_embedded_path' => env('AGENT_TOOLS_EMBEDDED_PATH', base_path('resources/agent/tools')),
 
-    // Borne haute de l'upload du portable d'un outil de rendu (Story 25.6 —
+    // Borne haute de l'upload du portable d'un outil de rendu (
     // catalogue agent_tools). Un portable Rainmeter complet pèse quelques
     // dizaines de Mio ; 200 Mio est une marge large mais FINIE — un upload
     // au-delà est refusé AVANT stockage/hachage (aucun orphelin). Exprimée en
@@ -125,7 +125,7 @@ return [
     // → null casté 0) qui rejetterait tout upload.
     'tool_max_upload_bytes' => max(1, (int) env('AGENT_TOOL_MAX_UPLOAD_BYTES', 200 * 1024 * 1024)),
 
-    // Bundle WPKG natif SE5 (Story 27.5, D6/D7/D10) — livraison NATIVE,
+    // Bundle WPKG natif SE5 — livraison NATIVE,
     // remplace le serving legacy `*_xml_out.php` (shim supprimé).
     //
     //  - `wpkg_bundle_path` : répertoire PUBLIC où SE5 GÉNÈRE le bundle
@@ -140,13 +140,13 @@ return [
 
     // URL publique du sous-dossier Apache servant le bundle (donnée à l'agent —
     // l'agent la passe au bootstrap WPKG, il ne TÉLÉCHARGE PAS : c'est le client
-    // qui download, zéro charge Laravel — D7). Défaut dérivé d'APP_URL +
+    // qui download, zéro charge Laravel). Défaut dérivé d'APP_URL +
     // `/wpkg/bundle` (iso le sous-chemin figé côté agent `shared.WpkgBundlePath`).
     // L'agent Go dérive lui-même cette URL de son `server_url` ; cette clé est la
     // SOURCE DE VÉRITÉ serveur (UI/diagnostic + génération).
     'wpkg_bundle_url' => env('AGENT_WPKG_BUNDLE_URL', rtrim((string) env('APP_URL', ''), '/') . '/wpkg/bundle'),
 
-    // Skin canonique d'overlay Rainmeter (Story 25.6, volet A — D7). Autorité
+    // Skin canonique d'overlay Rainmeter. Autorité
     // = `resources/overlay/rainmeter/SambaEduOverlay/SambaEduOverlay.ini`
     // (UTF-8, versionné) ; provisionnée (copie/symlink) sous ce chemin
     // (convention storage NON versionné, chown www-admin uid 599 sinon

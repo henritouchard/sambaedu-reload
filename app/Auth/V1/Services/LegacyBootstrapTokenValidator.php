@@ -7,8 +7,8 @@ namespace App\Auth\V1\Services;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 16.10 — AC4.2 / T5.1.
- * Story 16.11 — AC1.1 (durcissement couple token↔UUID, rétrocompat).
+ * T5.1.
+ * (durcissement couple token↔UUID, rétrocompat).
  *
  * Valide le `X-Bootstrap-Token` md5 transitoire fourni par les postes lors
  * de leur première bascule v1 (Phase 2).
@@ -17,8 +17,8 @@ use Illuminate\Support\Facades\Log;
  *
  *  - Le token est un md5 (32 chars hex) **posé par le serveur legacy
  *    `gpo/applications.php`** au moment où le poste appelle un endpoint
- *    runtime legacy (cf. `app/Services/AppCustomization/ApcuAppContextWriter.php`
- *    Story 16.7). Le serveur fait `apcu_store('apps.' . $id, $context, 1800)`
+ *    runtime legacy (cf. `app/Services/AppCustomization/ApcuAppContextWriter.php`).
+ *    Le serveur fait `apcu_store('apps.'. $id, $context, 1800)`
  *    où `$id` est le md5 d'un payload signé `md5("$action $hostname $login $time")`.
  *
  *  - Le poste capte ce md5 (dans la réponse du serveur ou via une logique
@@ -40,7 +40,7 @@ use Illuminate\Support\Facades\Log;
  * `isValid()` retourne `false` (= bootstrap_token.invalid). Le validator ne
  * crash pas — c'est au caller de comprendre l'absence APCu côté infra.
  *
- * **Story 16.11 — couple token↔UUID (mitigation fixation UUID)** :
+ * **couple token↔UUID (mitigation fixation UUID)** :
  *
  *  - La signature `isValid()` est étendue avec un 2e argument optionnel
  *    `?string $declaredUuid = null` — **rétrocompatible**, les appelants
@@ -95,17 +95,17 @@ class LegacyBootstrapTokenValidator
             return false;
         }
 
-        // 16.10 rétrocompat — sans uuid déclaré, présence APCu suffit.
+        // Rétrocompat : sans uuid déclaré, présence APCu suffit.
         if ($declaredUuid === null) {
             return true;
         }
 
-        // 16.11 — vérifier le couple token↔UUID.
+        // vérifier le couple token↔UUID.
         return $this->payloadMatchesUuid($payload, $declaredUuid, $token);
     }
 
     /**
-     * Story 16.11 — détecte un mismatch uuid explicite (APCu présent +
+     * Détecte un mismatch uuid explicite (APCu présent +
      * uuid différent OU payload sans uuid). Retourne `true` UNIQUEMENT
      * dans ces cas — permet au middleware de discriminer le code d'erreur
      * `uuid_mismatch` vs `invalid`.

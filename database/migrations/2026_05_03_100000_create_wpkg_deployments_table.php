@@ -7,13 +7,13 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 15.1 — Table racine de tracking des déploiements WPKG.
+ * Table racine de tracking des déploiements WPKG.
  *
  * Le `id` UUID sert de `deployment_id` corrélé dans toute la chaîne
- * (générateurs XML, jobs, channel logs `wpkg-deploy`, dashboard Story 15.5).
+ * (générateurs XML, jobs, channel logs `wpkg-deploy`, dashboard).
  *
  * `status` est géré en `string` (pas enum natif Postgres) pour la portabilité
- * vers SQLite des tests + cohérence avec le pattern Epic 4 / 7.
+ * vers SQLite des tests + cohérence avec le pattern / 7.
  */
 return new class extends Migration
 {

@@ -11,7 +11,7 @@ use Livewire\Component;
 /**
  * Form Livewire SFC — personnalisation Thunderbird.
  *
- * Story 4.8 — Task 4.6 (AC 8). MVP : section Proxy uniquement.
+ * MVP : section Proxy uniquement.
  * Les champs mail servers peuvent être ajoutés en follow-up (stub documenté).
  */
 new class extends Component {

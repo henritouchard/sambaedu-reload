@@ -10,7 +10,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 60.5 — LES RACINES DÉCLARÉES, ET CELLE QUI NE L'EST PAS.
+ * LES RACINES DÉCLARÉES, ET CELLE QUI NE L'EST PAS.
  *
  * Trois interdits, chacun avec son assertion. Ce ne sont pas des préférences de
  * rangement : chacun ferme un chemin par lequel l'arbre de classe historique — le
@@ -40,7 +40,7 @@ class FilesystemRootsConfigTest extends TestCase
      * Tant que la clé est absente, les deux services retombent sur leur propriété
      * statique, que les tests surchargent. Déclarer la clé masquerait cet override
      * et changerait le comportement du chemin historique — précisément ce que
-     * cette story existe pour ne PAS faire.
+     * ce test existe pour interdire.
      */
     #[Test]
     public function the_legacy_class_root_key_is_deliberately_never_declared(): void

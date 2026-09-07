@@ -227,7 +227,6 @@ class UtilityService
         echo "<div style='border: 1px solid black; background-color: white; color: black;'>\n";
         echo "<p><strong>Variables transmises en POST, GET, SESSION,...</strong></p>\n";
 
-        // Variables POST
         echo "<p>Variables envoyées en POST: ";
         if (count($_POST) == 0) {
             echo "aucune";
@@ -246,7 +245,6 @@ class UtilityService
         }
         echo "</p>\n";
 
-        // Variables GET
         echo "<p>Variables envoyées en GET: ";
         if (count($_GET) == 0) {
             echo "aucune";
@@ -265,7 +263,6 @@ class UtilityService
         }
         echo "</p>\n";
 
-        // Variables SESSION
         echo "<p>Variables envoyées en SESSION: ";
         if (count($_SESSION) == 0) {
             echo "aucune";
@@ -290,7 +287,6 @@ class UtilityService
         echo "</table>\n";
         echo "</p>\n";
 
-        // Variables FILES
         echo "<p>Variables envoyées en FILES: ";
         if (count($_FILES) == 0) {
             echo "aucune";
@@ -309,7 +305,6 @@ class UtilityService
         }
         echo "</p>\n";
 
-        // Variables COOKIES
         echo "<p>Variables COOKIES: ";
         if (count($_COOKIE) == 0) {
             echo "aucune";

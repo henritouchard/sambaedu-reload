@@ -7,7 +7,7 @@ namespace App\Services\Extensions;
 use App\Services\Extensions\Contracts\ExtensionHelperRunner;
 
 /**
- * Story 56.2 — Implémentation RÉELLE du seam privilégié : `sudo -n <helper> …`.
+ * Implémentation RÉELLE du seam privilégié : `sudo -n <helper> …`.
  *
  * Calque de {@see \App\Services\Print\RealCommandRunner} (`proc_open`, capture
  * séparée stdout/stderr/code retour), avec ce que ce domaine exige en plus :

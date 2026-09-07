@@ -8,7 +8,7 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Story 38.2 / AC1 / AC8 — Garde-fous architecturaux des routes tombstones du
+ * Garde-fous architecturaux des routes tombstones du
  * canal client legacy.
  *
  * Tests (lecture textuelle de `routes/web.php`, patron `WpkgOutRoutesTest`) :
@@ -16,7 +16,8 @@ use PHPUnit\Framework\TestCase;
  *   2. Chacune est déclarée AVANT le catchall legacy `{path}` (sinon le catchall
  *      proxifie et le poste exécute du HTML/erreur).
  *   3. Chacune porte `local.request` + `throttle:…`.
- *   4. Aucune ne porte de middleware d'auth (D2 — postes non enrôlés).
+ *   4. Aucune ne porte de middleware d'auth : ces routes sont appelées par des
+ *      postes qui ne sont pas encore enrôlés.
  *   5. Chacune porte `withoutMiddleware(['web'])` (appels machine sans CSRF).
  *   6. `/ipxe/linux/action.php` est déclarée AVANT `/ipxe/{version}/action.php`
  *      (le littéral doit gagner).

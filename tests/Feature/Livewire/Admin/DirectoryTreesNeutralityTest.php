@@ -21,10 +21,10 @@ use Tests\TestCase;
 use Tests\Unit\Services\Filesystem\Plan\PlanNeutralityMarkers;
 
 /**
- * Story 62.6 — LA LIGNE DE COUPE TIENT JUSQU'AU HTML.
+ * LA LIGNE DE COUPE TIENT JUSQU'AU HTML.
  *
- * Les gardes de neutralité de l'epic s'exercent sur les PLANS (60.1) et sur les
- * RAPPORTS (60.3/60.4). Cet écran est le premier à rendre les deux à un
+ * Les gardes de neutralité s'exercent sur les PLANS et sur les RAPPORTS. Cet
+ * écran est le premier à rendre les deux à un
  * administrateur, dans un document HTML qui porte aussi ses propres textes : les
  * explications du grisé, les notes de dégradation, les phrases d'aide. C'est
  * exactement là que le vocabulaire du mécanisme se réintroduit — dans une
@@ -32,8 +32,8 @@ use Tests\Unit\Services\Filesystem\Plan\PlanNeutralityMarkers;
  *
  * Le scan porte donc sur le rendu COMPLET de l'onglet, éditeur ouvert : matrice
  * grisée, notes de nœud et aperçu résolu compris. La liste de marqueurs est celle
- * des stories précédentes, RÉUTILISÉE — deux listes qui divergeraient seraient
- * pires qu'une seule.
+ * du trait `PlanNeutralityMarkers`, partagée avec les autres écrans — deux listes
+ * qui divergeraient seraient pires qu'une seule.
  */
 class DirectoryTreesNeutralityTest extends TestCase
 {
@@ -204,7 +204,7 @@ class DirectoryTreesNeutralityTest extends TestCase
     }
 
     /**
-     * D4/D9 : aucun champ de traversée, aucun champ d'interdiction, aucune
+     * Aucun champ de traversée, aucun champ d'interdiction, aucune
      * priorité. Ne pas les proposer est la moitié UI de la garde que le
      * vocabulaire de clés fermé tient côté modèle.
      */

@@ -9,7 +9,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 15.5 / AC1.3 + T10 — Tests unit `wpkg:reports:archive:rotate`.
+ * + T10 — Tests unit `wpkg:reports:archive:rotate`.
  *
  * Couvre :
  *   - Suppression des fichiers > N jours.

@@ -10,8 +10,6 @@ use Illuminate\Console\Command;
 use Throwable;
 
 /**
- * Story 16.14 — Q2 arbitré Henri 2026-05-20.
- *
  * Commande `gpo:warm-cache` — pré-remplit le cache santé GPO (links +
  * versionNumber par GPO) pour éviter les N appels samba-tool en cascade
  * sur le listing admin.

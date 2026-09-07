@@ -10,7 +10,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 56.2 — Le seam privilégié RÉEL : composition de la commande et
+ * Le seam privilégié RÉEL : composition de la commande et
  * plomberie `proc_open`.
  *
  * Deux moitiés, testées séparément parce qu'aucun `sudo` n'est configuré pour
@@ -27,9 +27,6 @@ use Tests\TestCase;
  */
 class SudoExtensionHelperRunnerTest extends TestCase
 {
-    // =====================================================================
-    // 1. Composition de la commande
-    // =====================================================================
 
     #[Test]
     public function the_command_goes_through_sudo_non_interactive_and_the_configured_helper(): void
@@ -76,10 +73,6 @@ class SudoExtensionHelperRunnerTest extends TestCase
         self::assertStringNotContainsString(' $(id)', $command);
         self::assertStringContainsString("'\$(id)'", $command);
     }
-
-    // =====================================================================
-    // 2. Transport : stdin, flux, code retour
-    // =====================================================================
 
     /** Runner dont la commande est remplacée par un binaire local sans privilège. */
     private function localRunner(string $command): SudoExtensionHelperRunner

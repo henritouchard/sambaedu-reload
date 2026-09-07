@@ -18,7 +18,7 @@ use Livewire\Component;
 use Livewire\WithFileUploads;
 
 /**
- * Story 3.6 — D2 / D10 / AC5.* — Page admin web SE5 Livewire SFC qui porte
+ * Page admin web SE5 Livewire SFC qui porte
  * `sambaedu/ipxe/Win10/win_iso.php` (110 LOC legacy).
  *
  * Convention iso `/admin/sync-from-ad` :
@@ -26,11 +26,11 @@ use Livewire\WithFileUploads;
  *  - Polling Livewire `wire:poll.60s` conditionnel sur la card "en cours".
  *  - Modale réutilisable `<x-molecules.confirm-modal>` pour la confirmation.
  *
- * Sécurité (D3) : middleware `sambaedu.auth + sambaedu.admin + can:server.admin`
+ * Sécurité : middleware `sambaedu.auth + sambaedu.admin + can:server.admin`
  * en amont (routes/web.php) + double-check dans `mount()` (defense in depth
  * parité Wine SE5).
  *
- * Validation URL : 2 couches (D5) :
+ * Validation URL, en 2 couches :
  *  1. Couche 1 — règles Livewire `rules()` (regex basique + max:2048).
  *  2. Couche 2 — service `WindowsIsoUrlValidator` (allowlist host + extract
  *     iso_name + détection version) déléguée à `WindowsIsoDownloadOrchestrator`.
@@ -39,12 +39,8 @@ new #[Title('Gestion ISO Windows - SE5')] class extends Component {
     use WithFileUploads;
     use WithToasts;
 
-    // ---- État du formulaire URL ---------------------------------------------
-
     /** URL Microsoft saisie par l'admin. */
     public string $url = '';
-
-    // ---- État du formulaire d'ingestion de pilotes NIC (Story 3.10) ---------
 
     /**
      * Archive de pilotes uploadée (`.exe` Lenovo / `.zip` Intel). Livewire
@@ -63,8 +59,6 @@ new #[Title('Gestion ISO Windows - SE5')] class extends Component {
      * @var array<string, int>
      */
     public array $driverFamilies = [];
-
-    // ---- État de la page ----------------------------------------------------
 
     /**
      * Sources déployées sous `/var/sambaedu/unattended/install/os/Win{10,11}{,-old}/`.
@@ -100,8 +94,6 @@ new #[Title('Gestion ISO Windows - SE5')] class extends Component {
      */
     public ?string $lastTerminalNotified = null;
 
-    // ---- État des modales + liste versions (refonte 2026-07-18) -------------
-
     /** Modale « Nouvelle source » (téléchargement URL / dépôt fichier). */
     public bool $showNewSourceModal = false;
 
@@ -119,8 +111,6 @@ new #[Title('Gestion ISO Windows - SE5')] class extends Component {
      */
     public array $versions = [];
 
-    // ---- Authentification garde-fou ----------------------------------------
-
     protected function rules(): array
     {
         return [
@@ -128,8 +118,7 @@ new #[Title('Gestion ISO Windows - SE5')] class extends Component {
                 'required',
                 'string',
                 'max:2048',
-                // #6 (post-review 2026-05-21) — tightening : référence la
-                // constante publique `WindowsIsoUrlValidator::URL_PATH_REGEX`
+                // Référence la constante publique `WindowsIsoUrlValidator::URL_PATH_REGEX`
                 // au lieu d'une regex laxiste `.iso` générique. Source unique
                 // partagée avec la couche 2 service (= drift impossible).
                 // La couche 2 reste responsable de l'allowlist host + de la
@@ -151,14 +140,12 @@ new #[Title('Gestion ISO Windows - SE5')] class extends Component {
         $this->refreshDriverFamilies();
     }
 
-    // ---- Ingestion de pilotes NIC WinPE (Story 3.10) ------------------------
-
     /**
      * Recharge la liste (lecture seule) des familles de pilotes présentes
      * dans le pack `winpe_drivers_path` (sous-dossiers contenant ≥ 1 `.inf`).
      *
      * Délègue à {@see WinpeDriverInjector::collectFamilies()} — SOURCE UNIQUE de
-     * comptage (D3) : l'UI reflète exactement ce que l'injection trouvera
+     * comptage : l'UI reflète exactement ce que l'injection trouvera
      * (récursif + insensible à la casse, donc les `*.INF` majuscules comptent).
      */
     public function refreshDriverFamilies(): void
@@ -176,7 +163,7 @@ new #[Title('Gestion ISO Windows - SE5')] class extends Component {
     /**
      * Ingestion d'une archive de pilotes (`.exe` Lenovo / `.zip` Intel) via le
      * service PARTAGÉ {@see WinpeDriverIngestor} (même logique que la commande
-     * artisan — D3, zéro duplication). Action volontairement NON nommée
+     * artisan, zéro duplication). Action volontairement NON nommée
      * `upload` (réservé Livewire) ; on passe `getRealPath()` au service, jamais
      * `move()` (cf. [[project_livewire_reserved_upload_method]]).
      */
@@ -253,9 +240,8 @@ new #[Title('Gestion ISO Windows - SE5')] class extends Component {
     /**
      * Modale « Ajouter un pilote » d'une version : ingère le pilote (pack
      * global) PUIS réinjecte immédiatement dans le boot.wim de CETTE version
-     * (ré-extraction via l'orchestrator, source `reinject`). Décision Henri
-     * 2026-07-18 : une seule action = le pilote finit dans le boot.wim de la
-     * ligne. NB : le pack étant global, le pilote deviendra aussi disponible
+     * (ré-extraction via l'orchestrator, source `reinject`) : une seule action,
+     * et le pilote finit dans le boot.wim de la ligne. NB : le pack étant global, le pilote deviendra aussi disponible
      * pour les autres versions à leur prochaine (ré)extraction.
      */
     public function ingestDriverForVersion(WinpeDriverIngestor $ingestor): void
@@ -366,10 +352,9 @@ new #[Title('Gestion ISO Windows - SE5')] class extends Component {
     /**
      * Première étape de soumission — ouvre la modale de confirmation.
      * (UX critique : le download remplace la version courante Win{N} →
-     * action irréversible — AC5.6.)
+     * action irréversible —.)
      *
-     * #6 (post-review 2026-05-21) — le re-check regex `submitDownload`
-     * historique est SUPPRIMÉ : la couche 1 Livewire (`rules()` avec
+     * Le re-check regex `submitDownload` historique est SUPPRIMÉ : la couche 1 Livewire (`rules()` avec
      * `WindowsIsoUrlValidator::URL_PATH_REGEX`) valide déjà strictement
      * que le path est `Win(10|11)*.iso`. On extrait uniquement le `iso_name`
      * + le `version_num` via la constante `ISO_NAME_REGEX` pour le message
@@ -481,8 +466,6 @@ new #[Title('Gestion ISO Windows - SE5')] class extends Component {
         $this->refreshData();
     }
 
-    // ---- Réinjection des pilotes NIC (Story 3.10) --------------------------
-
     /**
      * Ouvre la modale de confirmation pour réappliquer les pilotes NIC à une
      * ISO déjà déployée (ré-extraction du `boot.wim` + réinjection du pack).
@@ -558,8 +541,6 @@ new #[Title('Gestion ISO Windows - SE5')] class extends Component {
         }
     }
 
-    // ---- Modales + liste versions (refonte 2026-07-18) ----------------------
-
     /**
      * Construit la liste des versions déployées ordonnée par nouveauté
      * (Win11 avant Win10, courante avant archivée) — une ligne par slot
@@ -625,8 +606,6 @@ new #[Title('Gestion ISO Windows - SE5')] class extends Component {
         $this->showDriverModal = false;
         $this->reset(['driverArchive', 'driverFamily']);
     }
-
-    // ---- Dépôt manuel (upload chunké) --------------------------------------
 
     /**
      * Étape 1 du dépôt manuel : pré-validation serveur (nom, version, taille,
@@ -766,7 +745,7 @@ new #[Title('Gestion ISO Windows - SE5')] class extends Component {
     /**
      * Sérialisation Livewire-safe d'une row `WindowsIsoDownload` (les
      * propriétés Livewire doivent être array/scalar, pas des Models
-     * Eloquent — patron iso 16.9).
+     * Eloquent — patron).
      *
      * @return array<string, mixed>
      */
@@ -907,9 +886,8 @@ new #[Title('Gestion ISO Windows - SE5')] class extends Component {
              Card "Téléchargement en cours" — polling conditionnel
              ============================================================ --}}
         @if ($currentRunning)
-            {{-- Q4 Henri 2026-05-21 : polling 60s (au lieu de 5s).
-                 Décision : « sur 30 min ça ne me parait pas insensé ».
-                 Réduit la charge DB ×12 (vs 5s) en respectant le UX :
+            {{-- Polling 60s plutôt que 5s.
+                 Réduit la charge DB ×12 en respectant le UX :
                  sur un téléchargement 30 min - 2h, 60s de latence avant
                  mise à jour visuelle est acceptable. --}}
             <div class="card bg-base-100 shadow-sm border border-warning" wire:poll.60s="refresh">

@@ -27,13 +27,13 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 36.1 — Tests Unit du provider `fs_acl` CAPABILITY-FIRST + du guard
+ * Tests Unit du provider `fs_acl` CAPABILITY-FIRST + du guard
  * d'authoring `FsAclAuthoringGuard`.
  *
  * Le provider EXPANSE une capacité → items CONCRETS 6 clés `{path, trustee,
  * ace_type, rights, applies_to, ensure}` (jetons d'audience résolus par
- * convention, Q1). Lecture Postgres pure (NFR7 — la résolution SID est côté
- * POSTE). Invariant central 27.12 : jamais d'id/key de capacité au payload.
+ * convention). Lecture Postgres pure : la résolution SID est côté POSTE.
+ * Invariant central : jamais d'id/key de capacité au payload.
  */
 class CapabilityFsAclProviderTest extends TestCase
 {
@@ -98,7 +98,7 @@ class CapabilityFsAclProviderTest extends TestCase
         UserGroup::factory()->create(['name' => 'Eleves', 'type' => 'role']);
     }
 
-    // ── Type / sémantique / portée ────────────────────────────────────────
+    // Type / sémantique / portée
 
     #[Test]
     public function provider_declares_fs_acl_exclusive_machine(): void
@@ -109,7 +109,7 @@ class CapabilityFsAclProviderTest extends TestCase
         self::assertSame(StateScope::Machine, $p->scope());
     }
 
-    // ── (a) Expansion : payload EXACTEMENT 6 clés strings, jamais d'id ─────
+    // (a) Expansion : payload EXACTEMENT 6 clés strings, jamais d'id
 
     #[Test]
     public function expansion_emits_exactly_six_string_keys_without_capability_id(): void
@@ -139,7 +139,7 @@ class CapabilityFsAclProviderTest extends TestCase
         }
     }
 
-    // ── (b) Map trustee/ensure + sentinelle UNMANAGED + assoc inattendue ──
+    // (b) Map trustee/ensure + sentinelle UNMANAGED + assoc inattendue
 
     #[Test]
     public function unmanaged_sentinel_emits_nothing(): void
@@ -192,7 +192,7 @@ class CapabilityFsAclProviderTest extends TestCase
         self::assertCount(0, $this->provider()->itemsFor($this->ctx()));
     }
 
-    // ── (c) Jeton d'audience résolu (user_groups seedé) ───────────────────
+    // (c) Jeton d'audience résolu (user_groups seedé)
 
     #[Test]
     public function audience_token_is_resolved_to_the_conventional_group_name(): void
@@ -212,7 +212,7 @@ class CapabilityFsAclProviderTest extends TestCase
         self::assertSame('Eleves', $items->first()->payload['trustee'], '@eleves résolu vers le nom conventionnel');
     }
 
-    // ── (d) Jeton inconnu / groupe absent ⇒ non émis + warning ────────────
+    // (d) Jeton inconnu / groupe absent ⇒ non émis + warning
 
     #[Test]
     public function audience_token_with_missing_group_emits_nothing_and_logs_a_warning(): void
@@ -249,7 +249,7 @@ class CapabilityFsAclProviderTest extends TestCase
         Log::shouldHaveReceived('warning')->atLeast()->once();
     }
 
-    // ── (e) Trustee littéral verbatim ─────────────────────────────────────
+    // (e) Trustee littéral verbatim
 
     #[Test]
     public function literal_trustee_is_emitted_verbatim(): void
@@ -278,7 +278,7 @@ class CapabilityFsAclProviderTest extends TestCase
             'rights' => 'list_folder',
             'applies_to' => 'folder_only',
             'trustee' => 'Domain Users',
-            // pas de clé `ensure` → défaut `present` (TOUJOURS émis, piège #13).
+            // pas de clé `ensure` → défaut `present` (TOUJOURS émis).
         ]]);
 
         $items = $this->provider()->itemsFor($this->ctx());
@@ -286,7 +286,7 @@ class CapabilityFsAclProviderTest extends TestCase
         self::assertSame('present', $items->first()->payload['ensure']);
     }
 
-    // ── (f) Enums hors domaine non émis (défensif) ────────────────────────
+    // (f) Enums hors domaine non émis (défensif)
 
     #[Test]
     public function out_of_domain_enums_emit_nothing(): void
@@ -301,7 +301,7 @@ class CapabilityFsAclProviderTest extends TestCase
         self::assertCount(0, $this->provider()->itemsFor($this->ctx()));
     }
 
-    // ── (g) exclusiveKey : 3 segments minuscules ──────────────────────────
+    // (g) exclusiveKey : 3 segments minuscules
 
     #[Test]
     public function exclusive_key_is_three_lowercase_segments(): void
@@ -315,7 +315,7 @@ class CapabilityFsAclProviderTest extends TestCase
         self::assertSame(2, substr_count($a, '|'), '3 segments');
     }
 
-    // ── (h) Provider Postgres pur (NFR7) ──────────────────────────────────
+    // (h) Provider Postgres pur
 
     #[Test]
     public function provider_source_has_no_ad_apcu_dependency(): void
@@ -339,7 +339,7 @@ class CapabilityFsAclProviderTest extends TestCase
         }
     }
 
-    // ── Guard d'authoring (AC3) — service PUR, sans DB ────────────────────
+    // Guard d'authoring — service PUR, sans DB
 
     private function guard(): FsAclAuthoringGuard
     {
@@ -427,9 +427,9 @@ class CapabilityFsAclProviderTest extends TestCase
     #[Test]
     public function guard_refuses_deny_on_builtin_and_nt_service_authorities(): void
     {
-        // Corr. review #4 : alignement serveur↔agent (S-1-5-32-* / S-1-5-80-).
-        // Un deny sur ces autorités passait le guard puis échouait à chaque
-        // cycle agent (capacité inerte silencieuse) — désormais refusé au NOM.
+        // Alignement serveur↔agent sur les autorités S-1-5-32-* et S-1-5-80- :
+        // un deny que l'agent refuse d'appliquer donnerait une capacité inerte
+        // silencieuse, à chaque cycle. Le guard le refuse donc au NOM.
         foreach (['BUILTIN\\Backup Operators', 'builtin\\Users', 'NT SERVICE\\TrustedInstaller', 'NT Service\\MSSQLSERVER'] as $principal) {
             $v = $this->guardOne('auth', 'w', [
                 ['path' => 'C:\\Data', 'ace_type' => 'deny', 'rights' => 'modify', 'applies_to' => 'folder_only', 'trustee' => $principal, 'ensure' => 'present'],
@@ -441,8 +441,9 @@ class CapabilityFsAclProviderTest extends TestCase
     #[Test]
     public function guard_refuses_a_short_name_8_3_path(): void
     {
-        // Corr. review #3 : `C:\PROGRA~1` désigne C:\Program Files sans matcher
-        // aucune racine protégée littéralement → contournement de Q2, refusé.
+        // `C:\PROGRA~1` désigne C:\Program Files sans matcher littéralement
+        // aucune racine protégée : le nom court 8.3 contournerait la protection
+        // des racines système, il est donc refusé.
         $v = $this->guardOne('short', 'w', [
             ['path' => 'C:\\PROGRA~1', 'ace_type' => 'deny', 'rights' => 'list_folder', 'applies_to' => 'folder_only', 'trustee' => '@eleves', 'ensure' => 'present'],
         ]);
@@ -459,7 +460,7 @@ class CapabilityFsAclProviderTest extends TestCase
         self::assertSame([], $v);
     }
 
-    // ── Piège #10 : override UserGroup sans effet (compile machine-only) ───
+    // Override UserGroup sans effet : la compilation est machine-only
 
     #[Test]
     public function user_group_override_never_reaches_an_fs_acl_item(): void

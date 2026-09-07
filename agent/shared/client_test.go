@@ -60,7 +60,7 @@ func TestClientSendsContractHeaders(t *testing.T) {
 	if seen.Bearer != tokenA {
 		t.Errorf("Authorization : got %q", seen.Bearer)
 	}
-	// Anti-clonage 23.2 : hostname COURT sur chaque appel.
+	// Anti-clonage : hostname COURT sur chaque appel.
 	if seen.Hostname != "SALLE101-PC03" {
 		t.Errorf("X-Agent-Hostname : got %q", seen.Hostname)
 	}
@@ -93,7 +93,7 @@ func TestClientRotationOnGet200(t *testing.T) {
 }
 
 func TestClientRotationOn304AndOnPostNon200(t *testing.T) {
-	// Invariant D5 : X-Agent-New-Token lu sur TOUTE réponse — 304 du GET et
+	// X-Agent-New-Token est lu sur TOUTE réponse — 304 du GET et
 	// même un 422 du POST.
 	cases := []struct {
 		name string
@@ -204,7 +204,7 @@ func TestClientGracePurgedOnceNewTokenAccepted(t *testing.T) {
 }
 
 func TestClientTwoActorDiskReread(t *testing.T) {
-	// Durcissement deux-acteurs (24.3) : un AUTRE acteur SYSTEM a rotaté le
+	// Durcissement deux-acteurs : un AUTRE acteur SYSTEM a rotaté le
 	// token sur disque pendant que cet appel était en vol → relecture disque
 	// + réessai UNIQUE.
 	var bearers []string

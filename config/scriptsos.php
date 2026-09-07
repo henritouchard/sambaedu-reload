@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 /**
- * Story 16.12 — D10 / AC7.3.
+ * D10 /.
  *
  * Configuration du domaine `App\ScriptsOs` :
  *  - rétention archive

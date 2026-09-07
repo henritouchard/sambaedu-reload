@@ -10,8 +10,6 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * Story 3.6 — D9 / AC1.2.
- *
  * Modèle Eloquent d'une tentative de téléchargement d'ISO Windows depuis
  * la page admin SE5 `/admin/ipxe/iso-windows`.
  *
@@ -19,7 +17,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * `Workstation`, etc. — l'app range les modèles de domaine ici plutôt que
  * sous le sous-namespace métier `App\Ipxe\Iso\*`). En revanche, l'enum
  * `WindowsIsoDownloadStatus` et le Job `DownloadWindowsIsoJob` vivent
- * sous `App\Ipxe\Iso\*` (frontière D1).
+ * sous `App\Ipxe\Iso\*`.
  *
  * @property int $id
  * @property string $version            'Win10' | 'Win11'
@@ -31,10 +29,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property \Illuminate\Support\Carbon|null $completed_at
  * @property int|null $exit_code
  * @property string|null $error
- * @property int|null $initiated_by_user_id  FK users — Q2 Henri 2026-05-21 :
- *                                        nullable + nullOnDelete (préserve
- *                                        l'audit trail si admin supprimé).
- * @property string|null $host_ip         IPv4/IPv6 — Opus-D : validé via
+ * @property int|null $initiated_by_user_id  FK users, nullable + nullOnDelete
+ *                                        (préserve l'audit si l'admin est
+ *                                        supprimé).
+ * @property string|null $host_ip         IPv4/IPv6, validé via
  *                                        FILTER_VALIDATE_IP côté orchestrator.
  * @property \Illuminate\Support\Carbon $created_at
  * @property \Illuminate\Support\Carbon $updated_at
@@ -68,8 +66,8 @@ class WindowsIsoDownload extends Model
     ];
 
     /**
-     * Whitelist applicative des versions supportées (D9 — pas de CHECK DB
-     * pour portabilité SQLite/Postgres).
+     * Whitelist applicative des versions supportées : pas de CHECK DB, pour
+     * rester portable SQLite/Postgres.
      *
      * @var list<string>
      */
@@ -82,7 +80,7 @@ class WindowsIsoDownload extends Model
     public const SOURCE_UPLOAD = 'upload';
 
     /**
-     * Origine de l'ISO : ré-extraction d'une ISO déjà déployée (Story 3.10) —
+     * Origine de l'ISO : ré-extraction d'une ISO déjà déployée
      * déclenchée par le bouton « Réappliquer les pilotes » pour ré-injecter le
      * pack de pilotes NIC dans un `boot.wim` frais. L'ISO source est déjà sur
      * disque (conservée depuis le premier déploiement) → phase curl sautée.

@@ -9,7 +9,7 @@ use App\Enums\FileBackendName;
 use App\Exceptions\Filesystem\FileLocationException;
 
 /**
- * Story 63.1 — OÙ VIT L'ESPACE PERSO, OÙ VIT L'ESPACE PARTAGÉ, ET C'EST TOUT.
+ * OÙ VIT L'ESPACE PERSO, OÙ VIT L'ESPACE PARTAGÉ, ET C'EST TOUT.
  *
  * Objet de valeur PUR (aucune I/O, aucune application démarrée pour le
  * tester) qui porte les trois réglages du cadrage §4 : l'autorité de l'espace
@@ -19,8 +19,8 @@ use App\Exceptions\Filesystem\FileLocationException;
  * {@see self::make()} est l'UNIQUE porte d'entrée, et elle rejoue à chaque
  * appel les trois refus ci-dessous. Il n'existe ni setter, ni
  * `withEspacePerso()`, ni constructeur public qui accepterait un tableau brut
- * — un dev qui en ajouterait un rouvrirait exactement le trou que cette
- * story ferme (garde-fou §8 du cadrage : l'état « autorité incohérente »
+ * — un dev qui en ajouterait un rouvrirait exactement le trou que cette classe
+ * ferme : l'état « autorité incohérente »
  * doit être IRREPRÉSENTABLE, pas seulement interdit par un `if` qu'on peut
  * oublier d'appeler).
  *
@@ -108,7 +108,7 @@ final readonly class FileLocations
 
     /**
      * L'espace perso est-il servi par le serveur de fichiers (SMB) ? C'est la
-     * couture que 63.2 consommera pour décider d'émettre un lecteur réseau —
+     * couture que consommera pour décider d'émettre un lecteur réseau
      * aucune lettre, aucun chemin réseau, aucun chemin n'apparaît ici,
      * seulement ce booléen dérivé.
      */

@@ -7,7 +7,7 @@ namespace Tests\Feature\Nextcloud;
 use App\Services\Filesystem\XfsQuotaService;
 
 /**
- * Correction de revue 61.3 #1 — UN ANNUAIRE SUBSTITUABLE, ET UN COMPTEUR D'APPELS.
+ * UN ANNUAIRE SUBSTITUABLE, ET UN COMPTEUR D'APPELS.
  *
  * Deux choses à prouver, et aucune ne se prouve sans cette couture :
  *

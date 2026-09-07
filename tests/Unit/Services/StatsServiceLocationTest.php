@@ -23,8 +23,6 @@ class StatsServiceLocationTest extends TestCase
         $this->statsService = new StatsService();
     }
 
-    // ===== TESTS DES MÉTHODES EXISTANTES RÉUTILISÉES =====
-
     /**
      * Test de getSystemStats() - Réutilisée dans getMetricsData()
      * 
@@ -177,8 +175,6 @@ class StatsServiceLocationTest extends TestCase
         $this->assertGreaterThanOrEqual(0, $cpuUsage);
         $this->assertLessThanOrEqual(100, $cpuUsage);
     }
-
-    // ===== TESTS DES NOUVELLES MÉTHODES DE LOCALISATION =====
 
     /**
      * Test de getStaticData() - Collecte 1x
@@ -428,8 +424,6 @@ class StatsServiceLocationTest extends TestCase
         }
     }
 
-    // ===== TESTS DE RÉGRESSION POUR PROTECTION =====
-
     /**
      * Test de régression : getStats() doit continuer à fonctionner
      * 
@@ -496,8 +490,6 @@ class StatsServiceLocationTest extends TestCase
             $healthData['services']['apache']
         );
     }
-
-    // ===== TESTS DE VALIDATION DES CONFIGURATIONS =====
 
     /**
      * Test de validation : Configuration par défaut

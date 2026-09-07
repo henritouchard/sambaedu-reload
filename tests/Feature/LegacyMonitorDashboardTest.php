@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 /**
- * Tests du Dashboard Legacy Monitor (/admin/legacy-monitor).
+ * Tests du Dashboard Legacy Monitor (admin/legacy-monitor).
  *
  * La table legacy_catchall_logs est créée en mémoire (SQLite) dans setUp().
  * Le middleware RequireAdminRights est bypassé via withoutMiddleware() pour les
@@ -26,7 +26,7 @@ class LegacyMonitorDashboardTest extends TestCase
         if (! Schema::hasTable('legacy_catchall_logs')) {
             Schema::create('legacy_catchall_logs', function (Blueprint $table) {
                 $table->id();
-                // Story 38.2 (migration 2026_07_10) — le dashboard groupe par
+                // Le dashboard groupe par
                 // `source` (tombstone|catchall) ; sans cette colonne la requête
                 // d'agrégation lève « no such column: source » → 500.
                 $table->string('source', 16)->default('catchall');
@@ -47,7 +47,7 @@ class LegacyMonitorDashboardTest extends TestCase
     }
 
     // Legacy Monitor est désormais l'onglet « Legacy Monitor » de la page
-    // /admin/settings/migration (décision Henri 2026-07-17). La feature est
+    // /admin/settings/migration. La feature est
     // embarquée : `/admin/legacy-monitor` redirige vers cet onglet et le contenu
     // se teste directement sur le composant Livewire embarqué.
 
@@ -63,7 +63,7 @@ class LegacyMonitorDashboardTest extends TestCase
     }
 
     /**
-     * AC4 — Utilisateur non-admin (pas de session) → redirigé ou 403
+     * Utilisateur non-admin (pas de session) → redirigé ou 403
      */
     public function test_non_admin_is_redirected_or_forbidden(): void
     {
@@ -74,7 +74,7 @@ class LegacyMonitorDashboardTest extends TestCase
     }
 
     /**
-     * AC1 — Le composant embarqué affiche les données de legacy_catchall_logs
+     * Le composant embarqué affiche les données de legacy_catchall_logs
      */
     public function test_page_displays_catchall_log_data(): void
     {
@@ -93,7 +93,7 @@ class LegacyMonitorDashboardTest extends TestCase
     }
 
     /**
-     * AC3 — Filtre par path : seules les lignes matchantes sont affichées
+     * Filtre par path : seules les lignes matchantes sont affichées
      */
     public function test_filter_by_path_returns_matching_rows_only(): void
     {
@@ -116,7 +116,7 @@ class LegacyMonitorDashboardTest extends TestCase
     }
 
     /**
-     * AC3 — Filtre par méthode HTTP : seules les lignes de la méthode sélectionnée
+     * Filtre par méthode HTTP : seules les lignes de la méthode sélectionnée
      */
     public function test_filter_by_method_returns_matching_rows_only(): void
     {

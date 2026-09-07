@@ -18,7 +18,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 63.3 AC4 — CE QU'ON PEUT DÉSIGNER COMME EMPLACEMENT, ET LE MOTIF QUAND
+ * CE QU'ON PEUT DÉSIGNER COMME EMPLACEMENT, ET LE MOTIF QUAND
  * ON NE PEUT PAS.
  *
  * Deux propriétés se jouent ici, et la seconde est le vrai apport :
@@ -83,10 +83,6 @@ class FileLocationOptionsTest extends TestCase
         }
     }
 
-    // =====================================================================
-    // Le serveur de fichiers, et l'aperçu
-    // =====================================================================
-
     #[Test]
     public function the_file_server_is_always_available(): void
     {
@@ -110,10 +106,6 @@ class FileLocationOptionsTest extends TestCase
         );
     }
 
-    // =====================================================================
-    // Aucun cloud actif
-    // =====================================================================
-
     #[Test]
     public function without_an_active_cloud_no_cloud_authority_is_available_and_the_reason_is_named(): void
     {
@@ -133,10 +125,6 @@ class FileLocationOptionsTest extends TestCase
             FileLocationOptions::REFUSAL_NO_ACTIVE_CLOUD,
         );
     }
-
-    // =====================================================================
-    // LA SYMÉTRIE — les deux produits, les mêmes deux causes
-    // =====================================================================
 
     #[Test]
     public function an_active_cloud_with_a_complete_connection_is_available(): void
@@ -230,10 +218,6 @@ class FileLocationOptionsTest extends TestCase
 
         self::assertStringContainsString('Le cloud actif de l\'instance est « Nextcloud »', $refusal);
     }
-
-    // =====================================================================
-    // La garde REJOUÉE côté service
-    // =====================================================================
 
     #[Test]
     public function the_service_refuses_a_forged_choice_the_screen_never_offered(): void

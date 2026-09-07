@@ -7,19 +7,19 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 32.1 (NFR5) — Audit append-only de la transition de lien amont
+ * Audit append-only de la transition de lien amont
  * `active → severed` (rupture du lien de management controlHub).
  *
- * La rupture du lien (FR7) lève AUTOMATIQUEMENT tous les verrous et le bornage
+ * La rupture du lien lève AUTOMATIQUEMENT tous les verrous et le bornage
  * catalogue (via `ControlHubContract::active()` → null une fois `link_state =
  * severed`). Cette table consigne CHAQUE transition `active → severed`, son
  * origine (commande artisan / endpoint controlHub authentifié) et un
  * récapitulatif (nombre d'items levés, apps conservées, valeurs matérialisées).
  * Une seule ligne par transition ; un re-signal sur un contrat déjà `severed`
- * n'écrit RIEN (idempotence — AC1/AC6).
+ * N'écrit RIEN (idempotence —).
  *
  * Patron MAISON append-only (calque {@see \App\Models\CapabilityOverrideAuditLog}
- * 29.5 / `quota_audit_logs` / `delegation_history` ; Spatie activitylog ABSENT du
+ * `quota_audit_logs` / `delegation_history` ; Spatie activitylog ABSENT du
  * projet) :
  *  - un seul `created_at` (`useCurrent()`), PAS d'`updated_at` ;
  *  - FK `controlhub_contract_id` en `nullOnDelete` (la trace survit à la
@@ -29,8 +29,8 @@ use Illuminate\Support\Facades\Schema;
  *
  * Migration ADDITIVE (jamais réécrite en review) — garde-fou projet.
  *
- * ⚠️ GARDE-FOU R3 : aucun mot « central ». Vocabulaire « amont » / `Upstream` /
- * `ControlHub*`. [Source: prd-contrat-manage-se5.md#R3]
+ * ⚠️ GARDE-FOU : aucun mot « central ». Vocabulaire « amont » / `Upstream` /
+ * `ControlHub*`.
  */
 return new class extends Migration
 {

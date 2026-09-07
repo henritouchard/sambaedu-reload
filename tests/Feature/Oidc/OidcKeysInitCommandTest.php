@@ -9,14 +9,14 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 55.1 — **AC2** (prérequis) : `php artisan oidc:keys:init`.
+ * (prérequis) : `php artisan oidc:keys:init`.
  *
  * **Doctrine ops du projet** : une opération multi-instance est une commande
  * artisan IDEMPOTENTE, jamais une procédure manuelle à rejouer. `update.sh`
  * doit pouvoir la lancer à chaque déploiement de chaque instance sans jamais
  * détruire la clé en service — c'est précisément ce que ce fichier verrouille.
  *
- * ⚠️ Seul test de la story à générer une VRAIE paire RSA (les autres réutilisent
+ * ⚠️ Seul test à générer une VRAIE paire RSA (les autres réutilisent
  * les fixtures commitées) : c'est son objet, et c'est ce qui coûte le plus cher
  * en temps d'exécution.
  */

@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 /**
- * Story 16.10 — AC2.3 / D10.
+ * D10.
  *
  * Orchestre la rotation refresh + détection replay sur l'endpoint
  * `POST /api/v1/agent/refresh`.
@@ -52,7 +52,7 @@ use Illuminate\Support\Str;
  *    en parallèle (1 refresh ↔ N access). On documente cette limitation
  *    dans Dev Notes. L'attaquant pourrait conserver un access valide
  *    jusqu'à expiration (≤24h). En pratique le poste légitime va
- *    re-bootstrap (16.11) — un nouveau workstation_uuid si reset, ou
+ *  re-bootstrap — un nouveau workstation_uuid si reset, ou
  *    l'attaquant doit re-voler le bootstrap token.
  *
  * **Toutes les opérations DB en transaction** pour éviter qu'un crash

@@ -6,7 +6,7 @@ use Livewire\Attributes\Url;
 use Livewire\Component;
 
 /**
- * Story 27.17 — /admin/settings/parc-defaults : surface d'édition CONSOLIDÉE de
+ * Admin/settings/parc-defaults : surface d'édition CONSOLIDÉE de
  * la couche `Broadcast` (« configuration par défaut du parc »).
  *
  * Cette page regroupe, en un seul endroit à onglets, l'édition des DÉFAUTS
@@ -15,17 +15,17 @@ use Livewire\Component;
  *
  *   - Wallpaper / Lockscreen  → `wallpapers` (owner_id NULL, is_default)
  *   - Registre / capacités    → `capabilities.default_value` (défaut diffusé)
- *   - Apps défaut parc        → `applications.is_parc_default` (net-new 27.17)
+ *  - Apps défaut parc → `applications.is_parc_default` (net-new)
  *   - Outils agent            → `agent_tools` (CANAL SÉPARÉ — manifest, hors state)
  *
  * Le mécanisme de précédence (`StateCompiler::specificity()`) et les providers
  * restent INCHANGÉS : la page réutilise les services écrivains existants. Elle
  * ne crée aucune nouvelle maille ni groupe `_TousLesPostes`.
  *
- * L'onglet « Overlay » est ajouté par la story 27.18 (hors scope 27.17).
+ * L'onglet « Overlay » est ajouté par la (hors scope).
  *
  * Sécurité : middleware `can:server.admin` sur la route + double guard mount()
- * (décision Henri : tout en `server.admin` sur cette page de défauts ; les
+ * (tout est gardé par `server.admin` sur cette page de défauts ; les
  * actions mutantes des partials re-gardent `Gate::authorize('server.admin')`).
  */
 new #[Title('Configuration par défaut du parc')] class extends Component {
@@ -72,7 +72,7 @@ new #[Title('Configuration par défaut du parc')] class extends Component {
 
     <div class="flex flex-col gap-6 pt-4">
 
-        {{-- Breadcrumb de retour GPO (Story 16.3a) — rendu uniquement si la page
+        {{-- Breadcrumb de retour GPO — rendu uniquement si la page
              a été atteinte depuis un lien profond `?from_gpo=<GUID>`. Le composant
              lit lui-même la query string (avec fallback Referer pour les updates
              Livewire). --}}

@@ -16,12 +16,12 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 56.4 — le service de révocation, éprouvé EN ISOLATION.
+ * Le service de révocation, éprouvé EN ISOLATION.
  *
  * La page Livewire ({@see \Tests\Feature\Livewire\Admin\ExtensionScopesPageTest})
  * couvre le parcours ; ce fichier-ci couvre les états que l'UI ne sait pas
  * produire — extension inconnue, extension sans client — et la classification
- * des refus. C'est là que se vérifie la règle de review 56.1 #1 : une garantie
+ * des refus. C'est là que se vérifie la règle : une garantie
  * qui n'existe que dans la vue n'est pas une garantie.
  */
 class ExtensionScopeServiceTest extends TestCase
@@ -58,7 +58,7 @@ class ExtensionScopeServiceTest extends TestCase
         return $extension;
     }
 
-    // ── Lecture ───────────────────────────────────────────────────────────
+    // Lecture
 
     #[Test]
     public function granted_scopes_are_null_when_the_extension_has_no_active_client(): void
@@ -81,7 +81,7 @@ class ExtensionScopeServiceTest extends TestCase
         self::assertSame(['groups', 'profile'], $this->service()->grantedScopesFor($extension));
     }
 
-    // ── Révocation ────────────────────────────────────────────────────────
+    // Révocation
 
     #[Test]
     public function revoking_a_granted_scope_changes_the_state_and_traces_it(): void
@@ -164,14 +164,14 @@ class ExtensionScopeServiceTest extends TestCase
     /**
      * Atomicité acte ↔ trace : si l'audit ne peut pas s'écrire, la révocation
      * est annulée. Une révocation sans trace serait pire qu'une révocation
-     * refusée — FR36 veut savoir qui a retiré quoi.
+     * refusée : on doit pouvoir savoir qui a retiré quoi.
      */
     #[Test]
     public function a_failing_audit_rolls_the_revocation_back(): void
     {
         $extension = $this->appWithClient(['profile', 'groups']);
 
-        // Patron 54.2 : la table d'audit disparaît sous les pieds du service.
+        // Patron : la table d'audit disparaît sous les pieds du service.
         \Illuminate\Support\Facades\Schema::drop('extension_audit_logs');
 
         try {

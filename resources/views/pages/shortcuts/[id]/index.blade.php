@@ -172,10 +172,10 @@ new #[Title('Détail du raccourci - Instance SE4FS')] class extends Component {
                         'windows_icon' => $iconPath,
                         'icon_path' => $iconPath,
                     ]);
-                    // Story 27.7 : content-adresser l'icône uploadée (`<name>.ico` →
+                    // Content-adresser l'icône uploadée (`<name>.ico` →
                     // `<sha>.ico` servi par Apache) + persister `icon_asset`/`icon_checksum`.
                     // Sans cet appel, l'agent n'a aucun asset à télécharger → icône
-                    // « feuille blanche » et colonnes nulles (gap 27.7 / handleIconUpload seul).
+                    // « feuille blanche » et colonnes nulles (gap / handleIconUpload seul).
                     $shortcutsService->persistIconAsset($this->name);
                 }
             }
@@ -287,7 +287,7 @@ new #[Title('Détail du raccourci - Instance SE4FS')] class extends Component {
             return;
         }
 
-        // Story 27.8 : le mécanisme strict/default est SUPPRIMÉ — l'assignation
+        // Le mécanisme strict/default est SUPPRIMÉ — l'assignation
         // ne pose plus de `mode` sur le pivot (STRICT inconditionnel, la cible
         // fait toujours loi).
         try {

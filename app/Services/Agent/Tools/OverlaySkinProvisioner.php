@@ -7,26 +7,25 @@ namespace App\Services\Agent\Tools;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 25.6 — Provisioning + résolution de la skin d'overlay Rainmeter servie
- * (volet A, D1, D7).
+ * Provisioning + résolution de la skin d'overlay Rainmeter servie.
  *
  * La skin CANONIQUE (autorité) est versionnée sous
  * `resources/overlay/rainmeter/SambaEduOverlay/SambaEduOverlay.ini` (UTF-8).
  * Elle est PROVISIONNÉE (copie idempotente) vers `config('agent.overlay_skin_path')`
  * (convention storage NON versionné) d'où elle est SERVIE par la route agent
- * authentifiée. L'embed `go:embed` de 27.1bis est RETIRÉ : le serving est la
- * source unique (D1) ; l'agent télécharge la skin (vérif SHA-256) puis la
- * convertit UTF-16 LE + BOM à la pose (logique 27.1bis inchangée côté agent).
+ * authentifiée. L'embed `go:embed` est RETIRÉ : le serving est la
+ * source unique ; l'agent télécharge la skin (vérif SHA-256) puis la
+ * convertit UTF-16 LE + BOM à la pose (logique inchangée côté agent).
  *
  * Idempotent : la copie n'a lieu que si la cible diverge de la canonique
  * (comparaison de hash). Le serving lit ENSUITE le fichier provisionné — c'est
  * lui qui fait foi du SHA-256 exposé au manifest (un drift entre canonique et
  * servie est ainsi corrigé au prochain serving). En production, le fichier doit
  * être lisible www-admin (uid 599) — sinon `hash_file()` → false → 404
- * silencieux (mémoire project_php_fpm_user_www_admin) ; la copie tente le
+ * silencieux ; la copie tente le
  * meilleur effort, l'alignement de droits reste une action ops.
  *
- * NFR7 : aucune dépendance AD/LDAP/APCu — lecture/copie de fichier, rien d'autre.
+ * Aucune dépendance AD/LDAP/APCu — lecture/copie de fichier, rien d'autre.
  */
 class OverlaySkinProvisioner
 {
@@ -65,7 +64,7 @@ class OverlaySkinProvisioner
 
     /**
      * SHA-256 hex de la skin effectivement servie (calculé serveur), ou null
-     * si introuvable/illisible. Exposé dans le manifest tool/skin (D6/D8).
+     * si introuvable/illisible. Exposé dans le manifest tool/skin.
      */
     public function servedChecksum(): ?string
     {

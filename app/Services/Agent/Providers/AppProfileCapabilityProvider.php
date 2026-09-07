@@ -19,7 +19,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 36.5 — provider `app_profile` : redirection du profil applicatif
+ * Provider `app_profile` : redirection du profil applicatif
  * (Firefox, Thunderbird…) vers le home réseau de l'utilisateur (contrat §7.11).
  * SIXIÈME mécanisme HORS-REGISTRE, mais le SEUL de portée **Session** (le
  * COMPAGNON applique — un profil applicatif est une donnée d'UTILISATEUR, pas de
@@ -29,45 +29,45 @@ use Illuminate\Support\Facades\Log;
  * ferait exploser le temps de logon s'il transitait par la copie du profil
  * itinérant).
  *
- * **Patron hybride Drives × capacité (AC2).** Comme {@see DrivesStateProvider} :
+ * **Patron hybride Drives × capacité.** Comme {@see DrivesStateProvider} :
  * scope `Session`, maille `User`, `itemsFor()` VIDE si `$ctx->user === null` (le
  * profil dépend du login). Comme {@see FsAclCapabilityProvider} : la donnée vit
  * dans le `spec` d'une {@see CapabilityProjection} (mécanisme `app_profile`) —
  * c'est le CATALOGUE des applications redirigeables (catalogue-first).
  *
- * **Story 36.7 — DÉCORRÉLATION du gate K: (AC3).** Le gate d'instance
- * `FilePolicyService::capabilities()['home']` de la 36.5 (AC7) est SUPPRIMÉ :
+ * **DÉCORRÉLATION du gate K:.** Le gate d'instance
+ * `FilePolicyService::capabilities['home']` est SUPPRIMÉ :
  * le lien symbolique pointe DIRECTEMENT l'UNC, Firefox le traverse avec les
  * credentials de session — la lettre K: est purement cosmétique. Couper K: (home
  * invisible dans l'Explorateur) ne doit PAS couper la redirection de profil (cas
  * d'usage explicite : profils suivis, home masqué). La politique fichiers reste
  * un gating CLIENT (ce que l'agent MONTE), jamais une ACL serveur — elle ne
- * gouverne plus ce mécanisme. AC7 de la 36.5 formellement amendé (contrat §7.11).
+ * gouverne plus ce mécanisme. formellement amendé (contrat §7.11).
  *
- * **Story 36.7 — SORTIE DU SOCLE : activation par groupe d'utilisateurs (AC4).**
- * La 36.5 ne consommait que `is_active` (tout-ou-rien à l'instance). Désormais le
+ * **SORTIE DU SOCLE : activation par groupe d'utilisateurs.**
+ * La ne consommait que `is_active` (tout-ou-rien à l'instance). Désormais le
  * provider résout les ASSIGNATIONS d'IDENTITÉ D'UTILISATEUR de la capacité (pivot
  * `capability_assignments`, mailles `User`/`UserGroup`) — {@see isEnabledForUser()}.
  * Les mailles poste/parc (`Workstation`/`WorkstationGroup`) sont volontairement
- * IGNORÉES : un profil applicatif SUIT l'utilisateur inter-postes (finalité de la
- * story amont) — le gater par machine le rendrait poste-dépendant. Défaut
+ * IGNORÉES : un profil applicatif SUIT l'utilisateur inter-postes — le gater par
+ * machine le rendrait poste-dépendant. Défaut
  * d'instance (aucune assignation) = `default_value` (aujourd'hui `on` —
- * comportement 36.5 préservé au déploiement).
+ * comportement préservé au déploiement).
  *
- * **Tokens, jamais de littéral résolu côté serveur (AC3).** Le `server` du
+ * **Tokens, jamais de littéral résolu côté serveur.** Le `server` du
  * catalogue est RELATIF au home (`.mozilla\firefox\managed.default`) ; le
  * provider émet le TOKEN `\\<se4fs>\users\<user>\<server>` — iso
  * {@see DrivesStateProvider} K:, jamais un chemin résolu. L'agent réutilise sa
  * fonction de substitution unique (`substituteTokens`).
  *
- * **Nom de profil `managed.default` (AC4).** NEUF, STABLE, NON versionné, HORS
+ * **Nom de profil `managed.default`.** NEUF, STABLE, NON versionné, HORS
  * radical `sambaedu` : jamais matché par la garde `referencesSambaeduProfile()`
- * du mécanisme `legacy_cleanup` (38.3) — les deux canaux coexistent sans se
+ * du mécanisme `legacy_cleanup` — les deux canaux coexistent sans se
  * battre à chaque logon. Le libellé exact vit dans le catalogue (`profile_name`).
  * La porte d'évolution passe par un marqueur `.se-profile-version` DANS le
  * profil (côté agent), jamais par un nom versionné (perte de signets silencieuse).
  *
- * Lecture Postgres PURE (NFR7, critère Keycloak) : capacités actives × leur
+ * Lecture Postgres PURE (critère Keycloak) : capacités actives × leur
  * projection `app_profile` windows. Zéro AD/LdapRecord.
  */
 final class AppProfileCapabilityProvider implements StateProvider
@@ -97,13 +97,13 @@ final class AppProfileCapabilityProvider implements StateProvider
     /**
      * Un item par application redirigeable du catalogue, maille User. VIDE si :
      *   - contexte machine-only (`$ctx->user === null`) — un profil dépend du
-     *     login de session (iso {@see DrivesStateProvider::itemsFor()}) ;
+     *  login de session (iso {@see DrivesStateProvider::itemsFor()}) ;
      *   - aucune capacité `app_profile` active ;
-     *   - la capacité n'est pas ACTIVÉE pour cet utilisateur (Story 36.7, AC4 —
-     *     assignations d'identité, {@see isEnabledForUser()}).
-     * Une entrée de catalogue `enabled: false` (Story 36.7, AC2) n'émet aucun item
-     * (« off réel » — jamais de suppression physique côté UI). Le gate K: de la
-     * 36.5 (AC7) est SUPPRIMÉ (Story 36.7, AC3 — décorrélation).
+     * - la capacité n'est pas ACTIVÉE pour cet utilisateur (
+     *  assignations d'identité, {@see isEnabledForUser()}).
+     * Une entrée de catalogue `enabled: false` n'émet aucun item
+     * (« off réel » — jamais de suppression physique côté UI). Le gate K: est
+     * SUPPRIMÉ (décorrélation).
      *
      * @return Collection<int, StateCandidate>
      */
@@ -147,18 +147,18 @@ final class AppProfileCapabilityProvider implements StateProvider
                 continue;
             }
 
-            // Sortie du socle (Story 36.7, AC4) : la capacité doit être ACTIVÉE
+            // Sortie du socle : la capacité doit être ACTIVÉE
             // pour CET utilisateur (assignations d'identité). Non activée ⇒ aucun
             // item de cette capacité (le profil local redevient le comportement —
-            // vanilla 38.3 ; rien à écrire, cf. AC5 « type absent = pas d'action »).
+            // Vanilla ; rien à écrire « type absent = pas d'action »).
             if (! $this->isEnabledForUser($capability, $ctx)) {
                 continue;
             }
 
             foreach ($this->apps($projection->spec) as $app) {
-                // « off réel » par entrée (Story 36.7, AC2) : une entrée désactivée
+                // « off réel » par entrée : une entrée désactivée
                 // dans le catalogue n'émet plus d'item (le lien/les ini déjà posés
-                // restent — pas de nettoyage, AC5).
+                // restent — pas de nettoyage).
                 if (($app['enabled'] ?? true) === false) {
                     continue;
                 }
@@ -211,7 +211,7 @@ final class AppProfileCapabilityProvider implements StateProvider
     }
 
     /**
-     * La capacité est-elle ACTIVÉE pour cet utilisateur ? (Story 36.7, AC4 —
+     * La capacité est-elle ACTIVÉE pour cet utilisateur ? (
      * sortie du socle). Résolution par les assignations d'IDENTITÉ D'UTILISATEUR
      * (pivot `capability_assignments`), mailles `User` puis `UserGroup` — jamais
      * `Workstation`/`WorkstationGroup` (un profil applicatif suit l'utilisateur
@@ -219,19 +219,19 @@ final class AppProfileCapabilityProvider implements StateProvider
      *
      * Précédence iso {@see \App\Services\Agent\StateCompiler::specificity()} :
      *   - une assignation `User` (rang 0, la plus spécifique) DÉCIDE seule si
-     *     présente — assignation individuelle hors UI 36.7 mais l'infra la porte ;
+     *  présente — assignation individuelle hors UI mais l'infra la porte ;
      *   - sinon les assignations `UserGroup` (rang 1) suivent la sémantique OR
-     *     (AC4 « un utilisateur couvert par AU MOINS UNE assignation on reçoit les
+     * ( « un utilisateur couvert par AU MOINS UNE assignation on reçoit les
      *     items ; couvert uniquement par du off ⇒ exclu ») ;
      *   - aucune assignation d'identité ⇒ DÉFAUT D'INSTANCE = `default_value`
-     *     (aujourd'hui `on` — comportement 36.5 préservé ; basculer à `off` inverse
-     *     la politique sans code, AC4).
+     *  (aujourd'hui `on` — comportement préservé ; basculer à `off` inverse
+     * la politique sans code).
      *
      * `value` du pivot nullable : une ligne à `value = null` vaut le défaut de la
      * capacité (iso {@see AbstractCapabilityStateProvider::itemsFor()}). Lecture
      * Postgres PURE, restreinte aux ids déjà résolus du {@see TargetContext}.
      *
-     * Story 36.7 (review #4) : UNE SEULE requête combinée (User ∪ UserGroup),
+     * UNE SEULE requête combinée (User ∪ UserGroup),
      * iso l'esprit de {@see AbstractCapabilityStateProvider::resolveOverrides()}
      * (qui n'est pas réutilisable ici — privé, et il agrège les mailles poste/parc
      * qu'`app_profile` doit IGNORER). La précédence est appliquée en PHP.
@@ -265,7 +265,7 @@ final class AppProfileCapabilityProvider implements StateProvider
         }
 
         // Maille UserGroup (rang 1) — sémantique OR : au moins une assignation
-        // effective `on` suffit ; couvert UNIQUEMENT par du off ⇒ exclu (AC4).
+        // effective `on` suffit ; couvert UNIQUEMENT par du off ⇒ exclu.
         $groupRows = $rows->where('assignable_type', UserGroup::class);
         if ($groupRows->isNotEmpty()) {
             foreach ($groupRows as $row) {
@@ -327,7 +327,7 @@ final class AppProfileCapabilityProvider implements StateProvider
             // `link` = chemin RELATIF au profil Windows (verbatim, l'agent le
             // résout contre %USERPROFILE%).
             'link' => $link,
-            // `server` = TOKEN `\\<se4fs>\users\<user>\<server-relatif>` (AC3) —
+            // `server` = TOKEN `\\<se4fs>\users\<user>\<server-relatif>`
             // jamais résolu ici. Backslash de jointure normalisé.
             'server' => self::HOME_TOKEN_PREFIX . ltrim($server, '\\'),
             'profile_name' => $profileName,

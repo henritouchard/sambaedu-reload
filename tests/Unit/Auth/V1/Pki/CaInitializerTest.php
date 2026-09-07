@@ -10,7 +10,6 @@ use RuntimeException;
 use Tests\TestCase;
 
 /**
- * Story 16.10 — AC7.1.
  *
  * Tests unit de `CaInitializer` (PKI locale).
  *

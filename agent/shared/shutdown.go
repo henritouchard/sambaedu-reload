@@ -14,7 +14,7 @@ import (
 // Le client est DÉDIÉ (timeout court imposé par le budget shutdown du SCM,
 // ~5 s par défaut) et distinct de a.Client : la boucle Run peut être en plein
 // cycle au moment du shutdown — on ne touche ni son token ni son timeout.
-// Une rotation D5 portée par la réponse est persistée normalement (écriture
+// Une rotation de token portée par la réponse est persistée normalement (écriture
 // disque atomique) ; une réponse de rotation perdue est déjà tolérée côté
 // serveur (grâce sur le token précédent, ré-émission au prochain usage).
 func (a *Agent) NotifyShutdown(timeout time.Duration) {

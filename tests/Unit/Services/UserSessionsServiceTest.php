@@ -13,7 +13,7 @@ use Tests\TestCase;
 /**
  * Tests unit UserSessionsService — parsing smbstatus + cache 30s.
  *
- * Story 4.7 — post-review fix #A.
+ * Post-review fix #A.
  */
 class UserSessionsServiceTest extends TestCase
 {

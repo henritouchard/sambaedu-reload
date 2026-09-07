@@ -5,15 +5,15 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 27.3 — Catalogue de réglages de registre (premier type `registry` SANS
- * table métier existante : D1 architecture L250-260 = table DÉDIÉE, JAMAIS une
- * table polymorphe générique de règles).
+ * Catalogue de réglages de registre (premier type `registry` SANS
+ * table métier existante) : table DÉDIÉE, JAMAIS une table polymorphe
+ * générique de règles.
  *
  * Chaque ligne est un réglage PRÉDÉTERMINÉ que l'admin d'établissement
  * active/configure par parc (pas d'édition de chemin de registre à la main en
  * v1). Le réglage SE COMPILE côté serveur ({@see RegistryStateProvider}) en un
  * item de contrat CONCRET `{hive, path, name, type, value}` — le `key`/`id` du
- * catalogue ne fuite JAMAIS au payload (invariant central de la story).
+ * catalogue ne fuite JAMAIS au payload, et c'est l'invariant central.
  *
  * Sérialisation de `value` (texte) : la cible est portée telle quelle. Pour les
  * types non-string, convention figée serveur (le provider produit la valeur
@@ -34,7 +34,7 @@ return new class extends Migration
         Schema::create('registry_settings', function (Blueprint $table) {
             $table->id();
             // Clé technique unique du réglage (snake/kebab) — identifiant de
-            // CATALOGUE, JAMAIS émis au payload (invariant central 27.3).
+            // CATALOGUE, JAMAIS émis au payload (invariant central).
             $table->string('key')->unique()->comment('Clé technique unique du réglage de catalogue (27.3) — jamais émise au payload contrat');
             $table->string('label')->comment('Libellé affichable UI (27.3)');
             $table->string('description')->nullable()->comment('Aide courte affichée dans l\'UI (27.3)');

@@ -14,7 +14,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 56.3 (AC3) — La détection de mise à jour : **UNE règle, UN endroit**.
+ * La détection de mise à jour : **UNE règle, UN endroit**.
  *
  * La règle vit dans `ExtensionCatalogService::toListRow()` (via une privée
  * `hasUpdateAvailable()`), et `toDetail()` = `toListRow()` + des champs de
@@ -46,7 +46,7 @@ class ExtensionUpdateDetectionTest extends TestCase
     }
 
     /**
-     * La matrice de l'AC3 : `type = app` ∧ `status = integrated` ∧
+     * La matrice : `type = app` ∧ `status = integrated` ∧
      * `installed_version ≠ ''` ∧ `version ≠ installed_version` ∧ source
      * proposante.
      *
@@ -71,7 +71,7 @@ class ExtensionUpdateDetectionTest extends TestCase
             'extension de type lien' => [['type' => 'link'] + $base, false],
             'source désactivée' => [['enabled' => false] + $base, false],
             'source en erreur de signature' => [['sync' => 'error'] + $base, false],
-            // NFR7 — un dépôt injoignable n'invalide pas le dernier catalogue
+            // Un dépôt injoignable n'invalide pas le dernier catalogue
             // VÉRIFIÉ : la mise à jour qu'il annonçait reste proposable.
             'source injoignable' => [['sync' => 'unreachable'] + $base, true],
             // Republication ANTÉRIEURE : un écart, donc un changement proposé.
@@ -188,7 +188,7 @@ class ExtensionUpdateDetectionTest extends TestCase
             'version' => (string) ($state['published'] ?? '2.0.0'),
         ]);
 
-        // `installed_version` est hors `$fillable` (doctrine 56.2) : on force la
+        // `installed_version` est hors `$fillable` (doctrine) : on force la
         // valeur vide du cas « intégrée sans version installée ».
         if (($state['integrated'] ?? true) && ($state['installed'] ?? '1.0.0') === '') {
             $extension->forceFill(['installed_version' => ''])->save();

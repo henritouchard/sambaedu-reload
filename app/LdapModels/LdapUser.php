@@ -8,7 +8,7 @@ use LdapRecord\Models\ActiveDirectory\User as BaseUser;
  * Modèle LdapRecord pour les utilisateurs SambaEdu
  * 
  * @internal Ne pas utiliser directement - Utiliser le type App\Types\User
- *           via la méthode toBusinessObject() ou un Repository
+ *  via la méthode toBusinessObject() ou un Repository
  * 
  * Ce modèle ne contient QUE la logique liée à LdapRecord/LDAP.
  * Toute la logique métier est dans App\Types\User
@@ -50,10 +50,6 @@ class LdapUser extends BaseUser
         'lastlogon',
     ];
 
-    // ============================================
-    // CONFIGURATION LDAPRECORD
-    // ============================================
-
     /**
      * Le DN de base pour ce type d'objet
      */
@@ -61,10 +57,6 @@ class LdapUser extends BaseUser
     {
         return \App\Config\LdapDnHelper::peopleDn();
     }
-
-    // ============================================
-    // MÉTHODES DE RECHERCHE LDAP
-    // ============================================
 
     /**
      * Recherche un utilisateur par son login (cn)
@@ -93,10 +85,6 @@ class LdapUser extends BaseUser
         return static::where('title', '=', $externalId)->first();
     }
 
-    // ============================================
-    // ACCESSEURS LDAP SIMPLES (pour usage interne avant conversion DTO)
-    // ============================================
-
     /**
      * Récupère le login (cn) - Utile avant conversion en DTO
      */
@@ -105,10 +93,6 @@ class LdapUser extends BaseUser
         $cn = $this->getAttribute('cn', '');
         return is_array($cn) ? ($cn[0] ?? '') : (string) $cn;
     }
-
-    // ============================================
-    // CONVERSION VERS DTO
-    // ============================================
 
     /**
      * Conversion vers DataObject métier
@@ -207,10 +191,6 @@ class LdapUser extends BaseUser
             isTrash: $this->checkIsInTrash(),
         );
     }
-
-    // ============================================
-    // MÉTHODES PRIVÉES POUR toBusinessObject()
-    // ============================================
 
     /**
      * Extraction de l'UAI depuis le DN

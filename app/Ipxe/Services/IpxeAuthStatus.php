@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Ipxe\Services;
 
 /**
- * Story 4.10 — Issue d'une décision d'autorisation iPXE.
+ * Issue d'une décision d'autorisation iPXE.
  */
 enum IpxeAuthStatus: string
 {

@@ -18,7 +18,7 @@ use Tests\TestCase;
 use Tests\Support\IpxeAuthTestHelper;
 
 /**
- * Story 3.1 — AC7.3 / T4.3.
+ * T4.3.
  *
  * Tests dédiés au logging : vérifie que les events `ipxe.boot.*` émis par
  * `IpxeService` **ne contiennent jamais de MAC/UUID en clair** — seulement
@@ -112,7 +112,7 @@ class IpxeServiceLoggingTest extends TestCase
         $log = $this->findLog('ipxe.boot.known_workstation');
         self::assertNotNull($log, 'Aucun log ipxe.boot.known_workstation émis');
 
-        // ── Vérifications de troncature ─────────────────────────────────
+        // Vérifications de troncature
         // mac_prefix doit faire au plus 6 chars (xx:xx:).
         self::assertArrayHasKey('mac_prefix', $log['context']);
         self::assertLessThanOrEqual(6, strlen((string) $log['context']['mac_prefix']));
@@ -125,7 +125,7 @@ class IpxeServiceLoggingTest extends TestCase
         self::assertArrayHasKey('product_prefix', $log['context']);
         self::assertLessThanOrEqual(8, strlen((string) $log['context']['product_prefix']));
 
-        // ── Vérifications anti-fuite ─────────────────────────────────────
+        // Vérifications anti-fuite
         // La MAC complète NE DOIT JAMAIS apparaître en clair dans le context
         // (toutes valeurs concaténées).
         $allValues = json_encode($log['context'], JSON_UNESCAPED_SLASHES);
@@ -169,7 +169,7 @@ class IpxeServiceLoggingTest extends TestCase
     }
 
     /* ------------------------------------------------------------------
-     * Story 3.2 — AC7.1 / T4.7 — events admin / maintenance / action
+     * T4.7 — events admin / maintenance / action
      * ------------------------------------------------------------------ */
 
     #[Test]
@@ -254,15 +254,11 @@ class IpxeServiceLoggingTest extends TestCase
         self::assertStringNotContainsString("\xc3\xa9", (string) $log['context']['action_requested']);
     }
 
-    /* ------------------------------------------------------------------
-     * Story 3.2 — Correctif review #3 / Q1 Henri (warning factory_reset)
-     * ------------------------------------------------------------------ */
-
     #[Test]
     public function it_logs_warning_when_factory_reset_dispatched(): void
     {
-        // Fix review #3 / Q1 Henri — l'action `factory_reset` écrase sda1
-        // sans confirmation. Un event warning dédié facilite l'alerte SIEM.
+        // L'action `factory_reset` écrase sda1 sans confirmation : un événement
+        // de niveau warning dédié permet de l'alerter côté SIEM.
         $service = $this->app->make(IpxeService::class);
         $request = Request::create('/ipxe/action/factory_reset', 'POST', [
             'mac' => 'aa:bb:cc:dd:ee:fa',
@@ -276,7 +272,7 @@ class IpxeServiceLoggingTest extends TestCase
             $log,
             'Aucun log warning ipxe.action.factory_reset_dispatched émis lors du factory_reset',
         );
-        // Préfixes PII tronqués (6 chars MAC, 8 chars UUID iso AC7.3).
+        // Préfixes PII tronqués (6 chars MAC, 8 chars UUID iso).
         self::assertLessThanOrEqual(6, strlen((string) $log['context']['mac_prefix']));
         self::assertLessThanOrEqual(8, strlen((string) $log['context']['uuid_prefix']));
         self::assertSame('192.168.1.42', $log['context']['ip']);

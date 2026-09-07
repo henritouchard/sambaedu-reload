@@ -14,17 +14,17 @@ use Tests\Support\FakeCommandRunner;
 use Tests\TestCase;
 
 /**
- * Story 6.1 — Tests Unit du Service CupsPrinterService.
+ * Tests Unit du Service CupsPrinterService.
  *
  * Couvre :
- *   - Validation regex name/uri (defense in depth, AC8).
- *   - parse_url() post-regex pour les URI structurellement invalides (fix #3).
- *   - Parsing `lpstat -s` + `lpstat -l -p` + `lpinfo -m` + `lpstat -o` (batch, fix #2).
- *   - `isHealthy()` via `lpstat -r` (fix #12).
- *   - `listPrinters()` lève `CupsDaemonDownException` si CUPS down (fix #12).
+ * - Validation regex name/uri (defense in depth).
+ *  - parse_url() post-regex pour les URI structurellement invalides.
+ *   - Parsing `lpstat -s` + `lpstat -l -p` + `lpinfo -m` + `lpstat -o` (batch).
+ *  - `isHealthy()` via `lpstat -r`.
+ *  - `listPrinters()` lève `CupsDaemonDownException` si CUPS down.
  *   - Exec sécurisé (escapeshellarg vérifié dans la commande exécutée).
  *   - CupsCommandException structurée sur returnCode != 0.
- *   - Reload Samba retourne bool (fix #15).
+ *   - Reload Samba retourne bool.
  *
  * Pas de DB / Eloquent ici — c'est du shellout pur.
  */
@@ -44,10 +44,6 @@ class CupsPrinterServiceTest extends TestCase
     {
         return base_path('tests/fixtures/cups/' . $name);
     }
-
-    // ========================================================================
-    // VALIDATION
-    // ========================================================================
 
     #[Test]
     public function it_accepts_valid_printer_names(): void
@@ -108,7 +104,7 @@ class CupsPrinterServiceTest extends TestCase
             'newline' => ["socket://1.2.3.4\nrm"],
             'pipe' => ['socket://1.2.3.4|wc'],
             'quote' => ["socket://1.2.3.4'rm"],
-            // Fix #3 : variantes socket:// sans hôte (structurellement invalides après parse_url).
+            // Variantes socket:// sans hôte (structurellement invalides après parse_url).
             'socket_no_host' => ['socket:///etc/passwd'],
             'socket_empty_host' => ['socket://'],
         ];
@@ -125,10 +121,6 @@ class CupsPrinterServiceTest extends TestCase
         $this->expectNotToPerformAssertions();
     }
 
-    // ========================================================================
-    // SANTÉ CUPS
-    // ========================================================================
-
     #[Test]
     public function is_healthy_returns_true_when_lpstat_r_succeeds(): void
     {
@@ -142,10 +134,6 @@ class CupsPrinterServiceTest extends TestCase
         $this->runner->whenContains('lpstat -r', '', 1, 'Connection refused');
         $this->assertFalse($this->service->isHealthy());
     }
-
-    // ========================================================================
-    // LISTING
-    // ========================================================================
 
     #[Test]
     public function it_parses_lpstat_outputs_into_typed_array(): void
@@ -209,10 +197,6 @@ class CupsPrinterServiceTest extends TestCase
         $this->assertArrayHasKey('model', $drivers[0]);
     }
 
-    // ========================================================================
-    // ADD / UPDATE / DELETE
-    // ========================================================================
-
     #[Test]
     public function it_executes_lpadmin_with_escaped_arguments_on_add(): void
     {
@@ -230,7 +214,7 @@ class CupsPrinterServiceTest extends TestCase
         $this->assertStringContainsString('-L ', $lpadmin);
         $this->assertStringContainsString(' -E ', $lpadmin);
 
-        // Fix #15 : addPrinter retourne bool (résultat reload Samba).
+        // addPrinter retourne bool (résultat du reload Samba).
         $this->assertTrue($sambaOk);
         $this->assertContains('sudo /usr/bin/smbcontrol smbd reload-printers', $cmds);
     }

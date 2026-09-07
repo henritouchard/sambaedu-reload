@@ -18,39 +18,36 @@ use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
- * Story 3.5 — AC5.6 / D2.
- * Story 3.8 — D4 / AC6.1-6.8 — extension dispatcher state machine 8 cases.
- *
  * Controller du endpoint `GET|POST /ipxe/windows/action` (port natif COMPLET
  * `sambaedu/ipxe/Win10/action.php` — 8 cases enum désormais : `winpe`, `oobe`
- * (3.5) + `sysprep`, `nosysprep`, `join`, `renomme`, `post`, `wpkg` (3.8)).
+ *  + `sysprep`, `nosysprep`, `join`, `renomme`, `post`, `wpkg`).
  *
  * **Parité legacy** (`install.bat.php` + `unattend.xml:112`) :
  *   curl -F 'etape=winpe'   -F 'name=PC-101' -F 'ret=0' http://se4fs/ipxe/windows/action
  *   curl -F 'etape=oobe'    -F 'name=%computername%' -o action.cmd http://se4fs/ipxe/windows/action
- *   curl -F 'etape=sysprep' -F 'name=PC-101' http://se4fs/ipxe/windows/action  (3.8)
- *   curl -F 'etape=join'    -F 'name=PC-101' -F 'ret=0' http://se4fs/ipxe/windows/action  (3.8)
+ *  curl -F 'etape=sysprep' -F 'name=PC-101' http://se4fs/ipxe/windows/action
+ *  curl -F 'etape=join' -F 'name=PC-101' -F 'ret=0' http://se4fs/ipxe/windows/action
  *   ...
  *
- * **Flow 3.8** :
+ * **Flow** :
  *  1. Reçoit (name, uuid, etape, ret, role, ou) via multipart form-data.
  *  2. Résout la Workstation par UUID via {@see WorkstationLocator}. Si null
- *     → 200 + body vide + log warning (D4).
+ *     → 200 + body vide + log warning.
  *  3. Parse `etape` via {@see WindowsInstallStep::fromString()}. Si null →
  *     200 + log warning `ipxe.windows.action.unsupported_step`.
  *  4. Check toggle config `ipxe.windows.post_install.enabled` + flag par étape
- *     (D13). Si désactivé → 200 + log warning + body vide.
+ *     Si désactivé → 200 + log warning + body vide.
  *  5. Dispatcher :
- *     - `winpe` + `ret='0'` → `tracker->recordWinpeStart()` (inchangé 3.5).
- *     - `oobe`  + `ret='0'` → `tracker->recordOobeComplete()` (inchangé 3.5).
+ *  - `winpe` + `ret='0'` → `tracker->recordWinpeStart()` (inchangé).
+ *  - `oobe` + `ret='0'` → `tracker->recordOobeComplete()` (inchangé).
  *     - `sysprep|nosysprep|join|renomme|post|wpkg` × (ret=-1|0|1|2) → dispatch
- *       vers `handle<Step>()` qui retourne `array{body: string}`.
- *  6. Response 200 + body cmd batch (text/plain) + headers D10 (Cache-Control,
+ *  vers `handle<Step>` qui retourne `array{body: string}`.
+ *  6. Response 200 + body cmd batch (text/plain) + headers (Cache-Control,
  *     X-Robots-Tag).
  *
  * **Sécurité** :
  *  - Catch {@see BatPlaceholderInjectionException} → 200 + log warning
- *    `placeholder_injection_attempt` + body vide (AC6.7).
+ * `placeholder_injection_attempt` + body vide.
  *  - Toutes les exceptions builder/tracker autres → 200 + log warning + body
  *    vide (best-effort — un poste Windows ne doit jamais recevoir 5xx).
  *
@@ -77,7 +74,7 @@ class IpxeWindowsActionController extends Controller
         $ou = (string) $request->input('ou', '');
         $ip = (string) ($request->ip() ?? '');
 
-        // 1. Résolution Workstation (priorité UUID, fallback MAC iso 3.4 D4).
+        // 1. Résolution Workstation (priorité UUID, fallback MAC).
         $workstation = $this->locator->locate($mac, $uuid, '');
         if ($workstation === null) {
             $this->tracker->recordUnknown($uuid, $name, $ip);
@@ -85,7 +82,7 @@ class IpxeWindowsActionController extends Controller
             return $this->respondPlainEmpty();
         }
 
-        // 2. Parse étape via enum whitelist (D5 — defense in depth).
+        // 2. Parse étape via enum whitelist (defense in depth).
         $step = WindowsInstallStep::fromString($rawEtape);
         if ($step === null) {
             Log::channel($this->channel())->warning('ipxe.windows.action.unsupported_step', [
@@ -99,7 +96,7 @@ class IpxeWindowsActionController extends Controller
             return $this->respondPlainEmpty();
         }
 
-        // 3. Story 3.8 D13 — Check toggle config global + flag par étape.
+        // 3. Check toggle config global + flag par étape.
         if (! $this->isStepEnabled($step)) {
             Log::channel($this->channel())->warning('ipxe.windows.action.step_disabled', [
                 'action_type' => 'ipxe.windows.action.step_disabled',
@@ -127,7 +124,7 @@ class IpxeWindowsActionController extends Controller
                 WindowsInstallStep::Wpkg => $this->handleWpkg($workstation, $ret, $ip),
             };
         } catch (BatPlaceholderInjectionException $e) {
-            // AC6.7 — body vide + log warning + 200 (ne pas crash).
+            // Body vide + log warning + 200 (ne pas crash).
             Log::channel($this->channel())->warning('ipxe.windows.action.placeholder_injection_attempt', [
                 'action_type' => 'ipxe.windows.action.placeholder_injection_attempt',
                 'ip' => $ip,
@@ -161,7 +158,7 @@ class IpxeWindowsActionController extends Controller
      * ==================================================================== */
 
     /**
-     * winpe (3.5 — inchangé).
+     * winpe (inchangé).
      */
     private function handleWinpe(Workstation $ws, string $name, int $ret, string $ip): string
     {
@@ -175,7 +172,7 @@ class IpxeWindowsActionController extends Controller
     }
 
     /**
-     * oobe (3.5 — inchangé sur ret=0 + ajout Story 3.8 D-A4 dispatch default
+     * Oobe (inchangé sur ret=0 + ajout D-A4 dispatch default
      * sur ret>0 = post-install OK).
      */
     private function handleOobe(Workstation $ws, string $name, int $ret, string $ip): string
@@ -190,7 +187,7 @@ class IpxeWindowsActionController extends Controller
     }
 
     /**
-     * sysprep (3.8 — D4 / D7).
+     * sysprep.
      *
      * Branche A (ret<0) : `recordSysprepInitiated` + body cmd_sysprep si
      * `type ∈ {clonage, clonage2}` (sinon body vide — progress=0%).
@@ -221,7 +218,7 @@ class IpxeWindowsActionController extends Controller
     }
 
     /**
-     * nosysprep (3.8 — Q-2 refacto clarté).
+     * nosysprep (Q-2 refacto clarté).
      *
      * Branche A (ret<0) : body cmd_nosysprep + recordNosysprep (progress=50%).
      * Branche D (ret=0) : recordNosysprep — pas de body.
@@ -252,7 +249,7 @@ class IpxeWindowsActionController extends Controller
     }
 
     /**
-     * join (3.8 — D4 / D7).
+     * join.
      *
      * Branche A (ret<0) : body cmd_join + recordJoinInitiated.
      * Branche B (ret=0) : body cmd_join + recordJoinAdminseStarted (parité
@@ -263,7 +260,7 @@ class IpxeWindowsActionController extends Controller
     private function handleJoin(Workstation $ws, int $ret, string $role, string $ou, string $ip): string
     {
         if ($ret < 0) {
-            // Review #3 — persiste role/ou pour les re-render aux ret=0/1.
+            // Persiste role/ou pour les re-render aux ret=0/1.
             $this->tracker->recordJoinInitiated($ws, $role, $ou, $ip);
             $ws->refresh();
 
@@ -273,7 +270,7 @@ class IpxeWindowsActionController extends Controller
         if ($ret === 0) {
             $this->tracker->recordJoinAdminseStarted($ws, $ip);
             $ws->refresh();
-            // Review #3 — le poste ne re-envoie pas role/ou au 2e curl ;
+            // Le poste ne re-envoie pas role/ou au 2e curl ;
             // fallback sur programmed_action (parité legacy APCu serveur-side).
             [$resolvedRole, $resolvedOu] = $this->resolveJoinRoleOu($ws, $role, $ou);
 
@@ -300,7 +297,7 @@ class IpxeWindowsActionController extends Controller
     }
 
     /**
-     * renomme (3.8 — D4 / D7 / D14).
+     * renomme.
      *
      * Branche A (ret<0) : body cmd_renomme + recordRenommeInitiated.
      * Branche D (ret=0) : recordRenommeAdRenamed (AD rename via AdMachineManager).
@@ -315,7 +312,7 @@ class IpxeWindowsActionController extends Controller
         }
 
         if ($ret === 0) {
-            // D14 — AD rename via AdMachineManager (best-effort).
+            // AD rename via AdMachineManager (best-effort).
             // Si role vide → lookup dans programmed_action (parité legacy 674
             // qui lit `actions[uuid][role]`).
             $resolvedRole = $role !== '' ? $role : (string) ($this->paOf($ws)['role'] ?? '');
@@ -336,7 +333,7 @@ class IpxeWindowsActionController extends Controller
     }
 
     /**
-     * post (3.8 — D4 / D7).
+     * post.
      *
      * Branche A (ret<0) : body cmd_post + recordPostInitiated.
      * Branche B (ret=0) : body cmd_post + recordPostAutologon (parité legacy
@@ -369,7 +366,7 @@ class IpxeWindowsActionController extends Controller
     }
 
     /**
-     * wpkg (3.8 — D4 / D7).
+     * wpkg.
      *
      * Branche A (ret<0) : body cmd_wpkg + recordWpkgInitiated.
      * Branche D (ret=0) : recordWpkgAutologon + body vide.
@@ -423,14 +420,14 @@ class IpxeWindowsActionController extends Controller
 
     /**
      * Check toggle config `ipxe.windows.post_install.enabled` global + flag
-     * par étape (D13). Retourne `true` si l'étape est activée.
+     * par étape. Retourne `true` si l'étape est activée.
      *
-     * Note D-3.5 : `winpe` et `oobe` SONT toggleables aussi (defense rollback
+     * Note : `winpe` et `oobe` SONT toggleables aussi (defense rollback
      * total) MAIS leur comportement par défaut reste opérationnel.
      */
     private function isStepEnabled(WindowsInstallStep $step): bool
     {
-        // winpe + oobe restent toujours actifs (comportement 3.5 préservé).
+        // winpe + oobe restent toujours actifs (comportement préservé).
         if ($step === WindowsInstallStep::Winpe || $step === WindowsInstallStep::Oobe) {
             return true;
         }
@@ -456,7 +453,7 @@ class IpxeWindowsActionController extends Controller
     }
 
     /**
-     * Review #3 — résout role/ou pour le re-render cmd_join aux curls ret=0/1.
+     * Résout role/ou pour le re-render cmd_join aux curls ret=0/1.
      *
      * Le poste ne re-envoie pas ces paramètres (cf. `join.blade.php` curls
      * internes) ; on retombe sur les valeurs persistées dans
@@ -494,7 +491,7 @@ class IpxeWindowsActionController extends Controller
     }
 
     /**
-     * Réponse 200 text/plain avec body non vide (cmd batch CRLF strict 3.8).
+     * Réponse 200 text/plain avec body non vide (cmd batch CRLF strict).
      */
     private function respondPlain(string $body): Response
     {

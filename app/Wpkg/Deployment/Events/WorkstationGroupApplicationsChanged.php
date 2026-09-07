@@ -7,8 +7,8 @@ namespace App\Wpkg\Deployment\Events;
 use Illuminate\Foundation\Events\Dispatchable;
 
 /**
- * Story 15.4 / AC4.0 — Applications WPKG attachées/détachées directement à un parc
- * (pivot `application_workstation_group`). Strictement additif vs la palette 15.2
+ * Applications WPKG attachées/détachées directement à un parc
+ * (pivot `application_workstation_group`). Strictement additif vs la palette
  * qui ne couvrait que la composition d'un AppProfile.
  *
  * Émetteur : `App\Services\AppProfile\AppProfileService::add/removeApplicationsToWorkstationGroup`.

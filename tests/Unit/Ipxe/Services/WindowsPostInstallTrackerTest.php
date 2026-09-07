@@ -16,18 +16,16 @@ use Tests\Support\IpxeSchemaBootstrapper;
 use Tests\TestCase;
 
 /**
- * Story 3.5 — AC3.3.
- *
  * Tests unitaires de {@see WindowsPostInstallTracker} :
- *  - recordWinpeStart() : MachineBootLog only (status non touché — fix 22001).
- *  - recordOobeComplete() : set os=windows + last_report_at.
- *  - recordInstallBatGenerated() : audit only.
- *  - recordUnknown() : log warning sans side effect DB.
+ *  - recordWinpeStart() : MachineBootLog seulement, `status` non touché.
+ *  - recordOobeComplete() : pose os=windows + last_report_at.
+ *  - recordInstallBatGenerated() : audit seulement.
+ *  - recordUnknown() : log warning sans effet en base.
  *
- * **Fix 22001** : `workstations.status` est un `varchar(20)` à domaine fermé
- * (`active|inactive|protected`) — le tracker ne l'écrit plus jamais (aligné
- * LinuxPostInstallTracker). Chaque test post-étape assert que status reste
- * à sa valeur initiale.
+ * `workstations.status` est un `varchar(20)` à domaine fermé
+ * (`active|inactive|protected`) : y écrire une phrase d'étape lève un
+ * SQLSTATE 22001 sur PostgreSQL. Le tracker ne l'écrit donc jamais, et chaque
+ * test vérifie qu'il reste à sa valeur initiale.
  */
 class WindowsPostInstallTrackerTest extends TestCase
 {
@@ -58,7 +56,7 @@ class WindowsPostInstallTrackerTest extends TestCase
         $this->tracker->recordWinpeStart($ws, 'PC-101', '192.168.1.5');
 
         $ws->refresh();
-        // Fix 22001 — status non touché.
+        // `status` n'est jamais écrit par le tracker.
         self::assertSame('active', $ws->status);
 
         // MachineBootLog avec action='ipxe_win_install'.
@@ -80,7 +78,7 @@ class WindowsPostInstallTrackerTest extends TestCase
 
         $ws->refresh();
         self::assertSame('windows', $ws->os);
-        // Fix 22001 — status non touché.
+        // `status` n'est jamais écrit par le tracker.
         self::assertSame('active', $ws->status);
         self::assertSame('2026-05-21 12:34:56', $ws->last_report_at?->format('Y-m-d H:i:s'));
 
@@ -155,9 +153,9 @@ class WindowsPostInstallTrackerTest extends TestCase
     #[Test]
     public function it_never_writes_status_on_any_record_method(): void
     {
-        // Garde-fou fix 22001 : `workstations.status` est un varchar(20) à
-        // domaine fermé (active|inactive|protected). Aucune méthode record*
-        // ne doit y écrire de phrase d'étape (SQLSTATE 22001 en PG sinon).
+        // `workstations.status` est un varchar(20) à domaine fermé
+        // (active|inactive|protected). Aucune méthode record* ne doit y écrire
+        // de phrase d'étape : PostgreSQL lèverait un SQLSTATE 22001.
         $ws = $this->makeWorkstation();
         $adManager = Mockery::mock(AdMachineManager::class);
         $adManager->shouldNotReceive('renameComputer');
@@ -189,9 +187,9 @@ class WindowsPostInstallTrackerTest extends TestCase
     }
 
     /* ------------------------------------------------------------------
-     * Post-review #6 — parité 3.4 post-review #M3 (Linux).
+     * Préservation de `status='protected'` après installation Windows.
      *
-     * Préserver `status='protected'` post-install Windows. Le marqueur
+     * Le marqueur
      * `protected` sert d'anti-suppression DB lors des resync AD et ne
      * doit pas être écrasé silencieusement par un boot WinPE / OOBE.
      * ------------------------------------------------------------------ */
@@ -210,7 +208,7 @@ class WindowsPostInstallTrackerTest extends TestCase
 
         $fresh = $ws->fresh();
         self::assertNotNull($fresh);
-        // Status `protected` intact (le tracker ne touche plus status — fix 22001).
+        // `protected` intact : le tracker n'écrit jamais `status`.
         self::assertSame('protected', $fresh->status);
 
         // MachineBootLog quand même inséré (audit conservé).
@@ -235,7 +233,7 @@ class WindowsPostInstallTrackerTest extends TestCase
 
         $fresh = $ws->fresh();
         self::assertNotNull($fresh);
-        // Status `protected` intact (le tracker ne touche plus status — fix 22001).
+        // `protected` intact : le tracker n'écrit jamais `status`.
         self::assertSame('protected', $fresh->status);
         // Les autres effets de l'install sont conservés (os + last_report_at).
         self::assertSame('windows', $fresh->os);
@@ -250,7 +248,7 @@ class WindowsPostInstallTrackerTest extends TestCase
     }
 
     /* ==================================================================
-     * Story 3.8 — AC5.1-5.7 / T4.4 — Tests des 14+ méthodes record*.
+     * T4.4 — Tests des 14+ méthodes record*.
      * ================================================================== */
 
     #[Test]
@@ -280,7 +278,7 @@ class WindowsPostInstallTrackerTest extends TestCase
         $this->tracker->recordSysprepInitiated($ws);
 
         $fresh = $ws->fresh();
-        // Status non modifié (fix 22001 — jamais touché).
+        // `status` n'est jamais écrit par le tracker.
         self::assertSame('active', $fresh->status);
         self::assertSame('0%', $fresh->progress);
         // etape ajouté dans programmed_action.
@@ -416,7 +414,7 @@ class WindowsPostInstallTrackerTest extends TestCase
     {
         $ws = $this->makeWorkstation();
 
-        // Story 4.9 : plus d'appel à renameComputer (rename PG → observer
+        // Plus d'appel à renameComputer (rename PG → observer
         // → WorkstationAdSyncJob async). adManager n'est plus utilisé.
         $adManager = Mockery::mock(AdMachineManager::class);
         $adManager->shouldNotReceive('renameComputer');
@@ -424,7 +422,7 @@ class WindowsPostInstallTrackerTest extends TestCase
         $this->tracker->recordRenommeAdRenamed($ws, $adManager, 'pc-renamed-01');
 
         $fresh = $ws->fresh();
-        // Story 4.9 fix root cause : `name` est désormais écrit en PG.
+        // Fix root cause : `name` est désormais écrit en PG.
         self::assertSame('pc-renamed-01', $fresh->name);
         self::assertSame('active', $fresh->status);
         self::assertSame('60%', $fresh->progress);
@@ -439,7 +437,7 @@ class WindowsPostInstallTrackerTest extends TestCase
     {
         $ws = $this->makeWorkstation();
         $adManager = Mockery::mock(AdMachineManager::class);
-        // Story 4.9 : renameComputer n'est jamais appelé (refactor).
+        // RenameComputer n'est jamais appelé (refactor).
         $adManager->shouldNotReceive('renameComputer');
 
         $this->tracker->recordRenommeAdRenamed($ws, $adManager, '');
@@ -584,7 +582,7 @@ class WindowsPostInstallTrackerTest extends TestCase
         $this->tracker->recordSysprepInitiated($ws);
 
         $fresh = $ws->fresh();
-        // Status 'protected' intact (le tracker ne touche plus status — fix 22001).
+        // `protected` intact : le tracker n'écrit jamais `status`.
         self::assertSame('protected', $fresh->status);
         // Mais progress + programmed_action mis à jour.
         self::assertSame('0%', $fresh->progress);
@@ -602,13 +600,13 @@ class WindowsPostInstallTrackerTest extends TestCase
         ]);
 
         $adManager = Mockery::mock(AdMachineManager::class);
-        // Story 4.9 : adManager non utilisé (refactor observer).
+        // AdManager non utilisé (refactor observer).
         $adManager->shouldNotReceive('renameComputer');
 
         $this->tracker->recordRenommeAdRenamed($ws, $adManager, 'pc-renamed-01');
 
         $fresh = $ws->fresh();
-        // Status 'protected' intact (le tracker ne touche plus status — fix 22001).
+        // `protected` intact : le tracker n'écrit jamais `status`.
         self::assertSame('protected', $fresh->status);
         self::assertSame('60%', $fresh->progress);
     }
@@ -616,7 +614,6 @@ class WindowsPostInstallTrackerTest extends TestCase
     #[Test]
     public function it_persists_six_distinct_machine_boot_log_labels(): void
     {
-        // Validation D11 — les 6 labels sont émis distinctement.
         $ws = $this->makeWorkstation();
 
         $this->tracker->recordSysprepInitiated($ws);

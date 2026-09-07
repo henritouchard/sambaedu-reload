@@ -16,13 +16,13 @@ use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
 /**
- * Tests Feature Livewire — surface d'approbation des enrôlements porte 2 (AC5).
+ * Tests Feature Livewire — surface d'approbation des enrôlements porte 2.
  *
  * Liste pending, action approuver (un-clic → armé + toast), action rejeter
  * (modale → statut rejected + toast), bandeau campagne (activer/désactiver).
  * Le composant délègue au service ; on vérifie l'effet de bord en base.
  *
- * Review #4/#5 : les actions mutantes sont gardées par `Gate::authorize(
+ * Les actions mutantes sont gardées par `Gate::authorize(
  * 'server.admin')` (double protection iso-pattern projet). Les tests
  * agissent comme un admin muni de la permission, et un test négatif vérifie le
  * 403 pour un utilisateur sans droit (`resolved_by` réellement renseigné).
@@ -82,7 +82,7 @@ class EnrollmentRequestsSurfaceTest extends TestCase
         $req->refresh();
         self::assertSame(AgentEnrollmentRequest::STATUS_APPROVED, $req->status);
         self::assertFalse($req->auto_approved);
-        // (review #5) `resolved_by` réellement renseigné par l'admin authentifié.
+        // `resolved_by` réellement renseigné par l'admin authentifié.
         self::assertSame($this->admin->id, $req->resolved_by);
         // Le token ne transite pas par l'UI : le poste reste non enrôlé ici.
         self::assertFalse($ws->refresh()->isAgentEnrolled());
@@ -91,7 +91,7 @@ class EnrollmentRequestsSurfaceTest extends TestCase
     #[Test]
     public function approve_is_refused_for_unmatched_request(): void
     {
-        // (review #3) Une demande « inconnu » (sans rapprochement) ne peut pas
+        // Une demande « inconnu » (sans rapprochement) ne peut pas
         // être armée — sinon le poste resterait 403 et la demande, invisible.
         $req = $this->pending(['matched_workstation_id' => null]);
 
@@ -138,7 +138,7 @@ class EnrollmentRequestsSurfaceTest extends TestCase
     #[Test]
     public function approving_unknown_request_with_target_arms_it_on_the_chosen_workstation(): void
     {
-        // Story 25.5 (AC5) — extension : approbation d'un inconnu par sélection
+        // Extension : approbation d'un inconnu par sélection
         // de cible explicite. `approveManually` reçoit le $target (3ᵉ arg).
         $req = $this->pending(['matched_workstation_id' => null]);
         $target = Workstation::factory()->create(['name' => 'PC-CIBLE']);
@@ -163,7 +163,7 @@ class EnrollmentRequestsSurfaceTest extends TestCase
     #[Test]
     public function selecting_a_target_is_refused_for_an_already_matched_request(): void
     {
-        // Anti-usurpation (review 25.5 #P2) : la modale de sélection de cible est
+        // Anti-usurpation : la modale de sélection de cible est
         // RÉSERVÉE aux demandes inconnues. Une demande déjà rapprochée ne doit
         // jamais être ré-aiguillée silencieusement vers une autre cible via
         // /livewire/update — ni à l'ouverture, ni à la confirmation.
@@ -241,7 +241,7 @@ class EnrollmentRequestsSurfaceTest extends TestCase
     #[Test]
     public function approve_is_forbidden_without_permission(): void
     {
-        // (review #4/#5) Un utilisateur sans `server.admin` est refusé même
+        // Un utilisateur sans `server.admin` est refusé même
         // s'il adresse directement l'action via /livewire/update. On désactive le
         // handler d'exception (la conversion en page d'erreur 403 exigerait le
         // manifest Vite, absent sur l'hôte) pour vérifier directement que le Gate

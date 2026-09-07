@@ -28,7 +28,7 @@ use Tests\TestCase;
 use Tests\Unit\Services\Filesystem\Plan\ClassTreeRecipe;
 
 /**
- * Story 62.1 — LES DEUX GARDES DU CATALOGUE.
+ * LES DEUX GARDES DU CATALOGUE.
  *
  *  1. **La clé est immuable, et la suppression REFUSE au lieu de cascader.** Un
  *     rôle porté par des arêtes ou visé par une recette n'est pas supprimable, et
@@ -67,10 +67,6 @@ class GroupRoleGuardsTest extends TestCase
     {
         return GroupRole::where('key', $key)->firstOrFail();
     }
-
-    // =========================================================================
-    // La clé est IMMUABLE
-    // =========================================================================
 
     #[Test]
     public function the_key_cannot_be_changed_once_the_role_exists(): void
@@ -117,10 +113,6 @@ class GroupRoleGuardsTest extends TestCase
         $this->assertMatchesRegularExpression(GroupRole::KEY_PATTERN, $slug);
     }
 
-    // =========================================================================
-    // AC4 — un rôle NOUVEAU du catalogue traverse le plan et les recettes
-    // =========================================================================
-
     /**
      * C'est la conséquence visible de la couture de pureté : le namespace du plan
      * reçoit son vocabulaire par injection, donc une clé ajoutée au catalogue est
@@ -157,7 +149,7 @@ class GroupRoleGuardsTest extends TestCase
     }
 
     /**
-     * AC4 — les DEUX points de validation d'une recette suivent le catalogue.
+     * Les DEUX points de validation d'une recette suivent le catalogue.
      */
     #[Test]
     public function a_recipe_accepts_a_catalogued_role_and_refuses_an_unknown_one(): void
@@ -210,7 +202,7 @@ class GroupRoleGuardsTest extends TestCase
     }
 
     /**
-     * AC11 — les CINQ recettes seedées restent valides : « aucune recette ne
+     * Les CINQ recettes seedées restent valides : « aucune recette ne
      * casse » n'est pas une intention, c'est une assertion.
      */
     #[Test]
@@ -227,10 +219,6 @@ class GroupRoleGuardsTest extends TestCase
         }
         $this->addToAssertionCount(1);
     }
-
-    // =========================================================================
-    // La suppression REFUSE, elle ne cascade jamais
-    // =========================================================================
 
     #[Test]
     public function an_unused_new_role_is_deletable(): void
@@ -271,11 +259,11 @@ class GroupRoleGuardsTest extends TestCase
 
         $this->assertNotNull($refusal);
         $this->assertStringContainsString('3 appartenances', $refusal);
-        // Story 62.3 — MISE À JOUR D'INVENTAIRE : `group_types` comptait les types
+        // MISE À JOUR D'INVENTAIRE : `group_types` comptait les types
         // OBSERVÉS sur les arêtes (donc 1, la classe) ; il compte désormais les
         // types qui DÉCLARENT le rôle. `tuteur` n'est déclaré nulle part — d'où 0.
-        // L'écart entre les deux chiffres est exactement le cas que la story
-        // rendait visible : une arête peut porter un rôle que son type ne reconnaît
+        // L'écart entre les deux chiffres est exactement le cas à rendre visible :
+        // une arête peut porter un rôle que son type ne reconnaît
         // pas (donnée héritée), et c'est `edges` qui en garde la mémoire.
         $this->assertSame(['edges' => 3, 'templates' => 0, 'group_types' => 0], $role->usage());
 
@@ -365,10 +353,6 @@ class GroupRoleGuardsTest extends TestCase
         $this->assertGreaterThan(0, GroupRole::countTemplates('manager'));
         $this->assertGreaterThan(0, GroupRole::countTemplates('member'));
     }
-
-    // =========================================================================
-    // Un renommage ne touche AUCUNE donnée dérivée
-    // =========================================================================
 
     #[Test]
     public function renaming_a_label_leaves_edges_recipes_and_the_resolved_plan_untouched(): void

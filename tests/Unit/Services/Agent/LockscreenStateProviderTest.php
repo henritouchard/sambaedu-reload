@@ -47,7 +47,7 @@ class LockscreenStateProviderTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        // Projection Postgres-pure : aucune synchro AD (host sans LDAP, NFR7).
+        // Projection Postgres-pure : aucune synchro AD (host sans LDAP).
         \App\Observers\WorkstationGroupObserver::disableSync();
         \App\Observers\UserGroupObserver::disableSync();
         \App\Observers\UserGroupUserPivotObserver::disableSync();

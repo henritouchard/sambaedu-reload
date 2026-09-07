@@ -15,11 +15,9 @@ use Tests\Concerns\IssuesWorkstationJwt;
 use Tests\TestCase;
 
 /**
- * Story 16.11 — AC6 / T6.2.
- *
  * Tests Feature : vérifie que `POST /api/v1/agent/enroll` upsert bien
  * `workstations_migration_status` + insère un attempt `enrolled` après
- * succès, conformément au D7.
+ * succès.
  */
 class MigrationStatusUpsertTest extends TestCase
 {

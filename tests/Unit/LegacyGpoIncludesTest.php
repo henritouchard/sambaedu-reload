@@ -5,7 +5,7 @@ namespace Tests\Unit;
 use Tests\TestCase;
 
 /**
- * Tests unitaires pour le chargement des 4 includes GPO core (story 1bis.18a).
+ * Tests unitaires pour le chargement des 4 includes GPO core (.18a).
  *
  * Vérifie que le bootstrap charge samba-tool.inc.php, gpo.inc.php,
  * delegations.inc.php et gpo_ui.inc.php sans erreur fatale,
@@ -18,19 +18,17 @@ class LegacyGpoIncludesTest extends TestCase
         parent::setUp();
 
         // Désactivé : portage natif Laravel des fonctions GPO en cours
-        // (Epic 16/17). Vérifier la chargeabilité des includes legacy
+        // (17). Vérifier la chargeabilité des includes legacy
         // GPO (samba-tool.inc.php, gpo.inc.php, ...) n'a plus de sens
         // dès lors que ces fonctions seront retirées du périmètre runtime.
-        // @todo Supprimer ce test lors de story 16.13 (retrait des shims GPO).
+        // @todo Supprimer ce test au retrait des shims GPO.
         $this->markTestSkipped('Désactivé pendant le portage natif Laravel des fonctions GPO (Epic 16/17).');
 
         $this->withoutVite();
     }
 
-    // ─── AC #1 : Chargement sans erreur fatale ─────────────────────────
-
     /**
-     * AC1 — Les fonctions de samba-tool.inc.php sont disponibles après bootstrap.
+     * Les fonctions de samba-tool.inc.php sont disponibles après bootstrap.
      */
     public function test_samba_tool_functions_exist(): void
     {
@@ -49,7 +47,7 @@ class LegacyGpoIncludesTest extends TestCase
     }
 
     /**
-     * AC1 — Les fonctions de gpo.inc.php sont disponibles après bootstrap.
+     * Les fonctions de gpo.inc.php sont disponibles après bootstrap.
      */
     public function test_gpo_functions_exist(): void
     {
@@ -70,7 +68,7 @@ class LegacyGpoIncludesTest extends TestCase
     }
 
     /**
-     * AC1 — Les fonctions de delegations.inc.php sont disponibles après bootstrap.
+     * Les fonctions de delegations.inc.php sont disponibles après bootstrap.
      */
     public function test_delegations_functions_exist(): void
     {
@@ -86,7 +84,7 @@ class LegacyGpoIncludesTest extends TestCase
     }
 
     /**
-     * AC1 — Les fonctions de gpo_ui.inc.php sont disponibles après bootstrap.
+     * Les fonctions de gpo_ui.inc.php sont disponibles après bootstrap.
      */
     public function test_gpo_ui_functions_exist(): void
     {
@@ -97,10 +95,8 @@ class LegacyGpoIncludesTest extends TestCase
         $this->assertTrue(function_exists('table_roam_stats_user'), 'table_roam_stats_user() doit exister');
     }
 
-    // ─── AC #3 : Accessibilité depuis GpoSyncService ───────────────────
-
     /**
-     * AC3 — GpoSyncService peut être instancié et les fonctions legacy sont accessibles.
+     * GpoSyncService peut être instancié et les fonctions legacy sont accessibles.
      */
     public function test_gpo_sync_service_can_access_legacy_functions(): void
     {
@@ -115,10 +111,8 @@ class LegacyGpoIncludesTest extends TestCase
         $this->assertTrue(function_exists('get_config'));
     }
 
-    // ─── AC #4 : Constantes gpo.inc.php définies ───────────────────────
-
     /**
-     * AC4 — Les constantes registre de gpo.inc.php sont définies après chargement.
+     * Les constantes registre de gpo.inc.php sont définies après chargement.
      */
     public function test_gpo_registry_constants_defined(): void
     {
@@ -146,7 +140,7 @@ class LegacyGpoIncludesTest extends TestCase
     }
 
     /**
-     * AC4 — Les constantes de structure GPO sont définies.
+     * Les constantes de structure GPO sont définies.
      */
     public function test_gpo_structure_constants_defined(): void
     {
@@ -168,10 +162,8 @@ class LegacyGpoIncludesTest extends TestCase
         $this->assertSame(7, REG_MULTI_SZ);
     }
 
-    // ─── AC #4 : Pas d'erreur fatale au chargement passif ──────────────
-
     /**
-     * AC4 — Le chargement passif (sans connexion AD) ne produit pas d'erreur
+     * Le chargement passif (sans connexion AD) ne produit pas d'erreur
      * fatale ni de warning PHP capturé par le set_error_handler du bootstrap.
      */
     public function test_passive_loading_no_fatal_error(): void
@@ -196,10 +188,8 @@ class LegacyGpoIncludesTest extends TestCase
         );
     }
 
-    // ─── AC #5 : Ordre de chargement respecté ──────────────────────────
-
     /**
-     * AC5 — L'ordre de chargement est correct : toutes les fonctions
+     * L'ordre de chargement est correct : toutes les fonctions
      * appelées par delegations.inc.php (de samba-tool + gpo) sont disponibles.
      */
     public function test_loading_order_dependencies_satisfied(): void
@@ -225,10 +215,8 @@ class LegacyGpoIncludesTest extends TestCase
         $this->assertTrue(function_exists('search_parcs'), 'search_parcs() (stub) doit être disponible pour delegations');
     }
 
-    // ─── AC #6 : Idempotence ───────────────────────────────────────────
-
     /**
-     * AC6 — Double require du bootstrap ne produit pas d'erreur.
+     * Double require du bootstrap ne produit pas d'erreur.
      */
     public function test_double_require_is_idempotent(): void
     {
@@ -241,7 +229,7 @@ class LegacyGpoIncludesTest extends TestCase
         $this->assertTrue(function_exists('sambatool'));
     }
 
-    // ─── Stubs GPO deps ────────────────────────────────────────────────
+    // Stubs GPO deps
 
     /**
      * Le stub guid() retourne un GUID au format Microsoft
@@ -288,7 +276,7 @@ class LegacyGpoIncludesTest extends TestCase
         $this->assertEmpty($result);
     }
 
-    // ─── Shims fonctions LDAP natives ───────────────────────────────────
+    // Shims fonctions LDAP natives
 
     /**
      * Les shims de mutation ldap_* sont présents après bootstrap

@@ -13,7 +13,7 @@ use Symfony\Component\HttpFoundation\Response;
 use Tests\TestCase;
 
 /**
- * Tests de l'architecture AuthGuard (Story 1.4)
+ * Tests de l'architecture AuthGuard
  *
  * Valide :
  * - L'interface est correctement implémentée par les deux guards
@@ -29,10 +29,10 @@ class AuthGuardInterfaceTest extends TestCase
         $this->withoutVite();
     }
 
-    // ─── AC1 : Interface ────────────────────────────────────────────────────────
+    // : Interface
 
     /**
-     * AC1 — SambaEduAuthGuard implémente AuthGuardInterface
+     * SambaEduAuthGuard implémente AuthGuardInterface
      */
     public function test_sambaedu_auth_guard_implements_interface(): void
     {
@@ -44,7 +44,7 @@ class AuthGuardInterfaceTest extends TestCase
     }
 
     /**
-     * AC4 — KeycloakAuthGuard implémente AuthGuardInterface
+     * KeycloakAuthGuard implémente AuthGuardInterface
      */
     public function test_keycloak_auth_guard_implements_interface(): void
     {
@@ -53,10 +53,10 @@ class AuthGuardInterfaceTest extends TestCase
         $this->assertInstanceOf(AuthGuardInterface::class, $guard);
     }
 
-    // ─── AC5 : Binding IoC ──────────────────────────────────────────────────────
+    // : Binding IoC
 
     /**
-     * AC5 — Le conteneur résout AuthGuardInterface → SambaEduAuthGuard par défaut
+     * Le conteneur résout AuthGuardInterface → SambaEduAuthGuard par défaut
      */
     public function test_ioc_binding_resolves_sambaedu_auth_guard(): void
     {
@@ -65,10 +65,10 @@ class AuthGuardInterfaceTest extends TestCase
         $this->assertInstanceOf(SambaEduAuthGuard::class, $resolved);
     }
 
-    // ─── AC2, AC6 : Comportement middleware ─────────────────────────────────────
+    // : Comportement middleware
 
     /**
-     * AC2, AC6 — Utilisateur non authentifié → redirect vers route('auth.login')
+     * Utilisateur non authentifié → redirect vers route('auth.login')
      *
      * Le guard réel SambaEduAuthGuard est utilisé avec AuthenticationService mocké.
      */
@@ -96,7 +96,7 @@ class AuthGuardInterfaceTest extends TestCase
     }
 
     /**
-     * AC2, AC6 — Utilisateur authentifié avec guard passant → $next($request) appelé
+     * Utilisateur authentifié avec guard passant → $next($request) appelé
      *
      * On swape le binding pour un guard mock qui appelle $next($request).
      * Ce test valide que le middleware délègue correctement au guard actif.
@@ -119,10 +119,10 @@ class AuthGuardInterfaceTest extends TestCase
         $response->assertJson(['authenticated' => true]);
     }
 
-    // ─── AC3, AC6 : Comportement guard avec login vide ──────────────────────────
+    // : Comportement guard avec login vide
 
     /**
-     * AC3, AC6 — Authentifié mais login vide → redirect (comportement inchangé)
+     * Authentifié mais login vide → redirect (comportement inchangé)
      */
     public function test_empty_login_redirects_to_login(): void
     {

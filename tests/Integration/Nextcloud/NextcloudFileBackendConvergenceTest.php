@@ -27,9 +27,8 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 61.3 (AC8) — **LE BACKEND LUI-MÊME, CONTRE L'INSTANCE RÉELLE.**
+ * **LE BACKEND LUI-MÊME, CONTRE L'INSTANCE RÉELLE.**
  *
- * ---------------------------------------------------------------------------
  * **POURQUOI CE FICHIER EXISTE À CÔTÉ DU TEST DE CANAL.**
  *
  * {@see NextcloudTeamFolderBackendTest} mesure le PROTOCOLE en appels nus : il
@@ -44,18 +43,17 @@ use Tests\TestCase;
  *  1. `provision()` converge de bout en bout — dossier d'équipe, groupe structurel,
  *     interrupteur des permissions avancées, groupes compilés et leur appartenance,
  *     arborescence, règles de clôture, plafonds ;
- *  2. **UN SECOND PASSAGE REND `conforme` PARTOUT.** C'est la mesure la plus dense du
- *     fichier : elle ne tient QUE si l'instance relit exactement ce qui a été écrit —
- *     masque de clôture `31` NON coercé (décision n°2), libellé d'affichage ajouté par
- *     le serveur IGNORÉ par la comparaison (piège n°3 de l'epic), point de montage
- *     normalisé reconnu. Toute dérive sur l'un des trois produirait un `applique` ici,
- *     et un ré-écriture perpétuelle en production ;
+ *  2. **UN SECOND PASSAGE REND `conforme` PARTOUT.** C'est la mesure la plus dense
+ *     du fichier : elle ne tient QUE si l'instance relit exactement ce qui a été
+ *     écrit — masque de clôture `31` NON coercé, libellé d'affichage ajouté par le
+ *     serveur IGNORÉ par la comparaison, point de montage normalisé reconnu. Toute
+ *     dérive sur l'un des trois produirait un `applique` ici, et une réécriture
+ *     perpétuelle en production ;
  *  3. la CLÔTURE est EFFECTIVE : un compte jetable du rôle refermé obtient un refus
  *     sur le nœud clos que le backend a posé — pas une règle relue, une PERCEPTION ;
  *  4. `deprovision()` révoque **sans détruire** : le dossier d'équipe et son contenu
- *     survivent (D9).
+ *     survivent.
  *
- * ---------------------------------------------------------------------------
  * **CE CAS DE TEST N'EST PAS NU, et il ne peut pas l'être.** Le backend lit sa
  * configuration dans l'état persisté, verrouille son passage sur le cache disque, et
  * traduit des identités par des modèles Eloquent : il lui faut une application. La
@@ -168,7 +166,7 @@ class NextcloudFileBackendConvergenceTest extends TestCase
         $this->classe->users()->attach($this->prof->id, ['role' => 'manager']);
 
         // Les comptes jetables, côté instance. Le backend ne crée JAMAIS de compte
-        // (c'est le provisionnement 61.1) : il consomme le cache d'identité.
+        // (c'est le provisionnement) : il consomme le cache d'identité.
         foreach ([$this->eleveAccount, $this->profAccount] as $account) {
             $created = $this->rest('POST', 'ocs/v1.php/cloud/users', [
                 'userid' => $account,
@@ -227,17 +225,12 @@ class NextcloudFileBackendConvergenceTest extends TestCase
         parent::tearDown();
     }
 
-    // =========================================================================
-    // LE SCÉNARIO
-    // =========================================================================
-
     #[Test]
     public function the_backend_converges_a_whole_plan_against_a_real_instance(): void
     {
         $backend = $this->backend();
         $plan = $this->plan();
 
-        // --- 1. provision : la convergence complète ---------------------------
         $report = $backend->provision($plan);
         $this->note('provision', ['body' => json_encode($report->toArray(), JSON_UNESCAPED_UNICODE)]);
 
@@ -257,9 +250,8 @@ class NextcloudFileBackendConvergenceTest extends TestCase
         $folder = $this->folder((int) $folderId);
         self::assertTrue((bool) ($folder['acl'] ?? false), 'sans l\'interrupteur, les règles n\'ont AUCUN effet');
 
-        // --- 2. LE GROUPE STRUCTUREL : la décision n°3, VÉRIFIÉE --------------
         //
-        // Le risque était consigné : « si l'AC8 montre qu'un admin voit les dossiers
+        // Le risque était consigné : « si l' montre qu'un admin voit les dossiers
         // d'équipe sans appartenance, ce groupe devient inutile ». Le test de canal
         // voisin mesure le contraire (409 sans appartenance, 201 après). Ici on
         // vérifie que le backend POSE bien cette parade, et qu'elle porte les quatre
@@ -282,7 +274,6 @@ class NextcloudFileBackendConvergenceTest extends TestCase
         self::assertSame([$this->eleveAccount], $this->groupMembers($members), 'l\'appartenance est EXACTE');
         self::assertSame([$this->profAccount], $this->groupMembers($managers), 'le rôle d\'arête est filtré');
 
-        // --- 3. LA CLÔTURE, telle que l'instance la relit ---------------------
         $rules = $this->aclRules($this->root . '/_profs');
         $this->note('règles relues sur _profs', ['body' => json_encode($rules)]);
         self::assertContains(
@@ -291,7 +282,6 @@ class NextcloudFileBackendConvergenceTest extends TestCase
             'LE MASQUE 31 SE RELIT TEL QU\'IL A ÉTÉ ÉCRIT : l\'instance ne le rabat pas (décision n°2)',
         );
 
-        // --- 4. LE SECOND PASSAGE : conforme partout, donc ZÉRO DÉRIVE --------
         $replay = $backend->provision($plan);
         $this->note('second passage', ['body' => json_encode($replay->toArray(), JSON_UNESCAPED_UNICODE)]);
 
@@ -306,7 +296,6 @@ class NextcloudFileBackendConvergenceTest extends TestCase
             );
         }
 
-        // --- 5. LA PERCEPTION EFFECTIVE : ce qu'aucune règle relue ne dit -----
         $closed = $this->davAs($this->eleveAccount, 'PROPFIND', $this->root . '/_profs');
         $this->note('élève sur le dossier CLOS (posé par le backend)', $closed);
         self::assertSame(404, $closed['status'], 'le dossier refermé PAR LE BACKEND est INATTEIGNABLE pour le rôle clos');
@@ -318,7 +307,6 @@ class NextcloudFileBackendConvergenceTest extends TestCase
         $open = $this->davAs($this->profAccount, 'PROPFIND', $this->root . '/_profs');
         self::assertSame(207, $open['status'], 'le rôle octroyé, lui, garde son accès');
 
-        // --- 6. inspect : l'état RELU, reprojeté en vocabulaire de plan --------
         $inspection = $backend->inspect($plan);
         $this->note('inspect', ['body' => json_encode($inspection->toArray(), JSON_UNESCAPED_UNICODE)]);
 
@@ -345,7 +333,6 @@ class NextcloudFileBackendConvergenceTest extends TestCase
             'LA CLÔTURE EST OBSERVÉE, donc comparable : c\'est l\'évolution que le comparateur annonçait',
         );
 
-        // --- 7. LES DEUX PLAFONDS, chacun sur son objet (D8) -------------------
         $quota = $backend->quota($plan);
         $this->note('quota', ['body' => json_encode($quota->toArray(), JSON_UNESCAPED_UNICODE)]);
 
@@ -361,7 +348,6 @@ class NextcloudFileBackendConvergenceTest extends TestCase
             'le plafond d\'un SOUS-dossier est une limite du MODÈLE, dite et non tue',
         );
 
-        // --- 8. deprovision : RÉVOQUER SANS DÉTRUIRE (D9) ---------------------
         $removal = $backend->deprovision($plan);
         $this->note('deprovision', ['body' => json_encode($removal->toArray(), JSON_UNESCAPED_UNICODE)]);
 
@@ -380,10 +366,6 @@ class NextcloudFileBackendConvergenceTest extends TestCase
             'LE DOSSIER ET SON CONTENU SURVIVENT : la révocation ne détruit rien (D9)',
         );
     }
-
-    // =========================================================================
-    // Le décor
-    // =========================================================================
 
     private function backend(): NextcloudFileBackend
     {
@@ -430,7 +412,7 @@ class NextcloudFileBackendConvergenceTest extends TestCase
 
                 // LE nœud de la clôture : la classe n'a AUCUN octroi ici, et son
                 // accès hérité doit être refermé — c'est la fuite mesurée au sondage
-                // 60.0, et la raison d'être de tout ce backend.
+                // et la raison d'être de tout ce backend.
                 new PlanNode('_profs', 'Enseignants', PlanNodeNature::Partagee, [
                     new PlanGrant('equipe', $managers, PlanGrant::VERBS),
                 ], true, 2147483648, ['classe']),
@@ -454,10 +436,6 @@ class NextcloudFileBackendConvergenceTest extends TestCase
             (string) $projector->groupNameForModel($this->classe, 'manager'),
         ];
     }
-
-    // =========================================================================
-    // Lecture directe de l'instance — le témoin INDÉPENDANT du backend
-    // =========================================================================
 
     /**
      * Les règles relues d'un chemin, réduites aux QUATRE champs écrits (le libellé
@@ -552,10 +530,6 @@ class NextcloudFileBackendConvergenceTest extends TestCase
 
         return array_values(array_filter(is_array($payload) ? $payload : [], 'is_array'));
     }
-
-    // =========================================================================
-    // Transport — curl NU, pour ne rien devoir au code sous test
-    // =========================================================================
 
     /**
      * @param  array<string, mixed>  $form

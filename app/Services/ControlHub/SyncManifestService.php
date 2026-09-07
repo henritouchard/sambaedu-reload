@@ -40,15 +40,15 @@ class SyncManifestService
         ]);
 
         DB::transaction(function () use ($shortcutsData, $appProfilesData, $result) {
-            // ── Pass 1 : Upsert entités sans relations ──
+            // Pass 1 : Upsert entités sans relations
             $this->pass1Applications($appProfilesData, $result);
             $this->pass1Shortcuts($shortcutsData, $result);
             $this->pass1AppProfiles($appProfilesData, $result);
 
-            // ── Pass 2 : Résolution des relations ──
+            // Pass 2 : Résolution des relations
             $this->pass2AppProfilesToApplications($appProfilesData, $result);
 
-            // ── Pass 3 : Nettoyage ──
+            // Pass 3 : Nettoyage
             $this->pass3Cleanup($shortcutsData, $appProfilesData, $result);
         });
 
@@ -60,9 +60,7 @@ class SyncManifestService
         return $result;
     }
 
-    // ═══════════════════════════════════════════════════════════════
     // Pass 1 : Upsert entités
-    // ═══════════════════════════════════════════════════════════════
 
     /**
      * Extrait et upsert toutes les applications depuis les app_profiles.
@@ -196,9 +194,7 @@ class SyncManifestService
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════
     // Pass 2 : Résolution des relations
-    // ═══════════════════════════════════════════════════════════════
 
     /**
      * Sync app_profiles ↔ applications (résolution soft par app_id).
@@ -238,9 +234,7 @@ class SyncManifestService
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════
     // Pass 3 : Nettoyage
-    // ═══════════════════════════════════════════════════════════════
 
     /**
      * Supprime les entités ControlHub absentes du manifeste.

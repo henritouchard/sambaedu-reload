@@ -18,7 +18,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 60.3 — la résolution d'un backend PAR SON NOM, et son refus explicite.
+ * La résolution d'un backend PAR SON NOM, et son refus explicite.
  */
 class FileBackendRegistryTest extends TestCase
 {
@@ -59,11 +59,10 @@ class FileBackendRegistryTest extends TestCase
     }
 
     /**
-     * **LE TEST RETOURNÉ.** Son prédécesseur s'appelait « `posix` est une valeur de
-     * colonne légitime SANS implémentation jusqu'à 60.4 » et vérifiait que
-     * demander le serveur de fichiers historique ÉCHOUAIT en nommant la story à
-     * venir. Cette story est celle-là : l'exécution est descendue sous la ligne de
-     * contrat, le nom répond, et le refus n'a plus lieu d'être.
+     * **LE TEST RETOURNÉ.** Son prédécesseur vérifiait que demander le serveur de
+     * fichiers historique ÉCHOUAIT, faute d'implémentation. L'exécution est
+     * descendue sous la ligne de contrat : le nom répond, et le refus n'a plus
+     * lieu d'être.
      *
      * Ce qui n'a PAS changé : un nom sans implémentation reste un échec explicite,
      * jamais un repli — c'est ce que vérifient les deux tests suivants.
@@ -80,9 +79,9 @@ class FileBackendRegistryTest extends TestCase
     }
 
     /**
-     * Story 61.3 — la liste s'allonge d'un nom, et la propriété se RENFORCE : depuis
+     * La liste s'allonge d'un nom, et la propriété se RENFORCE : depuis
      * qu'un second backend réel existe, TOUTE case du vocabulaire résout. Un nom
-     * annoncé sans implémentation était l'état daté de la story 60.3 ; ce n'est plus
+     * annoncé sans implémentation était un état daté ; ce n'est plus
      * un état acceptable.
      *
      * **LA LISTE S'ALLONGE D'UN NOM DE PLUS — `opencloud` — ET C'EST TOUT CE QUI

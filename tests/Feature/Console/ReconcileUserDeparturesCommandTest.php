@@ -17,7 +17,7 @@ use Tests\TestCase;
 use Tests\Traits\CreatesPermissionSchema;
 
 /**
- * Story 49.3 (AC9 / AC10) — orchestration de `users:reconcile-departures`.
+ * Orchestration de `users:reconcile-departures`.
  *
  * `UserSyncService` est mocké au niveau SERVICE (pattern
  * `SyncUsersFromAdCommandTest`) : la commande est testée sur ce qui lui
@@ -84,8 +84,6 @@ class ReconcileUserDeparturesCommandTest extends TestCase
             'delta_cursor_end' => null,
         ];
     }
-
-    // ========================================================================
 
     #[Test]
     public function it_runs_a_full_import_then_disables_the_absentees(): void

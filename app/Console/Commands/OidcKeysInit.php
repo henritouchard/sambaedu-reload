@@ -9,7 +9,7 @@ use Illuminate\Console\Command;
 use Throwable;
 
 /**
- * Story 55.1 — Task 1.
+ * Task 1.
  *
  * `php artisan oidc:keys:init` — initialise la paire de signature RS256
  * **dédiée à OIDC** (`storage/keys/oidc/{private,public}.pem`).

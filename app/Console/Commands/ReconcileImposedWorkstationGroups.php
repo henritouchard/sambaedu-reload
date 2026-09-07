@@ -9,16 +9,14 @@ use App\Services\ControlHub\ImposedWorkstationGroupReconciler;
 use Illuminate\Console\Command;
 
 /**
- * Story 30.3 — Réconciliation manuelle des groupes imposés par le contrat amont
+ * Réconciliation manuelle des groupes imposés par le contrat amont
  * (controlHub).
  *
  * Point d'invocation **explicite et idempotent** (reprise après incident,
  * provisioning) hors réception d'un contrat. Délègue à
  * {@see ImposedWorkstationGroupReconciler::reconcile()} et affiche les compteurs.
  *
- * NFR3 — sans contrat amont actif : message standalone + exit 0, rien d'écrit.
- *
- * ⚠️ GARDE-FOU R3 : vocabulaire « amont » exclusivement, terme prohibé proscrit. [Source: prd-contrat-manage-se5.md#R3]
+ * Sans contrat amont actif : message standalone + exit 0, rien d'écrit.
  */
 class ReconcileImposedWorkstationGroups extends Command
 {
@@ -43,7 +41,7 @@ class ReconcileImposedWorkstationGroups extends Command
 
     public function handle(ImposedWorkstationGroupReconciler $reconciler): int
     {
-        // NFR3 — standalone : sans contrat amont actif, ne rien écrire.
+        // Standalone : sans contrat amont actif, ne rien écrire.
         if (ControlHubContract::active() === null) {
             $this->info('Aucun contrat amont actif — réconciliation ignorée (comportement standalone, rien écrit).');
 

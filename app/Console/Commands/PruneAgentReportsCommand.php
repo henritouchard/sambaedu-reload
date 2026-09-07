@@ -9,9 +9,9 @@ use App\Models\AgentReportHistory;
 use Illuminate\Console\Command;
 
 /**
- * Story 24.1 — Purge des données de rapport agent (D3, AC3).
+ * Purge des données de rapport agent.
  *
- * Deux rétentions, lues dans `config/agent.php` (clés EXISTANTES 23.5,
+ * Deux rétentions, lues dans `config/agent.php` (clés EXISTANTES,
  * planchers `max(1, …)` déjà appliqués au config:cache) :
  *
  *  - `agent_report_events` > `report_events_retention_days` (14 j) ;

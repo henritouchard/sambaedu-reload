@@ -5,7 +5,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 27.3ter — « gel » d'un réglage du catalogue : `overrides_locked`
+ * « gel » d'un réglage du catalogue : `overrides_locked`
  * (booléen, défaut false).
  *
  * GELER = VERROUILLER L'AJOUT DE NOUVEAUX OVERRIDES, sans rien cesser de gérer :
@@ -18,7 +18,7 @@ use Illuminate\Support\Facades\Schema;
  *
  * À NE PAS CONFONDRE avec `is_active` (qui, lui, coupe la diffusion). Le vrai
  * décommissionnement (cesser de gérer une clé) exige une convergence observée de
- * la flotte → story de suivi dédiée, hors 27.3ter.
+ * la flotte : hors périmètre ici.
  */
 return new class extends Migration
 {

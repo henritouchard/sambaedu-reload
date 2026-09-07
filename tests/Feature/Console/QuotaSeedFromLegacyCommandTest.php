@@ -20,22 +20,15 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 5.1d — Tests Feature de la commande `quota:seed-from-legacy`.
+ * Tests Feature de la commande `quota:seed-from-legacy`.
  *
  * Stratégie : la connexion `legacy_mysql` est reconfigurée au runtime pour
  * pointer sur une 2e BDD sqlite in-memory. Le schéma `quotas` legacy est créé
  * manuellement, des fixtures sont insérées, puis la commande tourne en mode
  * test (mêmes API publiques qu'en prod).
  *
- * Couvre AC 11-15 + idempotence/force :
- *  - it_imports_user_rules_from_legacy_table (AC 11)
- *  - it_discriminates_user_vs_group_via_eloquent_lookup (AC 12)
- *  - it_supports_dry_run_without_modifying_db (AC 13)
- *  - it_returns_failure_when_legacy_connection_missing (AC 14)
- *  - it_initializes_one_instance_default_per_partition_when_absent (63.4 : il y en
- *    avait huit, une par « profil » × partition ; il y en a deux)
- *  - it_skips_existing_rules_without_force_flag (idempotence)
- *  - it_overwrites_existing_rules_with_force_flag (force)
+ * Le seed initialise UNE règle par défaut et par partition : le legacy en
+ * portait huit, une par « profil » × partition.
  */
 class QuotaSeedFromLegacyCommandTest extends TestCase
 {
@@ -60,7 +53,7 @@ class QuotaSeedFromLegacyCommandTest extends TestCase
     }
 
     /**
-     * Story 63.4, correction de revue — **LE PLAFOND PAR DÉFAUT PASSE MAINTENANT PAR
+     * Correction de revue — **LE PLAFOND PAR DÉFAUT PASSE MAINTENANT PAR
      * LE SERVICE**, donc par sa garde de disponibilité de partition, qui exécute une
      * commande système. Sur l'hôte, cette commande n'existe pas : la couture est donc
      * substituée, et elle répond « la partition porte un quota appliqué ».
@@ -178,10 +171,6 @@ class QuotaSeedFromLegacyCommandTest extends TestCase
         ]);
     }
 
-    // =========================================================================
-    // AC 11 — Import user rules
-    // =========================================================================
-
     #[Test]
     public function it_imports_user_rules_from_legacy_table(): void
     {
@@ -210,10 +199,6 @@ class QuotaSeedFromLegacyCommandTest extends TestCase
         );
     }
 
-    // =========================================================================
-    // AC 12 — Discrimination user vs group
-    // =========================================================================
-
     #[Test]
     public function it_discriminates_user_vs_group_via_eloquent_lookup(): void
     {
@@ -239,10 +224,6 @@ class QuotaSeedFromLegacyCommandTest extends TestCase
         $this->assertSame(QuotaRule::TYPE_USER, $userRule->type);
     }
 
-    // =========================================================================
-    // AC 13 — Dry-run
-    // =========================================================================
-
     #[Test]
     public function it_supports_dry_run_without_modifying_db(): void
     {
@@ -254,10 +235,6 @@ class QuotaSeedFromLegacyCommandTest extends TestCase
         $this->assertSame(0, QuotaRule::query()->count(), 'Aucune règle créée en dry-run.');
         $this->assertSame(0, QuotaAuditLog::query()->count(), 'Aucun audit en dry-run.');
     }
-
-    // =========================================================================
-    // AC 14 — Connexion absente
-    // =========================================================================
 
     #[Test]
     public function it_returns_failure_when_legacy_connection_missing(): void
@@ -286,13 +263,9 @@ class QuotaSeedFromLegacyCommandTest extends TestCase
         $this->assertSame(0, QuotaRule::query()->count());
     }
 
-    // =========================================================================
-    // Init du plafond par défaut de l'instance
-    // =========================================================================
-
     /**
      * ⚠️ **Elles étaient HUIT** (quatre « profils » × deux partitions), et le profil
-     * retenu pour un compte se DEVINAIT. Depuis la story 63.4, il y en a **DEUX** :
+     * retenu pour un compte se DEVINAIT. Depuis la, il y en a **DEUX** :
      * une par partition, la même pour tout le monde.
      */
     #[Test]
@@ -318,7 +291,7 @@ class QuotaSeedFromLegacyCommandTest extends TestCase
     }
 
     /**
-     * Story 63.4, correction de revue — **UN SEUL CHEMIN D'ÉCRITURE DU DÉFAUT.**
+     * Correction de revue — **UN SEUL CHEMIN D'ÉCRITURE DU DÉFAUT.**
      *
      * L'écriture se faisait ici en direct sur le modèle, avec son propre journal
      * d'audit à côté de celui du service : deux chemins pour une même décision, dont
@@ -376,10 +349,6 @@ class QuotaSeedFromLegacyCommandTest extends TestCase
         $this->assertSame(0, QuotaRule::query()->where('type', QuotaRule::TYPE_DEFAULT)->count());
     }
 
-    // =========================================================================
-    // Idempotence — skip sans --force
-    // =========================================================================
-
     #[Test]
     public function it_skips_existing_rules_without_force_flag(): void
     {
@@ -403,10 +372,6 @@ class QuotaSeedFromLegacyCommandTest extends TestCase
         $aliceRule->refresh();
         $this->assertSame($originalSoft, $aliceRule->quota_soft_mb, 'La règle existante ne doit pas être écrasée sans --force.');
     }
-
-    // =========================================================================
-    // --force overwrite
-    // =========================================================================
 
     #[Test]
     public function it_overwrites_existing_rules_with_force_flag(): void

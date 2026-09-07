@@ -9,8 +9,6 @@ use Livewire\Attributes\Title;
 use Livewire\Component;
 
 /**
- * Story 16.12 — AC5.1 / AC5.2 / D6.
- *
  * Page Livewire SFC détail — `/admin/settings/scripts-logs/{id}`.
  *
  *  - 404 si UUID inexistant.

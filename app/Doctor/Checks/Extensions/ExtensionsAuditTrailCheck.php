@@ -11,13 +11,12 @@ use Illuminate\Support\Carbon;
 use Throwable;
 
 /**
- * Story 56.5 (AC6, FR36) — Le journal d'audit des extensions est-il COMPLET ?
+ * Le journal d'audit des extensions est-il COMPLET ?
  *
- * **Legs de la review 56.3 #4.** `ExtensionInstallService::fail()` avale un
- * échec d'écriture d'audit — comportement volontairement CONSERVÉ (un refus déjà
- * compensé ne doit jamais redevenir une exception nue, finding #2 de la review
- * 56.2). Ce qui manquait, c'était le SIGNAL : la review demandait « un signal
- * côté santé plutôt qu'un grep de logs ». Le voici.
+ * `ExtensionInstallService::fail()` avale un échec d'écriture d'audit —
+ * comportement volontairement CONSERVÉ : un refus déjà compensé ne doit jamais
+ * redevenir une exception nue. Ce qui manquait, c'était le SIGNAL, côté santé
+ * plutôt qu'en grep de logs. Le voici.
  *
  * Ce check ne lit pas la table : il lit le MARQUEUR
  * ({@see ExtensionAuditLog::writeFailureMarker()}, cache FICHIER). C'est
@@ -26,9 +25,9 @@ use Throwable;
  *
  *  - `ok` : aucun marqueur. Le journal est réputé complet.
  *  - `error` : au moins une ligne d'audit a été perdue depuis une date connue.
- *    C'est un `error` et pas un `warn` : FR36 est une exigence de conformité —
- *    « le journal est peut-être incomplet » n'est pas une dégradation
- *    acceptable, c'est une information que l'exploitant doit traiter.
+ *    C'est un `error` et pas un `warn` : le journal d'audit est une exigence de
+ *    conformité, et « le journal est peut-être incomplet » n'est pas une
+ *    dégradation acceptable — c'est une information que l'exploitant doit traiter.
  *
  * L'acquittement se fait depuis `/admin/extensions/journal` (bouton +
  * confirmation), pas ici : un check ne mute rien (règle d'or

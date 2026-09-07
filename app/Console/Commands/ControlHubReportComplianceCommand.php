@@ -12,12 +12,12 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 
 /**
- * Story 39.2 (canal ③) — Tick de l'émetteur de conformité amont.
+ * Tick de l'émetteur de conformité amont.
  *
  * Planifiée `everyMinute()` dans le Kernel, la commande gère ELLE-MÊME sa cadence
  * (intervalle fixe `config('controlHub.compliance.interval')`, défaut 15 min) via un
- * simple watermark en cache — PAS de colonne BDD dédiée, PAS de piggyback heartbeat
- * (cf. Dev Notes Q3). Elle court-circuite AVANT de dispatcher si aucun contrat actif
+ * simple watermark en cache — PAS de colonne BDD dédiée, PAS de piggyback heartbeat.
+ * Elle court-circuite AVANT de dispatcher si aucun contrat actif
  * ou aucune connexion valide n'existe (évite d'empiler des jobs inutiles en queue),
  * puis dispatche {@see ControlHubReportComplianceJob} (retry/queue).
  *

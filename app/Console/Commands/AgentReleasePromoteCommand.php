@@ -9,9 +9,9 @@ use App\Services\Agent\Releases\ReleaseOperationException;
 use Illuminate\Console\Command;
 
 /**
- * Story 25.1 — Déplacement du pointeur stable (AC1, décision n° 5).
+ * Déplacement du pointeur stable.
  *
- * La stable est la version servie aux postes SANS ring (AC3 — jamais une
+ * La stable est la version servie aux postes SANS ring (jamais une
  * canari par accident). Au plus une ligne à true : swap transactionnel dans
  * {@see ReleaseCreationService::promote()}. C'est aussi le rollback du
  * défaut parc avant l'UI 25.5. Commande à la demande (pas d'entrée Kernel).

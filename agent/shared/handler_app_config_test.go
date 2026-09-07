@@ -121,7 +121,7 @@ func canonicalOf(t *testing.T, policies map[string]any) string {
 	return string(c)
 }
 
-// --- Parité de canonicalisation (review #3) : cible vs fichier relu -----------
+// Parité de canonicalisation : cible vs fichier relu
 //
 // Le payload réseau est décodé `UseNumber` → les nombres sont des `json.Number`,
 // PAS des float64. La forme CIBLE (spec.Canonical, calculée serveur-side par
@@ -200,7 +200,7 @@ func TestAppConfigCanonicalParityOnJSONNumber(t *testing.T) {
 	}
 }
 
-// --- Set cible + idempotence -------------------------------------------------
+// Set cible + idempotence
 
 func TestAppConfigApplyWritesTargetThenIdempotent(t *testing.T) {
 	ops := newFakeAppConfigOps()
@@ -232,7 +232,7 @@ func TestAppConfigApplyWritesTargetThenIdempotent(t *testing.T) {
 	}
 }
 
-// --- Mécanisme : un policies.json par app au chemin natif ---------------------
+// Mécanisme : un policies.json par app au chemin natif
 
 func TestAppConfigWritesPoliciesJsonPerApp(t *testing.T) {
 	ops := newFakeAppConfigOps()
@@ -259,7 +259,7 @@ func TestAppConfigWritesPoliciesJsonPerApp(t *testing.T) {
 	}
 }
 
-// --- Drift STRICT (contenu réel != cible) → réapplication --------------------
+// Drift STRICT (contenu réel != cible) → réapplication
 
 func TestAppConfigDriftIsRewritten(t *testing.T) {
 	ops := newFakeAppConfigOps()
@@ -286,7 +286,7 @@ func TestAppConfigDriftIsRewritten(t *testing.T) {
 	}
 }
 
-// --- Level-triggered : app sortie des règles → policies.json géré retiré ------
+// Level-triggered : app sortie des règles → policies.json géré retiré
 
 func TestAppConfigLevelTriggeredRemovesOrphan(t *testing.T) {
 	ops := newFakeAppConfigOps()
@@ -322,11 +322,11 @@ func TestAppConfigLevelTriggeredRemovesOrphan(t *testing.T) {
 	}
 }
 
-// --- Marqueur de périmètre : policies.json HORS SambaEdu jamais touché --------
+// Marqueur de périmètre : policies.json HORS SambaEdu jamais touché
 //
-// Review #7 (décision Henri 2026-06-17) : un fichier étranger sur une app CIBLE
+// Un fichier étranger sur une app CIBLE
 // → JAMAIS écrasé/supprimé (non-ingérence préservée) MAIS rapporté `error` de
-// conflit (la policy agent n'est pas active). Avant : `compliant` trompeur.
+// conflit (la policy agent n'est pas active).
 func TestAppConfigForeignFileOnTargetIsErrorNeverTouched(t *testing.T) {
 	ops := newFakeAppConfigOps()
 	h := &AppConfigHandler{Ops: ops}
@@ -336,7 +336,7 @@ func TestAppConfigForeignFileOnTargetIsErrorNeverTouched(t *testing.T) {
 	target := map[string]any{"policies": map[string]any{"Homepage": map[string]any{"URL": "https://cible/"}}}
 	items := []StateItem{appConfigItem("firefox", target)}
 
-	// Test : fichier étranger sur app cible → conflit signalé en ERREUR (review #7).
+	// Test : fichier étranger sur app cible → conflit signalé en ERREUR.
 	ok, err := h.Test(items)
 	if ok {
 		t.Fatalf("un fichier étranger sur une app cible NE doit PAS être conforme")
@@ -368,7 +368,7 @@ func TestAppConfigForeignFileOnTargetIsErrorNeverTouched(t *testing.T) {
 	}
 }
 
-// Isolation (review #7) : un conflit hors-périmètre sur firefox surface error
+// Isolation : un conflit hors-périmètre sur firefox surface error
 // mais n'empêche pas thunderbird (app saine) de converger (effort maximal).
 func TestAppConfigForeignFileIsolatesOtherApps(t *testing.T) {
 	ops := newFakeAppConfigOps()
@@ -414,7 +414,7 @@ func TestAppConfigOrphanOutOfScopeNotRemoved(t *testing.T) {
 	}
 }
 
-// --- App butée / app_kind inconnu : erreur isolée (les autres convergent) -----
+// App butée / app_kind inconnu : erreur isolée (les autres convergent)
 
 func TestAppConfigUnknownAppKindIsErrorIsolated(t *testing.T) {
 	ops := newFakeAppConfigOps()
@@ -436,7 +436,7 @@ func TestAppConfigUnknownAppKindIsErrorIsolated(t *testing.T) {
 	}
 }
 
-// --- Item error isolé : chemin verrouillé d'une app n'empêche pas l'autre -----
+// Item error isolé : chemin verrouillé d'une app n'empêche pas l'autre
 
 func TestAppConfigLockedPathIsErrorIsolated(t *testing.T) {
 	ops := newFakeAppConfigOps()
@@ -472,7 +472,7 @@ func TestAppConfigUnreadableFileIsError(t *testing.T) {
 	}
 }
 
-// --- Enveloppe invalide : payload non conforme → erreur (moteur rend error) ---
+// Enveloppe invalide : payload non conforme → erreur (moteur rend error)
 
 func TestAppConfigInvalidPayloadIsError(t *testing.T) {
 	ops := newFakeAppConfigOps()
@@ -519,7 +519,7 @@ func TestAppConfigMissingPoliciesKeyAccepted(t *testing.T) {
 	}
 }
 
-// --- Machine d'états §5 STRICT (table-driven, via le moteur) ------------------
+// Machine d'états §5 STRICT (table-driven, via le moteur)
 
 func TestAppConfigEngineStrictStateMachine(t *testing.T) {
 	type setup struct {

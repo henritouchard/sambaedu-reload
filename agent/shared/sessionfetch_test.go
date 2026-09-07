@@ -25,7 +25,7 @@ type fakeSessionServer struct {
 	assetBody  map[string][]byte
 	assetCalls []string
 
-	// Story 27.7 : icônes raccourci servies en STATIQUE (GET simple sans token).
+	// Icônes raccourci servies en STATIQUE (GET simple sans token).
 	iconBody  map[string][]byte
 	iconCalls []string
 
@@ -71,7 +71,7 @@ func newFakeSessionServer(t *testing.T) *fakeSessionServer {
 		}
 		w.WriteHeader(f.userStateCode)
 	})
-	// Story wallpaper-static : fonds d'écran servis en STATIQUE par Apache
+	// Fonds d'écran servis en STATIQUE par Apache
 	// (Alias /assets/wallpaper), GET simple SANS token — le handler répond même
 	// sans Authorization, comme l'Alias shortcut-icons.
 	mux.HandleFunc("/assets/wallpaper/", func(w http.ResponseWriter, r *http.Request) {
@@ -88,7 +88,7 @@ func newFakeSessionServer(t *testing.T) *fakeSessionServer {
 		w.WriteHeader(200)
 		_, _ = w.Write(body)
 	})
-	// Story 27.7 : Alias statique des icônes raccourci — GET simple (PAS de
+	// Alias statique des icônes raccourci — GET simple (PAS de
 	// vérif de token : le handler répond même sans Authorization, c'est l'objet
 	// du test « transport sans token »).
 	mux.HandleFunc("/assets/shortcut-icons/", func(w http.ResponseWriter, r *http.Request) {
@@ -185,7 +185,7 @@ func TestSessionFetch304PreservesCacheAndSendsContextEtag(t *testing.T) {
 }
 
 func TestSessionFetchEtagPerContextNotMachine(t *testing.T) {
-	// L'ETag machine ne fuit JAMAIS vers un fetch ?user= (piège n° 2).
+	// L'ETag machine ne fuit JAMAIS vers un fetch ?user=.
 	f := newFakeSessionServer(t)
 	agent, store, cfg := newSessionAgent(t, f, []Session{{Login: "jdoe", SID: testSID}})
 
@@ -275,7 +275,7 @@ func TestSessionFetchUnknownMajorPreservesContextCache(t *testing.T) {
 
 func TestSessionFetchUnknownUserMachineOnlyIsQuiet(t *testing.T) {
 	// Login inconnu/compte local : 200 machine-only — traité comme tout 200,
-	// aucun bruit (le test serveur 24.3 #9 fige le comportement serveur).
+	// aucun bruit.
 	f := newFakeSessionServer(t)
 	f.userStateBody = `{"schema":"se5.desired-state/v1","generated_at":"2026-06-12T08:00:00+00:00","ttl_seconds":3600,"machine":[],"session":[],"machine_user":[]}`
 	agent, store, cfg := newSessionAgent(t, f, []Session{{Login: "localadmin", SID: testSID}})

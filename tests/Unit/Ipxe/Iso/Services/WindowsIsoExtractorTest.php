@@ -19,7 +19,7 @@ use Tests\TestCase;
  * best-effort et non assertées ici (la copie réelle exige une vraie ISO).
  *
  * Patterns de fake NON chevauchants (`sudo -n mount*` ≠ `sudo -n umount*`) →
- * indépendants de l'ordre. Depuis Laravel 12.60, `Process::fake([...])`
+ * indépendants de l'ordre. Depuis Laravel, `Process::fake([...])`
  * n'auto-fake PLUS les commandes non matchées (elles s'exécuteraient pour de
  * vrai) → on ajoute un catch-all `'*'` APRÈS la clé spécifique.
  */
@@ -58,7 +58,7 @@ class WindowsIsoExtractorTest extends TestCase
         Process::assertRan(fn ($p) => str_starts_with($p->command, 'sudo -n mount -o loop,ro')
             && str_contains($p->command, "'" . $this->isoPath . "'"));
 
-        // Copie vers le dossier de version dérivé (/os/Win11) — escapeshellarg.
+        // Copie vers le dossier de version dérivé (os/Win11) — escapeshellarg.
         Process::assertRan(fn ($p) => str_contains($p->command, 'cp -R')
             && str_contains($p->command, "'/tmp/sambaedu-test/os/Win11/'"));
 
@@ -78,7 +78,7 @@ class WindowsIsoExtractorTest extends TestCase
     {
         Process::fake([
             'sudo -n mount*' => Process::result(output: '', errorOutput: 'mount: loop device unavailable', exitCode: 1),
-            // Laravel 12.60 : les commandes non matchées s'exécutent réellement
+            // Laravel : les commandes non matchées s'exécutent réellement
             // (plus d'auto-fake) → catch-all explicite après la clé spécifique.
             '*' => Process::result(exitCode: 0),
         ]);
@@ -98,7 +98,7 @@ class WindowsIsoExtractorTest extends TestCase
     {
         Process::fake([
             'sudo -n cp*' => Process::result(output: '', errorOutput: 'cp: no space left on device', exitCode: 5),
-            // Laravel 12.60 : catch-all (mount/rm/mkdir/umount) après la clé cp.
+            // Laravel : catch-all (mount/rm/mkdir/umount) après la clé cp.
             '*' => Process::result(exitCode: 0),
         ]);
 
@@ -141,8 +141,8 @@ class WindowsIsoExtractorTest extends TestCase
     }
 
     /**
-     * Story 3.10 — AC6.3 — Non-régression : avec un pack de pilotes ABSENT/vide,
-     * l'extraction est strictement le comportement 3.6 (aucun appel
+     * Non-régression : avec un pack de pilotes ABSENT/vide,
+     * l'extraction est strictement le comportement (aucun appel
      * `wimlib-imagex`, boot.wim stock préservé). Zéro régression pour les parcs
      * à NIC inbox.
      */
@@ -156,7 +156,7 @@ class WindowsIsoExtractorTest extends TestCase
 
         (new WindowsIsoExtractor())->extract('Win11', $this->isoPath, 60);
 
-        // Le comportement 3.6 est inchangé : aucune commande d'injection
+        // Le comportement est inchangé : aucune commande d'injection
         // wimlib n'est lancée quand le pack est vide.
         Process::assertNotRan(fn ($p) => str_starts_with($p->command, 'wimlib-imagex'));
     }

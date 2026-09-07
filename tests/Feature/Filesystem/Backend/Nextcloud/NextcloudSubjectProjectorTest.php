@@ -17,7 +17,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 61.3 — LA PROJECTION D'IDENTITÉ : le seul point de rencontre des deux
+ * LA PROJECTION D'IDENTITÉ : le seul point de rencontre des deux
  * vocabulaires, éprouvé dans LES DEUX SENS.
  */
 class NextcloudSubjectProjectorTest extends TestCase
@@ -108,7 +108,7 @@ class NextcloudSubjectProjectorTest extends TestCase
     /**
      * **LE CACHE EST LA SEULE CLÉ DE JOINTURE.** Un compte sans identité connue n'est
      * jamais deviné (« ce doit être le login ») : il est compté à part, avec sa
-     * remédiation. C'est la règle de l'homonyme héritée de la revue 61.1 — un
+     * remédiation. C'est la règle de l'homonyme héritée de la revue — un
      * rattachement non vérifié rouvre l'écrasement du mot de passe d'un tiers.
      */
     #[Test]

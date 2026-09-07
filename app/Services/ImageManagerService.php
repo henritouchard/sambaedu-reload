@@ -295,9 +295,6 @@ class ImageManagerService
         $this->fileManager->deleteMultiple($iconFiles);
     }
 
-    /**
-     * Obtenir les dimensions d'une image
-     */
     public function getImageDimensions(string $imagePath): ?array
     {
         if (!$this->fileManager->exists($imagePath)) {

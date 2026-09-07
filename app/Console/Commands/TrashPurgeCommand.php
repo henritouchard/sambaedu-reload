@@ -12,21 +12,21 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Story 5.1d — Purge des dossiers `/home/trash/*` plus vieux que `quota.trash.ttl_days`.
+ * Purge des dossiers `/home/trash/*` plus vieux que `quota.trash.ttl_days`.
  *
  * Lit la configuration `SystemSetting::get('quota.trash')` (TTL + toggle auto)
- * persistée par l'onglet `/admin/settings → Quotas & FS` (5.1c). Si TTL <= 0
- * ou clé absente, no-op safe (D2=A : warning + exit SUCCESS, jamais d'erreur
- * bloquante).
+ * persistée par l'onglet `/admin/settings → Quotas & FS`. Si TTL <= 0
+ * ou clé absente, no-op safe : warning + exit SUCCESS, jamais d'erreur
+ * bloquante.
  *
  * Pour chaque sous-dossier `/home/trash/<login>` dont le `mtime` dépasse N jours :
  *  - délègue la suppression à `HomeDirService::deleteHomeDirectoryPermanently($login)`
- *    (réutilisation maximale du service éprouvé 5.1a — 41 tests anti-injection).
- *  - trace via `Log::info` ET ligne `QuotaAuditLog` (D6=A — `target_type='trash'`,
+ *  (réutilisation maximale du service éprouvé — 41 tests anti-injection).
+ *  - trace via `Log::info` ET ligne `QuotaAuditLog` (`target_type='trash'`,
  *    `action='purge'`, `performed_by` = nom de la commande ou login admin si
  *    appelée depuis le bouton "Purger maintenant").
  *
- * Fail-soft (cohérent 5.1b D3) : un échec sur un dossier ne bloque pas les
+ * Fail-soft : un échec sur un dossier ne bloque pas les
  * suivants. `Command::FAILURE` n'est retourné QUE si TOUTES les suppressions
  * candidates ont échoué (cas dégradé sudoers cassé / FS read-only).
  *
@@ -35,14 +35,14 @@ use Illuminate\Support\Facades\Log;
  * "Purger maintenant" si l'admin veut purger d'urgence) — réservé à un usage
  * conscient.
  *
- * Décision Henri (2026-04-29 — Q2) :
+ * Comportement du garde-fou TTL :
  *   - TTL <= 0 sans `--force` => exit FAILURE + message clair
  *     "TTL non configuré — configure-le dans /admin/settings avant de lancer la purge".
  *   - TTL <= 0 avec `--force` => bypass garde-fou et purge TOUS les dossiers de
  *     plus d'1 jour (`ageDays > 0`). Comportement INTENTIONNEL : permet à un
  *     admin conscient de vider la corbeille sans config TTL préalable.
  *
- * Verrouillage (décision Q3) : un `Cache::lock('trash:action:'.$login, 60)` est
+ * Verrouillage : un `Cache::lock('trash:action:'.$login, 60)` est
  * pris par dossier dans la boucle de suppression. Si le lock est indisponible,
  * le dossier est skipped (compteur `locked`) — cohérent avec
  * `HomeDirService::archiveHomeDirectory` / `restoreHomeDirectory` qui posent le
@@ -52,7 +52,7 @@ use Illuminate\Support\Facades\Log;
  * `->when(closure)` qui lit `SystemSetting::get('quota.trash.purge_auto')`
  * pour une prise d'effet immédiate du toggle UI sans redéploiement.
  *
- * Logs : préfixe historique `QuotaService:` conservé (décision SM 5.1a).
+ * Logs : préfixe historique `QuotaService:` conservé (décision SM).
  */
 class TrashPurgeCommand extends Command
 {
@@ -82,7 +82,7 @@ class TrashPurgeCommand extends Command
 
     /**
      * Répertoire racine de la corbeille. Surchargeable en test via
-     * `TrashPurgeCommand::$trashDir = sys_get_temp_dir() . '/trash-test-...';`.
+     * `TrashPurgeCommand::$trashDir = sys_get_temp_dir(). '/trash-test-...';`.
      * Permet de tester la commande sans toucher au vrai filesystem `/home/trash`.
      */
     public static string $trashDir = '/home/trash';
@@ -99,7 +99,7 @@ class TrashPurgeCommand extends Command
         $force = (bool) $this->option('force');
         $performedBy = (string) ($this->option('performed-by') ?: 'trash:purge');
 
-        // 0. Validation `--performed-by` (review #M5 — anti log poisoning).
+        // 0. Validation `--performed-by` : anti log poisoning.
         // Format autorisé : alphanumérique + . _ - : (le ':' permet le préfixe
         // 'ui:<login>' utilisé par le bouton "Purger maintenant").
         if (!preg_match('/^[a-zA-Z0-9._:-]+$/', $performedBy)) {
@@ -111,7 +111,7 @@ class TrashPurgeCommand extends Command
         $config = SystemSetting::get('quota.trash', null);
         $ttlDays = is_array($config) ? (int) ($config['ttl_days'] ?? 0) : 0;
 
-        // 2. Garde-fou TTL invalide (D2=A) — décision Henri 2026-04-29 (Q2).
+        // 2. Garde-fou TTL invalide.
         // TTL <= 0 sans --force => erreur explicite (exit FAILURE).
         // TTL <= 0 avec --force => bypass + purge tous les dossiers > 0j (intentionnel).
         if ($ttlDays <= 0 && !$force) {
@@ -140,7 +140,7 @@ class TrashPurgeCommand extends Command
         }
 
         // 4. Énumération + filtrage.
-        // Si --force + ttl=0 (Q2) → on passe ttlDays=0 ET force=true à collectCandidates
+        // Si --force + ttl=0 → on passe ttlDays=0 ET force=true à collectCandidates
         // pour qu'il considère tout dossier d'âge > 0j comme expiré.
         $candidates = $this->collectCandidates($ttlDays > 0 ? $ttlDays : 0, $force && $ttlDays <= 0);
 
@@ -149,7 +149,7 @@ class TrashPurgeCommand extends Command
         }
 
         // 5. Suppression effective + audit.
-        // Décision Q3 (2026-04-29) : verrou per-login pour éviter la race
+        // Verrou per-login pour éviter la race
         // restoreHomeDirectory ↔ trash:purge. Si le lock est indisponible,
         // skip + log warning + compteur `locked`.
         $purged = 0;
@@ -205,7 +205,7 @@ class TrashPurgeCommand extends Command
             $duration
         ));
 
-        // Cohérent fail-soft 5.1b D3 : FAILURE uniquement si TOUTES les suppressions
+        // Fail-soft : FAILURE uniquement si TOUTES les suppressions
         // candidates ont échoué (cas dégradé). Si rien à supprimer ou succès partiel
         // → SUCCESS.
         if (count($candidates['expired']) > 0 && $purged === 0) {
@@ -238,10 +238,10 @@ class TrashPurgeCommand extends Command
 
             $path = static::$trashDir . DIRECTORY_SEPARATOR . $name;
 
-            // Story 5.1d code review #M10 — defensive : un symlink dans
+            // Défensif : un symlink dans
             // /home/trash/ pointant vers /home/<autre_user> ferait que
             // `sudo rm -rf` suivrait le lien et purgerait le home actif.
-            // On les ignore TOUJOURS (cohérent HomeDirService 5.1a).
+            // On les ignore TOUJOURS (cohérent HomeDirService).
             if (is_link($path)) {
                 Log::warning('QuotaService: trash:purge symlink détecté, skip', [
                     'path' => $path,
@@ -323,7 +323,7 @@ class TrashPurgeCommand extends Command
     }
 
     /**
-     * Trace une suppression réussie dans `quota_audit_logs` (D6=A).
+     * Trace une suppression réussie dans `quota_audit_logs`.
      *
      * @param  array{login:string,mtime:int,age_days:int}  $entry
      */

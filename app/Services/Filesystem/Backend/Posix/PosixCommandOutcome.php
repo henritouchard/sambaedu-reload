@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Filesystem\Backend\Posix;
 
 /**
- * Story 60.4 — issue d'UN geste système, à l'intérieur du backend.
+ * Issue d'UN geste système, à l'intérieur du backend.
  *
  * **Ce n'est pas un rapport, et c'est pour ça qu'il porte un booléen.** La règle
  * « aucun booléen dans un rapport » vise ce qui traverse la ligne de contrat :

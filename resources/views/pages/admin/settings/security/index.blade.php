@@ -17,7 +17,7 @@ use Livewire\Component;
  *
  * Rappel : la session admin est une session Laravel classique (guard web
  * `driver => session`), PAS un JWT. Le JWT fédéré ne borne que la fenêtre de
- * login (story 20.1), pas la session vivante.
+ * login, pas la session vivante.
  *
  * Sécurité : middleware can:server.admin sur la route + double guard sur mount()
  * et save(). Toasts génériques (jamais $e->getMessage() exposé).

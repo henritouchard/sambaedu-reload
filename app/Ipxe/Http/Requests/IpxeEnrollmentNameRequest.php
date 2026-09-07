@@ -7,17 +7,15 @@ namespace App\Ipxe\Http\Requests;
 use Illuminate\Foundation\Http\FormRequest;
 
 /**
- * Story 3.3 — AC7.2.
- *
  * Validation permissive du body de `GET|POST /ipxe/enrollment/name`. Règles
- * iso `IpxeBootRequest` (3.1) + `new_name` optionnel (saisie utilisateur).
+ * iso `IpxeBootRequest` + `new_name` optionnel (saisie utilisateur).
  *
  * **Sanitisation business** : tout `new_name` reçu est passé par
  * {@see \App\Ipxe\Services\IpxeHostnameSanitizer} côté service — pas de
  * `regex` ici (sinon iPXE recevrait un 422 HTML/JSON au lieu d'un menu
  * d'erreur).
  *
- * `authorize()` retourne `true` — auth via middleware `auth.v1.lan-only` (D3).
+ * `authorize()` retourne `true` — auth via middleware `auth.v1.lan-only`.
  */
 class IpxeEnrollmentNameRequest extends FormRequest
 {

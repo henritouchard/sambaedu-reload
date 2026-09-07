@@ -10,11 +10,11 @@ use App\Services\Filesystem\Plan\PlanGrant;
 use App\Services\Filesystem\Plan\PlanNode;
 
 /**
- * Story 60.3 — le backend qui N'EXÉCUTE RIEN, et qui le dit.
+ * Le backend qui N'EXÉCUTE RIEN, et qui le dit.
  *
  * Il sert l'aperçu avant application : montrer à l'administrateur ce qu'un plan
  * dit, AVANT que quoi que ce soit ne soit écrit. C'est le premier livrable visible
- * de l'epic, et c'est aussi la seconde implémentation du contrat — celle qui
+ * du plan de fichiers, et c'est aussi la seconde implémentation du contrat — celle qui
  * empêche le contrat d'être le premier backend déguisé.
  *
  * **Ce qu'il prouve, et ce qu'il ne prouve PAS.** Il prouve que le contrat est
@@ -140,7 +140,7 @@ final class PreviewBackend implements FileBackend
     }
 
     /**
-     * Story 60.5 — l'aperçu n'écrit NULLE PART, donc il n'a pas d'emplacement.
+     * L'aperçu n'écrit NULLE PART, donc il n'a pas d'emplacement.
      * Rendre un chemin plausible serait la pire réponse : elle laisserait croire
      * qu'un aperçu vise un endroit réel.
      */

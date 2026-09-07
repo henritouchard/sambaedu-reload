@@ -22,34 +22,31 @@ use RuntimeException;
 use Throwable;
 
 /**
- * Story 56.2 (FR7/FR8/FR10, NFR2/NFR3/NFR8) — LE moteur d'installation et de
+ * LE moteur d'installation et de
  * désinstallation d'une extension de type `app`.
  *
  * `php artisan ext:install <key>` et `ext:remove <key>` ne sont que des
- * façades sur ce service, et l'UI de la Story 56.3 n'en sera qu'une autre
- * (AR1 : le canal existe, scriptable et auditable, AVANT toute interface).
+ * façades sur ce service, et l'UI de la n'en sera qu'une autre
+ * Le canal existe, scriptable et auditable, AVANT toute interface.
  *
- * ══════════════════════════════════════════════════════════════════════════
  *  CHAÎNE DE CONFIANCE — AUCUN SECOND FORMAT DE SIGNATURE
  *
- *  La Story 56.1 signe l'INDEX du dépôt (Ed25519, clé PINNÉE par source). Le
+ * La source signe l'INDEX de son dépôt (Ed25519, clé PINNÉE par source). Le
  *  manifest embarqué dans cet index porte `install.sha256` : le hash du paquet
  *  est donc **transitivement couvert par la signature de l'index**. Vérifier
  *  `hash_file('sha256', $deb) === $manifest['install']['sha256']` EST la
- *  vérification « contre la clé déclarée de sa source » exigée par NFR2 —
+ *  vérification « contre la clé déclarée de sa source » —
  *  exactement le modèle apt (`Release` signé → `Packages` → `.deb` par hash).
  *  Inventer une signature détachée par-paquet serait un second vérificateur,
  *  pour la même clé, à zéro gain, avec un coût pour chaque éditeur.
  *
- *  « AVANT toute exécution » (FR7) a ici un sens PRÉCIS : la première
+ *  « AVANT toute exécution » a ici un sens PRÉCIS : la première
  *  exécution de code tiers, c'est le maintainer script d'apt (`preinst` /
  *  `postinst`, exécutés root). Le sha256 est vérifié avant le PREMIER appel au
  *  helper — donc apt n'est jamais invoqué sur un artefact non conforme. Le
- *  test AC3 l'affirme littéralement : zéro appel au runner.
- * ══════════════════════════════════════════════════════════════════════════
+ *  test l'affirme littéralement : zéro appel au runner.
  *
- * ══════════════════════════════════════════════════════════════════════════
- *  CONTRAT DE PAQUET `sambaedu-ext-*` (contrat PUBLIC — Epics 57/58)
+ *  CONTRAT DE PAQUET `sambaedu-ext-*` (contrat PUBLIC)
  *
  *  | Élément        | Contrat                                                     |
  *  |----------------|-------------------------------------------------------------|
@@ -67,13 +64,11 @@ use Throwable;
  *  `SE5_EXT_KEY`, `SE5_EXT_BASE_PATH`, `SE5_EXT_PORT`, `SE5_OIDC_ISSUER`,
  *  `SE5_OIDC_CLIENT_ID`, `SE5_OIDC_CLIENT_SECRET`, `SE5_OIDC_REDIRECT_URI`.
  *
- *  C'est ce fichier qui répond à la friction n° 3 relevée en clôture de
- *  l'Epic 55 (« rien ne dit comment une extension apprend son issuer ») : elle
- *  l'apprend ici, par son environnement, et par aucun autre canal.
- * ══════════════════════════════════════════════════════════════════════════
+ *  L'extension ne découvre son chemin de montage, son port et ses paramètres
+ *  OIDC que par ce fichier : elle les apprend par son environnement, et par
+ *  aucun autre canal.
  *
- * ══════════════════════════════════════════════════════════════════════════
- *  ORDRE D'INSTALLATION — CHAQUE ÉTAPE RÉVERSIBLE (NFR8)
+ *  ORDRE D'INSTALLATION — CHAQUE ÉTAPE RÉVERSIBLE
  *
  *      étape (do)                                     compensation (undo)
  *   0. verrou fichier global                          release (finally)
@@ -81,7 +76,7 @@ use Throwable;
  *   2. bloc `install` + allocation de port             — (lecture seule)
  *   3. téléchargement borné + sha256                   unlink du .tmp fautif
  *      ───── frontière fail-closed : rien au-delà sans sha256 conforme ─────
- *   4. OidcClientRegistry::register()                  revoke(client_id)
+ *  4. OidcClientRegistry::register() revoke(client_id)
  *   5. helper write-env (stdin : env + secret)         helper remove-env
  *   6. helper install-package (apt → 1ʳᵉ exécution)    helper remove-package
  *   7. helper enable-service                           helper disable-service
@@ -94,7 +89,7 @@ use Throwable;
  *  n'expose `/ext/<key>` qu'une fois le backend démarré : jamais de 502
  *  provisionné) ; la base en TOUT dernier (si elle échoue, les compensations
  *  8→4 ramènent l'état propre ; l'inverse — base posée, système en vrac —
- *  serait l'installation zombie que NFR8 interdit).
+ *  serait une installation zombie).
  *
  *  Échec à l'étape N ⇒ undo N-1…4 en ordre INVERSE, chaque compensation dans
  *  son propre try/catch (une compensation qui échoue est journalisée et
@@ -106,14 +101,12 @@ use Throwable;
  *  `remove()` est strictement l'ordre inverse, chaque étape tolérante à
  *  l'absent — c'est ce qui en fait à la fois la désinstallation nominale ET
  *  l'outil de nettoyage d'un état dégradé imprévu.
- * ══════════════════════════════════════════════════════════════════════════
  *
- * ══════════════════════════════════════════════════════════════════════════
- *  STORY 56.3 — CE QUI S'AJOUTE, ET CE QUI NE BOUGE PAS
+ * CE QUI S'AJOUTE, ET CE QUI NE BOUGE PAS
  *
  *  Trois ajouts strictement ADDITIFS ; aucun chemin existant n'est retouché.
  *
- *   1. {@see self::update()} — un plan à DEUX étapes privilégiées
+ *  1. {@see self::update()} — un plan à DEUX étapes privilégiées
  *      (`install-package` puis `restart-service`), précédé de préconditions
  *      vérifiées AVANT d'agir, dont le GAGE DE ROLLBACK. Rien d'autre n'est
  *      touché : port, fragment Apache, fichier d'environnement et client OIDC
@@ -122,12 +115,11 @@ use Throwable;
  *      vers l'état de progression persisté de l'UI. Ce service ne connaît ni
  *      la table des runs, ni les Jobs : la CLI fonctionne sans run, et le
  *      moteur reste testable sans base de runs. ⚠️ Le rapport est ISOLÉ
- *      ({@see self::mark()}) — il ne peut JAMAIS faire échouer une opération.
- *   3. {@see self::stepLabels()} — les libellés d'étapes, remontés des
+ *  ({@see self::mark()}) — il ne peut JAMAIS faire échouer une opération.
+ *  3. {@see self::stepLabels()} — les libellés d'étapes, remontés des
  *      commandes vers le service : un seul énoncé, quatre consommateurs.
- * ══════════════════════════════════════════════════════════════════════════
  *
- * **Aucun appel système ici** (NFR15) : tous les effets privilégiés passent par
+ * **Aucun appel système ici** : tous les effets privilégiés passent par
  * {@see ExtensionHelperRunner}, seul seam root du domaine. Le secret OIDC ne
  * quitte ce service que par le `stdin` de `write-env` : jamais en argument,
  * jamais journalisé, jamais dans `details`, jamais dans un retour de méthode.
@@ -140,7 +132,7 @@ use Throwable;
 class ExtensionInstallService
 {
     /**
-     * Verrou GLOBAL du moteur (décision 56.2 #2) — pas un verrou par clé : les
+     * Verrou GLOBAL du moteur — pas un verrou par clé : les
      * installations sont des actes d'administration rares, et l'unicité globale
      * des clés comme l'allocation de port deviennent triviales et sans course.
      *
@@ -152,7 +144,7 @@ class ExtensionInstallService
 
     /**
      * Plancher de rétention du verrou. La valeur EFFECTIVE est dérivée du
-     * budget de temps du Job ({@see self::lockSeconds()}) — review 56.3 #2.
+     * budget de temps du Job ({@see self::lockSeconds()}).
      */
     private const LOCK_SECONDS_FLOOR = 900;
 
@@ -162,7 +154,7 @@ class ExtensionInstallService
     /** Taille d'un morceau de lecture du paquet (borne appliquée À LA LECTURE). */
     private const READ_CHUNK_BYTES = 65536;
 
-    // ── Sous-commandes du helper root (contrat `sambaedu-ext-helper.sh`) ────
+    // Sous-commandes du helper root (contrat `sambaedu-ext-helper.sh`)
     public const HELPER_WRITE_ENV = 'write-env';
     public const HELPER_REMOVE_ENV = 'remove-env';
     public const HELPER_INSTALL_PACKAGE = 'install-package';
@@ -174,14 +166,14 @@ class ExtensionInstallService
     public const HELPER_RELOAD_APACHE = 'reload-apache';
 
     /**
-     * Story 56.3 — redémarrage du backend après remplacement de son paquet.
+     * Redémarrage du backend après remplacement de son paquet.
      * `restart` et non `reload` : une extension tierce n'a aucune obligation de
      * savoir recharger sa configuration à chaud, et son binaire vient de
      * changer sur le disque.
      */
     public const HELPER_RESTART_SERVICE = 'restart-service';
 
-    // ── Étiquettes d'étapes (rapport console + `details` d'audit) ───────────
+    // Étiquettes d'étapes (rapport console + `details` d'audit)
     public const STEP_PACKAGE = 'package';
     public const STEP_OIDC = 'oidc_client';
     public const STEP_ENV = 'env_file';
@@ -194,8 +186,7 @@ class ExtensionInstallService
      * Les trois OPÉRATIONS du moteur — vocabulaire canonique du domaine, défini
      * ICI parce que ce sont exactement les trois méthodes publiques de ce
      * service. {@see \App\Models\ExtensionInstallRun} persiste ces valeurs et
-     * les réexpose par référence : un seul énoncé, aucune dérive possible
-     * (leçon review 56.1 #3).
+     * les réexpose par référence : un seul énoncé, aucune dérive possible.
      */
     public const OPERATION_INSTALL = 'install';
 
@@ -204,12 +195,12 @@ class ExtensionInstallService
     public const OPERATION_REMOVE = 'remove';
 
     /**
-     * Story 56.3 — catégories de refus PROPRES à la mise à jour.
+     * Catégories de refus PROPRES à la mise à jour.
      *
-     * Comme toutes les catégories du moteur (56.2) : courtes, stables, en
+     * Comme toutes les catégories du moteur : courtes, stables, en
      * français, écrites telles quelles dans `extension_audit_logs.details` et
      * affichées telles quelles à l'admin — donc JAMAIS d'URL, JAMAIS de secret
-     * (règle `last_error` de 56.1). Elles portent en plus la consigne de
+     * (règle `last_error`). Elles portent en plus la consigne de
      * sortie, parce qu'il n'y a rien d'autre à en dire : ces deux refus ne se
      * réparent que par désinstallation puis réinstallation.
      */
@@ -220,22 +211,22 @@ class ExtensionInstallService
     public const ERROR_OIDC_CLIENT_MISSING = 'client OIDC de l\'extension introuvable — désinstaller puis réinstaller';
 
     /**
-     * Review 56.3 #1 — la mise à jour a échoué ET le retour arrière aussi.
-     * Le seul cas de cette story où l'instance peut rester dans un état que le
+     * La mise à jour a échoué ET le retour arrière aussi. Le seul cas où
+     * l'instance peut rester dans un état que le
      * moteur ne sait plus réparer seul : il doit se dire, pas se confondre avec
      * un échec dont on est revenu proprement.
      */
     public const ERROR_ROLLBACK_FAILED = 'mise à jour ÉCHOUÉE et retour à la version précédente ÉCHOUÉ — vérifier le service, intervention manuelle requise';
 
     /**
-     * Review 56.3 #1 — installation échouée dont le nettoyage est lui-même
+     * Installation échouée dont le nettoyage est lui-même
      * incomplet : des composants système peuvent subsister. `ext:remove` est
      * l'outil de nettoyage prévu pour cet état (ses étapes sont idempotentes).
      */
     public const ERROR_CLEANUP_INCOMPLETE = 'installation échouée et nettoyage incomplet — relancer « ext:remove » pour repartir d\'un état propre';
 
     /**
-     * Story 56.4 — le manifest demande un scope que SE5 ne sait pas accorder.
+     * Le manifest demande un scope que SE5 ne sait pas accorder.
      *
      * Refus FAIL-CLOSED, avant toute action : ni client OIDC, ni appel helper,
      * ni composant système. Accorder « ce qu'on a compris » d'une demande qu'on
@@ -244,8 +235,8 @@ class ExtensionInstallService
      * jour l'extension, ou SE5).
      *
      * ⚠️ La garde vit à l'OCTROI, jamais dans le validateur de manifest : le
-     * champ `scopes` reste à vocabulaire ouvert côté catalogue (54.1), sinon
-     * un manifest déjà publié cesserait d'être synchronisable (NFR11).
+     * champ `scopes` reste à vocabulaire ouvert côté catalogue, sinon
+     * un manifest déjà publié cesserait d'être synchronisable.
      */
     public const ERROR_UNSUPPORTED_SCOPES = 'scope demandé non supporté par SE5 — mettre à jour l\'extension ou le serveur';
 
@@ -256,17 +247,13 @@ class ExtensionInstallService
     ) {
     }
 
-    // =====================================================================
-    // API publique
-    // =====================================================================
-
     /**
      * Installe une extension `app` de bout en bout.
      *
      * @param  string         $key        clé (`id` du manifest) de l'extension
      * @param  string|null    $sourceKey  source à privilégier si la clé est publiée par plusieurs
      * @param  User|null      $actor      `null` ⇒ acte CLI, audité sous `system`
-     * @param  callable|null  $onStep     Story 56.3 — rapport de progression (cf. {@see self::mark()})
+     * @param callable|null $onStep — rapport de progression (cf. {@see self::mark})
      * @return array{changed: bool, status: string, steps: list<string>, port: int|null, error: string}
      *
      * @throws ExtensionInstallException  refus de CONTRAT (clé inconnue/ambiguë, type `link`, moteur occupé)
@@ -290,16 +277,15 @@ class ExtensionInstallService
     }
 
     /**
-     * Story 56.3 (FR11, AR1) — Met à jour une extension `app` DÉJÀ installée
+     * Met à jour une extension `app` DÉJÀ installée
      * vers la version que publie actuellement sa source.
      *
-     * ══════════════════════════════════════════════════════════════════════
      *  PÉRIMÈTRE MINIMAL, ASSUMÉ : le paquet et le service, RIEN D'AUTRE
      *
      *  `installed_port`, le fragment Apache, le fichier d'environnement et le
      *  client OIDC sont des invariants de la CLÉ, pas de la version. Les
      *  régénérer serait du churn à risque : le `client_secret` OIDC n'est pas
-     *  récupérable (55.1 — seul son sha256 est en base), donc re-enregistrer
+     *  récupérable (seul son sha256 est en base), donc re-enregistrer
      *  le client imposerait de réécrire l'env ET de redémarrer, avec une
      *  compensation impossible à garantir si l'une des deux échoue.
      *
@@ -308,23 +294,19 @@ class ExtensionInstallService
      *  toute action, le chemin de secours étant désinstaller puis réinstaller
      *  (la configuration de l'extension est alors purgée : c'est dit dans le
      *  message et dans le runbook QA).
-     * ══════════════════════════════════════════════════════════════════════
      *
-     * ══════════════════════════════════════════════════════════════════════
      *  LE ROLLBACK N'EST PAS UNE ESPÉRANCE, C'EST UNE PRÉCONDITION VÉRIFIÉE
      *
      *  Avant de toucher quoi que ce soit, le moteur exige que le `.deb` de la
-     *  version INSTALLÉE soit présent en staging (il y survit par construction,
-     *  décision 56.2 #6), désigné par `installed_sha256`, et RE-HACHÉ conforme
+     *  version INSTALLÉE soit présent en staging (il y est conservé après
+     *  installation), désigné par `installed_sha256`, et RE-HACHÉ conforme
      *  — jamais de confiance au nom de fichier. Absent ou corrompu ⇒ refus
      *  `rollback_package_missing`, sans avoir rien entrepris.
      *
      *  Ainsi l'échec d'apt ou du redémarrage a TOUJOURS une compensation
      *  exécutable : réinstaller l'ancien paquet puis redémarrer. L'état retombe
      *  sur la version d'avant, `installed_*` restent vrais en base (ils n'ont
-     *  jamais été touchés), et l'audit consigne `update_failed`. Pas de zombie
-     *  (NFR8).
-     * ══════════════════════════════════════════════════════════════════════
+     *  jamais été touchés), et l'audit consigne `update_failed`. Pas de zombie.
      *
      * @return array{changed: bool, status: string, steps: list<string>, port: int|null, error: string}
      *
@@ -337,12 +319,12 @@ class ExtensionInstallService
 
     /**
      * Libellés FR des étapes, PAR OPÉRATION — un seul énoncé, quatre
-     * consommateurs : `ext:install`, `ext:remove`, `ext:update` et l'UI 56.3.
+     * consommateurs : `ext:install`, `ext:remove`, `ext:update` et l'UI.
      *
      * Cette map vivait en privé dans `ExtensionInstall::renderSteps()` ; l'UI
-     * en avait besoin, et la dupliquer aurait garanti la divergence (leçon
-     * review 56.1 #3). Les libellés `install` et `remove` sont repris
-     * VERBATIM : la sortie des deux commandes 56.2 ne bouge pas d'un caractère.
+     * en avait besoin, et la dupliquer aurait garanti la divergence. Les
+     * libellés `install` et `remove` sont repris
+     * VERBATIM : la sortie des deux commandes ne bouge pas d'un caractère.
      *
      * Les mêmes constantes `STEP_*` n'ont pas le même sens selon l'opération —
      * `apt_install` veut dire « paquet installé », « paquet purgé » ou
@@ -413,7 +395,7 @@ class ExtensionInstallService
      * URI de redirection OIDC de l'extension : celles du manifest (bornées à
      * `/ext/<key>/` par le validateur) ou le défaut conventionnel.
      *
-     * Le défaut EST le contrat que le SDK (Epic 58) implémentera : une
+     * Le défaut EST le contrat que le SDK implémentera : une
      * extension qui ne déclare rien est servie sur
      * `/ext/<key>/oidc/callback`.
      *
@@ -429,23 +411,19 @@ class ExtensionInstallService
         return [ExtensionManifestValidator::appEntryUrl($key).'/oidc/callback'];
     }
 
-    // =====================================================================
-    // Installation
-    // =====================================================================
-
     /**
      * @return array{changed: bool, status: string, steps: list<string>, port: int|null, error: string}
      */
     private function doInstall(string $key, ?string $sourceKey, ?User $actor, ?callable $onStep = null): array
     {
-        // ── 1. Résolution + gardes de CONTRAT (elles lèvent) ───────────────
+        // 1. Résolution + gardes de CONTRAT (elles lèvent)
         $extension = $this->resolve($key, $sourceKey);
 
         if ($extension->type !== ExtensionType::App) {
             throw ExtensionInstallException::linkNotSupported($key);
         }
 
-        // NFR8 — déjà installée depuis CETTE ligne : no-op signalé, zéro appel
+        // Déjà installée depuis CETTE ligne : no-op signalé, zéro appel
         // helper, zéro ligne d'audit. Une installation rejouée n'est pas un
         // acte, c'est une confirmation.
         if (($extension->status ?? ExtensionStatus::Available) === ExtensionStatus::Integrated) {
@@ -454,27 +432,27 @@ class ExtensionInstallService
 
         $source = $extension->source;
 
-        // ── 1b. Gardes d'ÉTAT (elles auditent `install_failed`) ────────────
+        // 1b. Gardes d'ÉTAT (elles auditent `install_failed`)
         if ($source === null) {
             return $this->fail($extension, 'source introuvable pour cette extension', $actor);
         }
 
         // Une source gelée ou dont le dernier catalogue n'a pas pu être VÉRIFIÉ
-        // ne propose plus rien (règle UNIQUE portée par le modèle, review 56.1
-        // #1). `unreachable` reste acceptable : le registre EST le dernier
-        // catalogue vérifié (NFR7) — et le paquet, lui, sera de toute façon
+        // ne propose plus rien (règle UNIQUE portée par le modèle).
+        // `unreachable` reste acceptable : le registre EST le dernier
+        // catalogue vérifié — et le paquet, lui, sera de toute façon
         // vérifié par son sha256.
         if (! $source->offersAvailableExtensions()) {
             return $this->fail($extension, 'source désactivée ou catalogue non vérifié', $actor);
         }
 
-        // ── 1c. Unicité GLOBALE des clés `app` (dette léguée par 56.1) ─────
+        // 1c. Unicité GLOBALE des clés `app`.
         //
         // Ce qui doit être unique, c'est ce que la clé RÉSERVE sur le système :
         // le paquet `sambaedu-ext-<key>`, l'unité systemd homonyme, le fragment
         // Apache et le préfixe `/ext/<key>`. Seules les `app` occupent ces
-        // noms — une `link` intégrée ne pose aucun composant (54.2). Sans le
-        // filtre de type (review 56.2 #3), une `link` nommée `doc` bloquait
+        // noms — une `link` intégrée ne pose aucun composant. Sans le
+        // filtre de type, une `link` nommée `doc` bloquait
         // l'installation d'une `app` `doc` d'une autre source, avec un message
         // exact à la lettre mais trompeur, et pour un conflit qui n'existe pas.
         $conflict = Extension::query()
@@ -493,7 +471,7 @@ class ExtensionInstallService
             );
         }
 
-        // ── 2. Bloc `install` + allocation de port ─────────────────────────
+        // 2. Bloc `install` + allocation de port
         $install = $extension->installBlock();
         if ($install === null) {
             return $this->fail($extension, 'bloc install absent du manifest', $actor);
@@ -518,7 +496,7 @@ class ExtensionInstallService
             }
         }
 
-        // ── 2b. Story 56.4 — les scopes DEMANDÉS sont-ils accordables ? ────
+        // 2b. — les scopes DEMANDÉS sont-ils accordables ?
         //
         // C'est ici, et pas ailleurs, que les scopes du manifest deviennent un
         // consentement réel. La vérification arrive AVANT toute action — avant
@@ -542,13 +520,13 @@ class ExtensionInstallService
             return $this->fail($extension, 'plage de ports épuisée', $actor);
         }
 
-        // ── 3. Téléchargement borné + sha256 (FRONTIÈRE FAIL-CLOSED) ───────
+        // 3. Téléchargement borné + sha256 (FRONTIÈRE FAIL-CLOSED)
         $package = $this->ensurePackage($extension, $source, $install);
         if ($package['path'] === null) {
             return $this->fail($extension, $package['error'], $actor);
         }
 
-        // ═══ Au-delà de cette ligne, et pas avant, du code tiers s'exécute ═══
+        // Au-delà de cette ligne, et pas avant, du code tiers s'exécute
 
         /** @var list<string> $steps */
         $steps = [];
@@ -558,9 +536,9 @@ class ExtensionInstallService
         $currentStep = self::STEP_OIDC;
 
         try {
-            // ── 4. Client OIDC ─────────────────────────────────────────────
+            // 4. Client OIDC
             $redirectUris = $this->redirectUrisFor((string) $extension->key, $install['redirect_paths']);
-            // Story 56.4 — l'OCTROI : exactement les scopes du manifest, ni
+            // L'OCTROI : exactement les scopes du manifest, ni
             // plus ni moins. Ils ont été vérifiés accordables à l'étape 2b ;
             // le registre les revérifie (il ne fait jamais confiance à son
             // appelant) et les persiste normalisés.
@@ -576,7 +554,7 @@ class ExtensionInstallService
             };
             $this->mark($steps, self::STEP_OIDC, $onStep);
 
-            // ── 5. Fichier d'environnement (LE secret part par stdin) ───────
+            // 5. Fichier d'environnement (LE secret part par stdin)
             $currentStep = self::STEP_ENV;
             $env = $this->buildEnvFile(
                 (string) $extension->key,
@@ -599,7 +577,7 @@ class ExtensionInstallService
             };
             $this->mark($steps, self::STEP_APT, $onStep);
 
-            // ── 7. Unité systemd ───────────────────────────────────────────
+            // 7. Unité systemd
             $currentStep = self::STEP_SERVICE;
             $this->callHelper([self::HELPER_ENABLE_SERVICE, (string) $extension->key]);
             $undo[] = function () use ($extension): void {
@@ -607,7 +585,7 @@ class ExtensionInstallService
             };
             $this->mark($steps, self::STEP_SERVICE, $onStep);
 
-            // ── 8. Exposition Apache — DERNIER geste système ───────────────
+            // 8. Exposition Apache — DERNIER geste système
             $currentStep = self::STEP_APACHE;
             $this->callHelper([self::HELPER_WRITE_FRAGMENT, (string) $extension->key, (string) $port]);
             $undo[] = function () use ($extension): void {
@@ -617,14 +595,14 @@ class ExtensionInstallService
             $this->callHelper([self::HELPER_RELOAD_APACHE]);
             $this->mark($steps, self::STEP_APACHE, $onStep);
 
-            // ── 9. Base : l'acte et sa trace, dans la même transaction ─────
+            // 9. Base : l'acte et sa trace, dans la même transaction
             $currentStep = self::STEP_REGISTRY;
             $this->lifecycle->markAppInstalled(
                 (int) $extension->id,
                 (string) $extension->version,
                 $port,
                 $actor,
-                // Story 56.3 — le sha256 VÉRIFIÉ du paquet réellement posé : il
+                // Le sha256 VÉRIFIÉ du paquet réellement posé : il
                 // désigne, dans le staging content-addressed, le `.deb` vers
                 // lequel une future mise à jour ratée devra revenir.
                 $install['sha256'],
@@ -638,8 +616,8 @@ class ExtensionInstallService
                 'message' => $e->getMessage(),
             ]);
 
-            // Même exigence d'honnêteté que pour la mise à jour (review 56.3
-            // #1) : si le nettoyage lui-même est incomplet, des composants
+            // Même exigence d'honnêteté que pour la mise à jour : si le
+            // nettoyage lui-même est incomplet, des composants
             // système peuvent subsister — le dire, et nommer l'outil qui
             // répare.
             $cleaned = $this->compensate($undo, (string) $extension->key);
@@ -660,10 +638,6 @@ class ExtensionInstallService
 
         return $this->result(true, $extension->fresh() ?? $extension, $steps, $port, '');
     }
-
-    // =====================================================================
-    // Désinstallation
-    // =====================================================================
 
     /**
      * @return array{changed: bool, status: string, steps: list<string>, port: int|null, error: string}
@@ -724,21 +698,21 @@ class ExtensionInstallService
             );
         }
 
-        // ⚠️ Review 56.2 #2 — les trois étapes qui suivent étaient HORS du
-        // `try` : une exception de la révocation OIDC ou de `markAppRemoved()`
-        // (erreur DB, contrainte) remontait nue jusqu'à `ext:remove`, qui
+        // ⚠️ Les trois étapes qui suivent doivent rester DANS le `try` : hors
+        // de lui, une exception de la révocation OIDC ou de `markAppRemoved()`
+        // (erreur DB, contrainte) remonte nue jusqu'à `ext:remove`, qui
         // n'attrape qu'`ExtensionInstallException` ⇒ stack trace en CLI, et
         // surtout composants système déjà retirés alors que la base dit encore
-        // `integrated` : le zombie INVERSE, celui que NFR8 vise autant que
-        // l'autre. Elles sont désormais couvertes par le même filet, avec le
-        // même traitement gracieux que les étapes helper.
+        // `integrated` : le zombie INVERSE de l'installation à moitié posée.
+        // Elles sont donc couvertes par le même filet, avec le même traitement
+        // gracieux que les étapes helper.
         try {
-            // ── Clients OIDC : TOUS les actifs de cette clé (décision #5) ───
+            // Clients OIDC : TOUS les actifs de cette clé.
             // Pas seulement le dernier connu : une installation avortée peut
             // avoir laissé des clients fantômes (register réussi, étape
             // suivante en échec, compensation elle-même en échec). L'état final
             // doit être sûr même après plusieurs échecs partiels. La révocation
-            // tue les jetons déjà émis — mécanique 55.2 validée en QA 13.8.
+            // tue les jetons déjà émis.
             $currentStep = self::STEP_OIDC;
             $revoked = 0;
             foreach (OidcClient::query()->where('extension_key', $extension->key)->where('enabled', true)->get() as $client) {
@@ -747,12 +721,12 @@ class ExtensionInstallService
             }
             $this->mark($steps, self::STEP_OIDC, $onStep);
 
-            // ── Staging : le paquet vérifié n'a plus de consommateur ────────
+            // Staging : le paquet vérifié n'a plus de consommateur
             $currentStep = self::STEP_PACKAGE;
             $this->purgeStaging((string) $extension->key);
             $this->mark($steps, self::STEP_PACKAGE, $onStep);
 
-            // ── Base : l'acte et sa trace, dans la même transaction ─────────
+            // Base : l'acte et sa trace, dans la même transaction
             $currentStep = self::STEP_REGISTRY;
             $this->lifecycle->markAppRemoved((int) $extension->id, $actor);
             $this->mark($steps, self::STEP_REGISTRY, $onStep);
@@ -785,10 +759,6 @@ class ExtensionInstallService
         return $this->result(true, $extension->fresh() ?? $extension, $steps, null, '');
     }
 
-    // =====================================================================
-    // Mise à jour (Story 56.3)
-    // =====================================================================
-
     /**
      * @return array{changed: bool, status: string, steps: list<string>, port: int|null, error: string}
      */
@@ -796,7 +766,7 @@ class ExtensionInstallService
     {
         // Résolution façon `resolveForRemoval()` : quand plusieurs sources
         // publient la clé, la ligne INSTALLÉE n'est jamais ambiguë (unicité
-        // globale garantie à l'installation, décision 56.2 #11).
+        // globale garantie à l'installation).
         $extension = $this->resolveForRemoval($key);
 
         if ($extension->type !== ExtensionType::App) {
@@ -831,7 +801,7 @@ class ExtensionInstallService
             return $this->failUpdate($extension, 'canal d\'installation non supporté', $actor);
         }
 
-        // ── No-op : la source publie ce qui tourne déjà ────────────────────
+        // No-op : la source publie ce qui tourne déjà
         // ⚠️ La règle est un ÉCART, jamais un ORDRE : `version` est une chaîne
         // LIBRE du manifest (le validateur ne lui impose aucun format), donc
         // inventer une comparaison sémantique mentirait sur un
@@ -842,7 +812,7 @@ class ExtensionInstallService
             return $this->result(false, $extension, [], (int) $extension->installed_port, '');
         }
 
-        // ── Invariants de la CLÉ : ils ne doivent pas avoir bougé ──────────
+        // Invariants de la CLÉ : ils ne doivent pas avoir bougé
         $prefix = ExtensionManifestValidator::appEntryUrl((string) $extension->key).'/';
         foreach ($install['redirect_paths'] as $path) {
             if (! str_starts_with($path, $prefix) || str_contains($path, '..')) {
@@ -867,7 +837,7 @@ class ExtensionInstallService
 
         // Comparaison par ENSEMBLE : un simple réordonnancement des URI dans le
         // manifest ne change rien au comportement du client OIDC (l'égalité est
-        // exacte URI par URI à l'usage, 55.1) — refuser pour cela serait un
+        // exacte URI par URI à l'usage) — refuser pour cela serait un
         // faux positif. Ce qui est refusé, c'est un ensemble DIFFÉRENT.
         sort($expected);
         sort($current);
@@ -876,7 +846,7 @@ class ExtensionInstallService
             return $this->failUpdate($extension, self::ERROR_REDIRECT_PATHS_CHANGED, $actor);
         }
 
-        // ── Gage de rollback : vérifié AVANT d'agir, pas espéré après ──────
+        // Gage de rollback : vérifié AVANT d'agir, pas espéré après
         $rollbackPath = $this->rollbackPackage($extension);
         if ($rollbackPath === null) {
             return $this->failUpdate($extension, self::ERROR_ROLLBACK_PACKAGE_MISSING, $actor);
@@ -888,7 +858,7 @@ class ExtensionInstallService
             return $this->failUpdate($extension, $package['error'], $actor);
         }
 
-        // ═══ Au-delà de cette ligne, et pas avant, du code tiers s'exécute ═══
+        // Au-delà de cette ligne, et pas avant, du code tiers s'exécute
 
         /** @var list<string> $steps */
         $steps = [];
@@ -919,7 +889,7 @@ class ExtensionInstallService
             $this->callHelper([self::HELPER_RESTART_SERVICE, (string) $extension->key]);
             $this->mark($steps, self::STEP_SERVICE, $onStep);
 
-            // ── Base : l'acte et sa trace, dans la même transaction ────────
+            // Base : l'acte et sa trace, dans la même transaction
             $currentStep = self::STEP_REGISTRY;
             $this->lifecycle->markAppUpdated(
                 (int) $extension->id,
@@ -936,7 +906,7 @@ class ExtensionInstallService
                 'message' => $e->getMessage(),
             ]);
 
-            // Review 56.3 #1 — un rollback qui échoue ne doit pas se raconter
+            // Un rollback qui échoue ne doit pas se raconter
             // comme un rollback réussi : c'est le seul état que le moteur ne
             // sait plus réparer seul, il mérite son propre message et sa propre
             // trace d'audit.
@@ -970,7 +940,7 @@ class ExtensionInstallService
      * Trois conditions, toutes nécessaires : `installed_sha256` renseigné et
      * bien formé, fichier présent dans le staging content-addressed, et
      * empreinte RE-CALCULÉE conforme. Le nom du fichier ne fait jamais foi
-     * (patron 56.2 : un paquet en cache est re-haché avant réutilisation).
+     * (patron : un paquet en cache est re-haché avant réutilisation).
      */
     private function rollbackPackage(Extension $extension): ?string
     {
@@ -1003,13 +973,9 @@ class ExtensionInstallService
         return $path;
     }
 
-    // =====================================================================
-    // Résolution, ports, staging
-    // =====================================================================
-
     /**
      * Résout LA ligne d'extension visée. Une clé publiée par plusieurs sources
-     * est AMBIGUË (collision tolérée au catalogue, décision 56.1) : on refuse
+     * est AMBIGUË (collision tolérée au catalogue, décision) : on refuse
      * plutôt que de choisir.
      *
      * @throws ExtensionInstallException
@@ -1124,7 +1090,7 @@ class ExtensionInstallService
      * consulté d'abord, puis coupure par morceaux) et non après coup : une
      * borne vérifiée quand les octets sont déjà arrivés ne borne rien — elle
      * déplace l'épuisement de la RAM vers le disque du serveur, qui porte aussi
-     * la base et les journaux (leçon review 56.1 #2, appliquée au paquet).
+     * la base et les journaux.
      *
      * ⚠️ Les redirections ne sont JAMAIS suivies : le paquet vient du MÊME hôte
      * que l'index signé, par construction. Un dépôt ne peut pas emmener SE5
@@ -1281,7 +1247,7 @@ class ExtensionInstallService
 
     /**
      * Supprime le staging d'une extension : après un `remove`, le paquet
-     * vérifié n'a plus de consommateur (décision 56.2 #6 — on le conserve après
+     * vérifié n'a plus de consommateur (on le conserve après
      * un ÉCHEC d'installation, pour épargner le re-téléchargement à la relance ;
      * on ne le conserve pas après une désinstallation, ce serait un cache
      * orphelin).
@@ -1302,10 +1268,6 @@ class ExtensionInstallService
 
         @rmdir($dir);
     }
-
-    // =====================================================================
-    // Helper, compensations, résultats
-    // =====================================================================
 
     /**
      * Invoque le helper root et EXIGE un code retour nul.
@@ -1342,7 +1304,7 @@ class ExtensionInstallService
      * interrompre la chaîne, ce serait garantir l'état zombie qu'on cherche
      * précisément à éviter.
      *
-     * @param  list<callable(): void>  $undo
+     * @param list<callable(): void> $undo
      */
     private function compensate(array $undo, string $key): bool
     {
@@ -1354,7 +1316,7 @@ class ExtensionInstallService
             } catch (Throwable $e) {
                 // Best effort maintenu : les compensations suivantes sont
                 // tentées quand même. Mais l'échec est désormais REMONTÉ
-                // (review 56.3 #1) — jusqu'ici il ne vivait que dans un
+                // — jusqu'ici il ne vivait que dans un
                 // `Log::error`, et l'appelant rendait alors le même message,
                 // la même trace d'audit et le même état qu'une compensation
                 // parfaitement réussie. Un opérateur lisait « la version
@@ -1376,10 +1338,10 @@ class ExtensionInstallService
 
     /**
      * Journalise l'échec (serveur, détaillé) ET l'audite (`install_failed`,
-     * catégorie COURTE — jamais d'URL, jamais de secret : règle `last_error` de
-     * 56.1, elle-même héritée du piège Guzzle review 39.4 #E11).
+     * catégorie COURTE — jamais d'URL, jamais de secret, un message d'exception
+     * Guzzle suffixant l'URI appelée).
      *
-     * Une ligne PAR TENTATIVE (décision 56.2 #7) : contrairement à
+     * Une ligne PAR TENTATIVE : contrairement à
      * `source_sync_failed`, il n'y a pas de dédoublonnage à la transition —
      * une synchro planifiée se répète toute seule, une installation est un
      * acte volontaire de l'opérateur.
@@ -1428,9 +1390,9 @@ class ExtensionInstallService
                 'message' => $e->getMessage(),
             ]);
 
-            // Story 56.5 — legs review 56.3 #4 : le compromis ci-dessus reste
-            // entier (un refus déjà compensé ne redevient jamais une exception
-            // nue), mais l'incident cesse d'être invisible. Le marqueur est
+            // Le compromis ci-dessus reste entier (un refus déjà compensé ne
+            // redevient jamais une exception nue), mais l'incident cesse
+            // d'être invisible. Le marqueur est
             // SURFACÉ par `ExtensionsAuditTrailCheck` (doctor + page d'état
             // système) et par un bandeau sur `/admin/extensions/journal` —
             // plutôt qu'un grep de logs. Pose best-effort : la méthode avale
@@ -1442,7 +1404,7 @@ class ExtensionInstallService
     }
 
     /**
-     * Story 56.3 — Échec d'une MISE À JOUR : même mécanique que
+     * Échec d'une MISE À JOUR : même mécanique que
      * {@see self::fail()}, action d'audit `update_failed`.
      *
      * ⚠️ L'extension reste `integrated` et ses colonnes `installed_*` restent
@@ -1464,7 +1426,7 @@ class ExtensionInstallService
     }
 
     /**
-     * Story 56.3 — Enregistre une étape ACCOMPLIE et la rapporte à l'appelant.
+     * Enregistre une étape ACCOMPLIE et la rapporte à l'appelant.
      *
      * ⚠️ **Le rapport de progression ne peut JAMAIS faire échouer l'opération.**
      * Le callback écrit en base (la ligne `extension_install_runs` de l'UI) :
@@ -1515,7 +1477,7 @@ class ExtensionInstallService
      *
      * @template T
      *
-     * @param  callable(): T  $work
+     * @param callable(): T $work
      * @return T
      *
      * @throws ExtensionInstallException  si le moteur est déjà occupé
@@ -1538,13 +1500,13 @@ class ExtensionInstallService
     /**
      * Durée de rétention du verrou, DÉRIVÉE du budget de temps du Job.
      *
-     * ⚠️ Review 56.3 #2 — le verrou du store `file` n'est pas lié à la vie du
+     * ⚠️ Le verrou du store `file` n'est pas lié à la vie du
      * processus : c'est une entrée à expiration, qu'un second appelant peut
      * acquérir dès l'échéance, que le premier ait fini ou non. Une valeur fixe
      * de 600 s face à un `job_timeout` de 1800 s ouvrait donc une fenêtre de
      * 20 minutes pendant laquelle deux opérations pouvaient s'exécuter
      * ensemble — alors que ce verrou est précisément l'arbitre ultime de la
-     * concurrence (AC5) : deux allocations de port simultanées, deux
+     * concurrence : deux allocations de port simultanées, deux
      * transactions `markApp*` entrelacées.
      *
      * La valeur est donc CALCULÉE à partir du même réglage que le Job, pour

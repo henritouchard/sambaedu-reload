@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace App\Ipxe\Iso\Enums;
 
 /**
- * Story 3.6 — D1 / AC1.3.
- *
  * Enum des statuts d'un téléchargement d'ISO Windows.
  *
  * Cycle de vie :
@@ -24,7 +22,7 @@ namespace App\Ipxe\Iso\Enums;
  *                   skipera la suite (parité legacy qui ne SIGTERM pas non plus).
  *
  * Helpers UI :
- *  - `label()`      : libellé fr affiché dans la card.
+ *  - `label()` : libellé fr affiché dans la card.
  *  - `badgeClass()` : classe daisyUI pour le badge couleur.
  */
 enum WindowsIsoDownloadStatus: string

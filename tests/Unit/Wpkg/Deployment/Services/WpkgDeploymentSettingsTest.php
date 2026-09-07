@@ -14,19 +14,18 @@ use Tests\Support\WpkgSchemaBootstrapper;
 use Tests\TestCase;
 
 /**
- * Story 15.6 / AC6.1 — Tests unit du résolveur WpkgDeploymentSettings.
+ * Tests unit du résolveur WpkgDeploymentSettings.
  *
  * Couvre :
- *   - Précédence DB > env > défaut pour wingetEnabled() et allowedIps()
- *   - AC1.3 non-régression : sans clé DB → valeurs env inchangées
- *   - Filtrage des entrées vides/non-string dans allowedIps()
+ *  - Précédence DB > env > défaut pour wingetEnabled() et allowedIps()
+ * - non-régression : sans clé DB → valeurs env inchangées
+ *  - Filtrage des entrées vides/non-string dans allowedIps()
  *   - Round-trip bool en SQLite (cast 'array' sur SystemSetting)
  *
  * Note : délègue la création du schéma à WpkgSchemaBootstrapper::bootstrap()
- * (inclut system_settings depuis Story 15.6 — correction post-review).
+ * (inclut system_settings depuis — correction post-review).
  */
 #[Group('wpkg-deploy')]
-#[Group('story-15-6')]
 class WpkgDeploymentSettingsTest extends TestCase
 {
     protected function setUp(): void
@@ -50,12 +49,8 @@ class WpkgDeploymentSettingsTest extends TestCase
         return new WpkgDeploymentSettings();
     }
 
-    // =========================================================================
-    // wingetEnabled()
-    // =========================================================================
-
     /**
-     * AC1.3 — Non-régression : sans clé DB, retourne config() env.
+     * Non-régression : sans clé DB, retourne config env.
      */
     #[Test]
     public function winget_enabled_returns_env_when_no_db_key(): void
@@ -74,7 +69,7 @@ class WpkgDeploymentSettingsTest extends TestCase
     }
 
     /**
-     * AC1.1 — DB override : clé DB true > env false.
+     * DB override : clé DB true > env false.
      */
     #[Test]
     public function winget_enabled_db_overrides_env_false(): void
@@ -86,7 +81,7 @@ class WpkgDeploymentSettingsTest extends TestCase
     }
 
     /**
-     * AC1.1 — DB override : clé DB false > env true.
+     * DB override : clé DB false > env true.
      */
     #[Test]
     public function winget_enabled_db_false_overrides_env_true(): void
@@ -112,7 +107,7 @@ class WpkgDeploymentSettingsTest extends TestCase
     }
 
     /**
-     * AC1.3 — Défaut fail-closed : sans clé DB ni config → false.
+     * Défaut fail-closed : sans clé DB ni config → false.
      */
     #[Test]
     public function winget_enabled_defaults_to_false_without_db_or_config(): void
@@ -122,12 +117,8 @@ class WpkgDeploymentSettingsTest extends TestCase
         self::assertFalse($this->settings()->wingetEnabled());
     }
 
-    // =========================================================================
-    // allowedIps()
-    // =========================================================================
-
     /**
-     * AC1.3 — Non-régression : sans clé DB, retourne config() env (tableau).
+     * Non-régression : sans clé DB, retourne config env (tableau).
      */
     #[Test]
     public function allowed_ips_returns_env_when_no_db_key(): void
@@ -138,7 +129,7 @@ class WpkgDeploymentSettingsTest extends TestCase
     }
 
     /**
-     * AC1.3 — Non-régression : config() sous forme de string CSV (format legacy).
+     * Non-régression : config sous forme de string CSV (format legacy).
      */
     #[Test]
     public function allowed_ips_handles_csv_env_fallback(): void
@@ -153,7 +144,7 @@ class WpkgDeploymentSettingsTest extends TestCase
     }
 
     /**
-     * AC1.2 — DB override : clé DB array > env array.
+     * DB override : clé DB array > env array.
      */
     #[Test]
     public function allowed_ips_db_overrides_env(): void
@@ -167,7 +158,7 @@ class WpkgDeploymentSettingsTest extends TestCase
     }
 
     /**
-     * AC1.2 — Filtrage entrées vides et non-string.
+     * Filtrage entrées vides et non-string.
      */
     #[Test]
     public function allowed_ips_filters_empty_and_non_string_entries(): void
@@ -188,7 +179,7 @@ class WpkgDeploymentSettingsTest extends TestCase
     }
 
     /**
-     * AC1.3 — Défaut vide : sans clé DB ni config → tableau vide.
+     * Défaut vide : sans clé DB ni config → tableau vide.
      */
     #[Test]
     public function allowed_ips_defaults_to_empty_array_without_db_or_config(): void
@@ -211,10 +202,6 @@ class WpkgDeploymentSettingsTest extends TestCase
         self::assertSame(array_values($result), $result);
     }
 
-    // =========================================================================
-    // DataProviders
-    // =========================================================================
-
     /**
      * @return array<string, array{bool}>
      */
@@ -227,7 +214,7 @@ class WpkgDeploymentSettingsTest extends TestCase
     }
 
     /**
-     * AC1.1 — Vérification systématique DB > env pour bool.
+     * Vérification systématique DB > env pour bool.
      *
      * @param bool $dbValue
      */
@@ -240,10 +227,6 @@ class WpkgDeploymentSettingsTest extends TestCase
 
         self::assertSame($dbValue, $this->settings()->wingetEnabled());
     }
-
-    // =========================================================================
-    // Correction post-review #3 — Fail-closed : entrées dangereuses écartées en lecture
-    // =========================================================================
 
     /**
      * Fail-closed : 0.0.0.0/0 en DB → écarté par allowedIps().
@@ -272,7 +255,7 @@ class WpkgDeploymentSettingsTest extends TestCase
     }
 
     /**
-     * Fail-closed : préfixe trop large (/8) en DB → écarté.
+     * Fail-closed : préfixe trop large (8) en DB → écarté.
      */
     #[Test]
     public function allowed_ips_rejects_too_wide_prefix_from_db(): void

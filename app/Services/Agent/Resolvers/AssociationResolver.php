@@ -12,33 +12,33 @@ use App\Models\WorkstationGroup;
 use InvalidArgumentException;
 
 /**
- * Story 27.11 — Service RESOLVER serveur : traduit le choix admin *(extension/
+ * Service RESOLVER serveur : traduit le choix admin *(extension/
  * protocole X, application A)* en cible technique *(progid, source, wpkg_package)*
- * que l'agent applique DÉJÀ (provider/compilateur/handler/hash de 27.3bis
- * réutilisés tels quels — AC7).
+ * que l'agent applique DÉJÀ (provider, compilateur, handler et hash sont
+ * réutilisés tels quels).
  *
- * **PG-pur (NFR7).** Aucun AD / LdapRecord / APCu / `samba-tool`. La lecture de
+ * **PG-pur.** Aucun AD / LdapRecord / APCu / `samba-tool`. La lecture de
  * `packages.xml` via {@see PackagesXmlAssociationsReader} est un geste
- * d'ADMINISTRATION admis (hors chemin desired-state, iso le `FileAssociationSeeder`
- * de 27.3bis) — JAMAIS appelée par `AssociationsStateProvider` (qui reste PG-pur).
+ * d'ADMINISTRATION admis (hors chemin desired-state, iso `FileAssociationSeeder`)
+ * — JAMAIS appelée par `AssociationsStateProvider` (qui reste PG-pur).
  *
- * **Algorithme (D-Henri n°1, AC3) pour `(X, A)` :**
+ * **Algorithme pour `(X, A)` :**
  *   1. **A native curée** déclarant un ProgId POUR X → ProgId canonique,
- *      `source=native`, `wpkg_package=null` (toujours applicable, piège n°7).
- *      Si la native NE déclare PAS X → bascule en générique `Applications\<exe>`
- *      (piège n°2 : un ProgId est par (app × type de contenu)), `source=native`.
+ *      `source=native`, `wpkg_package=null` (toujours applicable).
+ *      Si la native NE déclare PAS X → bascule en générique `Applications\<exe>`,
+ *      car un ProgId vaut par (app × type de contenu), `source=native`.
  *   2. **A WPKG ayant déclaré un handler POUR X** (`packages.xml`) → ProgId riche
  *      déclaré, `source=wpkg`, `wpkg_package=A.app_id`.
  *   3. **Sinon (générique)** → `progid = Applications\<exe de A>` ; `source=wpkg`
  *      + `wpkg_package=A.app_id` si A est WPKG (check prédictif pertinent),
  *      `native` si A est curée.
  *
- * **Garde-fou exe manquant (piège n°4).** Le générique exige le chemin/nom de
+ * **Garde-fou exe manquant.** Le générique exige le chemin/nom de
  * l'exe (`Application::$executable` / `NativeApplication::$executable`). Absent ET
  * aucun ProgId riche → {@see InvalidArgumentException} (pas de générique sans exe).
  *
  * Le résultat est UPSERTÉ comme ligne `file_associations` (clé déterministe
- * `catalogKey(identifier, progid)`, iso 27.3bis) puis attaché au parc via le pivot
+ * `catalogKey(identifier, progid)`) puis attaché au parc via le pivot
  * polymorphe `file_association_assignables` — colonnes existantes suffisent, PAS de
  * migration de `file_associations`.
  */
@@ -84,7 +84,7 @@ final class AssociationResolver
             );
         }
 
-        // La native ne déclare pas X (piège n°2) → générique sur son exe.
+        // La native ne déclare pas X → générique sur son exe.
         return new ResolvedAssociation(
             progid: $this->genericProgId($identifier, (string) ($app->executable ?? ''), (string) $app->label),
             source: FileAssociation::SOURCE_NATIVE,
@@ -123,7 +123,7 @@ final class AssociationResolver
     /**
      * ProgId RICHE déclaré par le paquet `$appId` POUR `$identifier`, ou `null`.
      * Lecture `packages.xml` indexée `packageId → identifier → {ProgId, type}`
-     * (= `app_id`, jointure vérifiée 27.3bis). Insensible à la casse sur
+     * (= `app_id`, jointure vérifiée). Insensible à la casse sur
      * l'identifiant (Windows l'est sur extensions/protocoles).
      */
     private function richProgIdFor(string $appId, string $identifier): ?string
@@ -154,9 +154,9 @@ final class AssociationResolver
      * Fabrique le ProgId GÉNÉRIQUE `Applications\<exe>` (« Ouvrir avec », ce que
      * Windows crée nativement). `<exe>` = le NOM de fichier de l'exe (basename),
      * iso la convention `HKCR\Applications\<exe>`. SEUL le basename est consommé ;
-     * le chemin complet (s'il est fourni) n'est ni transmis au payload (AC7) ni
+     * Le chemin complet (s'il est fourni) n'est ni transmis au payload ni
      * consommé par l'agent — le poste re-résout l'exe (App Paths/PATH) pour
-     * l'auto-enregistrement (AC6).
+     * L'auto-enregistrement.
      *
      * @throws InvalidArgumentException si l'exe est absent (garde-fou n°4)
      */
@@ -167,7 +167,7 @@ final class AssociationResolver
             throw new InvalidArgumentException(sprintf(
                 'Impossible de composer une association générique pour « %s » → « %s » : '
                 . 'aucun ProgId riche déclaré ET aucun exécutable connu pour cette application '
-                . '(piège n°4 : pas de générique sans exe).',
+                . '(pas de générique sans exécutable).',
                 $identifier,
                 $appLabel !== '' ? $appLabel : '?',
             ));
@@ -193,7 +193,7 @@ final class AssociationResolver
     /**
      * UPSERTE la ligne `file_associations` correspondant à `(identifier, X) → app`
      * puis l'attache au parc. Clé déterministe `catalogKey(identifier, progid)`
-     * (iso 27.3bis : une paire identique upsert au lieu de dupliquer). Retourne le
+     * (iso : une paire identique upsert au lieu de dupliquer). Retourne le
      * modèle (idempotent, rejouable). PAS de migration de `file_associations`.
      */
     public function compose(

@@ -5,9 +5,9 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Story 27.3bis — Pivot d'assignation des associations de fichiers, calqué
+ * Pivot d'assignation des associations de fichiers, calqué
  * EXACTEMENT sur `shortcut_assignables` (2026_02_09_173400) et
- * `registry_setting_assignables` (27.3). Morph polymorphe :
+ * `registry_setting_assignables`. Morph polymorphe :
  *   - WorkstationGroup (salles physiques, parcs logiques) — geste UI v1 par PARC ;
  *   - Workstation (postes individuels) ;
  *   - UserGroup (groupes user) ;

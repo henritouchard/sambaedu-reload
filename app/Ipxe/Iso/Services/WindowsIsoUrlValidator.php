@@ -7,8 +7,7 @@ namespace App\Ipxe\Iso\Services;
 use App\Ipxe\Iso\Exceptions\WindowsIsoValidationException;
 
 /**
- * Story 3.6 — D5 / AC2.* — Validation 2 couches d'une URL Microsoft iso
- * Windows.
+ * Validation 2 couches d'une URL Microsoft d'ISO Windows.
  *
  * Couche 1 (côté Livewire) : `rules()` Livewire fait une sanity check
  * regex basique (`required + string + max:2048 + regex https://...`).
@@ -41,10 +40,9 @@ class WindowsIsoUrlValidator
      * Strictement ancrée à la fin (`$`) et au séparateur `/` précédent —
      * empêche les payloads `Win11.iso\nkernel http://evil`.
      *
-     * #6 (post-review 2026-05-21) — constante **publique** : référencée par
-     * le composant Livewire `pages::admin.ipxe.iso-windows.index` dans ses
-     * `rules()` (couche 1 validation) pour éviter le drift entre les 2
-     * regex (couche 1 Livewire vs couche 2 service). Source unique.
+     * Constante **publique** : référencée par le composant Livewire
+     * `pages::admin.ipxe.iso-windows.index` dans ses `rules()` (couche 1) pour
+     * éviter le drift entre les deux regex. Source unique.
      */
     public const ISO_NAME_REGEX = '#/(Win(?:10|11)[A-Za-z0-9._\-]*\.iso)$#';
 
@@ -54,10 +52,10 @@ class WindowsIsoUrlValidator
      * `Win(10|11)*.iso` — équivalent regex de la couche 2 mais sans
      * allowlist host (la couche 2 fait la vérification host complète).
      *
-     * #6 (post-review 2026-05-21) — extraite en constante publique pour
-     * éviter la duplication entre composant Livewire et service.
+     * Extraite en constante publique pour éviter la duplication entre le
+     * composant Livewire et le service.
      *
-     * 2026-06-22 — autorise une query string / fragment APRÈS `.iso` :
+     * Elle autorise une query string / fragment APRÈS `.iso` :
      * `(?:[?#][^\s<>"\']*)?`. Les URLs de téléchargement Microsoft sont des
      * URLs signées (`...Win11.iso?t=<token>&P1=...&P4=...`) — sans cette
      * tolérance, la couche 1 rejetait toute URL réelle. La couche 2 extrait
@@ -84,8 +82,7 @@ class WindowsIsoUrlValidator
     public const UPLOAD_FILENAME_REGEX = '#^[A-Za-z0-9._\-]{1,251}\.iso$#i';
 
     /**
-     * Versions Windows acceptées (D5 + cohérence enum
-     * {@see \App\Ipxe\Iso\Enums\WindowsIsoDownloadStatus}).
+     * Versions Windows acceptées.
      *
      * @var list<string>
      */

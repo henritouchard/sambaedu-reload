@@ -14,10 +14,10 @@ use Illuminate\Support\Facades\Log;
  * Domaine : runtime samba/winbind (vs. UserService qui gère la persistance LDAP).
  * Ce n'est pas la même responsabilité — on garde les services séparés.
  *
- * Source de données (post-review #A) :
+ * Source de données :
  *   Parse le fichier `/tmp/smbstatus` (rempli par un cron samba) pour trouver
  *   les sessions actives d'un login donné. Équivalent fonctionnel du legacy
- *   `get_smbmachine()` (sambaedu/includes/fonc_parc.inc.php:512) sans recopier
+ *  `get_smbmachine()` (sambaedu/includes/fonc_parc.inc.php:512) sans recopier
  *   le cache APCu legacy partagé (on utilise le cache Laravel local au service).
  *
  * Dégradation gracieuse : si le fichier est absent ou non lisible, retourne

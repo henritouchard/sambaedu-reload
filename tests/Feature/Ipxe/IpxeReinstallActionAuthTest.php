@@ -12,11 +12,11 @@ use Tests\Support\IpxeAuthTestHelper;
 use Tests\TestCase;
 
 /**
- * Story 3.11 — Fix review #1 — round-trip HTTP `POST /ipxe/action/{action}`.
+ * Round-trip HTTP `POST /ipxe/action/{action}`.
  *
  * Le chain automatique du menu `known` (bloc `:action`) chaine vers
  * `/ipxe/action/{action}` SANS credentials AD. Ce test exerce le VRAI flux HTTP
- * (auth 4.10 réelle, PAS de bypass) pour vérifier que :
+ * (auth réelle, PAS de bypass) pour vérifier que :
  *
  *  - une action `install_*` est pré-autorisée SANS auth SI le poste porte une
  *    requête de réinstall ACTIVE dont `target_action` === l'action demandée

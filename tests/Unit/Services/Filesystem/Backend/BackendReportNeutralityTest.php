@@ -14,15 +14,15 @@ use Tests\Unit\Services\Filesystem\Backend\Support\RootedClassPlan;
 use Tests\Unit\Services\Filesystem\Plan\PlanNeutralityMarkers;
 
 /**
- * Story 60.3 — LA COUPE TIENT AUSSI SUR LE CHEMIN DU RETOUR.
+ * LA COUPE TIENT AUSSI SUR LE CHEMIN DU RETOUR.
  *
- * Les gardes des stories 60.1/60.2 vérifient qu'un PLAN ne porte aucun terme de la
+ * Les gardes de plan vérifient qu'un PLAN ne porte aucun terme de la
  * couche d'exécution. Elles ne disaient rien de ce qui REMONTE : un rapport est
  * fabriqué par un backend, c'est-à-dire par du code qui vit SOUS la ligne et qui a
  * tout le vocabulaire concret sous la main. C'est la porte dérobée naturelle, et
  * elle a un seul battant : le champ `detail`, seul texte libre d'un rapport.
  *
- * La liste de marqueurs est celle des stories précédentes, RÉUTILISÉE : deux
+ * La liste de marqueurs est celle du trait `PlanNeutralityMarkers`, RÉUTILISÉE : deux
  * listes qui divergeraient seraient pires qu'une seule, la plus faible ferait
  * croire à la couverture.
  */

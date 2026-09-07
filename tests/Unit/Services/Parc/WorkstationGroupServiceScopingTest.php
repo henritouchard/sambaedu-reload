@@ -18,8 +18,7 @@ use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
 /**
- * Tests du paramètre `$scopeFor` sur WorkstationGroupService::listGroups / listMachines
- * (Story 7.1 — AC2, AC10).
+ * Tests du paramètre `$scopeFor` sur WorkstationGroupService::listGroups / listMachines.
  *
  * Invariants testés :
  *  - appel sans scopeFor → comportement historique (tout est visible)
@@ -151,7 +150,7 @@ class WorkstationGroupServiceScopingTest extends TestCase
 
         // Table consultée par les withCount `agentApplicationInventory as
         // installed_apps_count / error_apps_count` de paginateMachines /
-        // paginateGroupMachines (Story 27.5) — stub minimal.
+        // paginateGroupMachines — stub minimal.
         if (!Schema::hasTable('agent_application_inventory')) {
             Schema::create('agent_application_inventory', function (Blueprint $table) {
                 $table->id();
@@ -163,7 +162,7 @@ class WorkstationGroupServiceScopingTest extends TestCase
             $this->createdTables = true;
         }
 
-        // Story 16.13bis — table consultée par l'eager-load `migrationStatus`
+        // Table consultée par l'eager-load `migrationStatus`
         // ajouté à paginateMachines (Workstation::with('migrationStatus')).
         if (!Schema::hasTable('workstations_migration_status')) {
             Schema::create('workstations_migration_status', function (Blueprint $table) {
@@ -303,10 +302,6 @@ class WorkstationGroupServiceScopingTest extends TestCase
         ]);
     }
 
-    // ========================================================================
-    // listGroups
-    // ========================================================================
-
     public function test_list_groups_without_scope_user_returns_all(): void
     {
         [$a, $b, $c] = $this->makeThreeGroupsWithMachines();
@@ -353,7 +348,7 @@ class WorkstationGroupServiceScopingTest extends TestCase
     }
 
     /**
-     * Story 7.1 — hiérarchie exclusion > global côté listing paginé : un admin
+     * Hiérarchie exclusion > global côté listing paginé : un admin
      * avec droit global mais une exclusion sur B ne doit plus voir B.
      */
     public function test_list_groups_scoped_by_admin_excludes_negatives(): void
@@ -397,10 +392,6 @@ class WorkstationGroupServiceScopingTest extends TestCase
         $this->assertContains($a->id, $ids);
         $this->assertNotContains($b->id, $ids);
     }
-
-    // ========================================================================
-    // listMachines
-    // ========================================================================
 
     public function test_list_machines_without_scope_returns_all(): void
     {
@@ -453,12 +444,8 @@ class WorkstationGroupServiceScopingTest extends TestCase
         $this->assertEquals(0, $result->total());
     }
 
-    // ========================================================================
-    // getRootGroupsForSelect — Review #7
-    // ========================================================================
-
     /**
-     * Story 7.1 — Review #7 : sans scope, toutes les racines sont exposées
+     * Sans scope, toutes les racines sont exposées
      * (backward-compat).
      */
     public function test_root_groups_for_select_without_scope_returns_all(): void
@@ -474,7 +461,7 @@ class WorkstationGroupServiceScopingTest extends TestCase
     }
 
     /**
-     * Story 7.1 — Review #7 : si un user est passé et qu'il a une délégation
+     * Si un user est passé et qu'il a une délégation
      * scopée, seule la salle autorisée doit apparaître dans le dropdown.
      */
     public function test_root_groups_for_select_scoped_by_user(): void
@@ -493,7 +480,7 @@ class WorkstationGroupServiceScopingTest extends TestCase
     }
 
     /**
-     * Story 7.1 — Review #7 : user admin → pas de filtre appliqué, tout remonte.
+     * User admin → pas de filtre appliqué, tout remonte.
      */
     public function test_root_groups_for_select_admin_user_returns_all(): void
     {
@@ -510,7 +497,7 @@ class WorkstationGroupServiceScopingTest extends TestCase
     }
 
     /**
-     * Story 7.1 — Review #7 : user sans délégation → dropdown vide
+     * User sans délégation → dropdown vide
      * (pas de fuite de noms).
      */
     public function test_root_groups_for_select_user_without_delegation_returns_empty(): void

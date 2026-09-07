@@ -11,8 +11,8 @@ use Livewire\Attributes\Computed;
 use Livewire\Component;
 
 /**
- * Story 27.11 — Onglet « Associations par défaut » de la page d'un WorkstationGroup,
- * V2 COMPOSER (refonte de l'onglet 27.3bis, qui n'offrait que des toggles d'un
+ * Onglet « Associations par défaut » de la page d'un WorkstationGroup,
+ * V2 COMPOSER (refonte de l'onglet, qui n'offrait que des toggles d'un
  * catalogue figé).
  *
  * L'admin SAISIT une extension/protocole (`.clclcc`, `mailto`…) et CHOISIT une
@@ -20,17 +20,17 @@ use Livewire\Component;
  * curées). Le {@see AssociationResolver} (serveur) traduit ce choix en cible
  * technique *(progid, source, wpkg_package)* — ProgId RICHE si le paquet le déclare
  * pour l'extension, sinon GÉNÉRIQUE `Applications\<exe>` — et upsert une ligne
- * `file_associations` attachée au parc (provider/handler/hash de 27.3bis réutilisés
+ * `file_associations` attachée au parc (provider/handler/hash réutilisés
  * tels quels). L'admin ne touche JAMAIS un ProgId ni un hash.
  *
- * **Garde-fou exe manquant (piège n°4).** Une (extension, app) sans ProgId riche ET
+ * **Garde-fou exe manquant.** Une (extension, app) sans ProgId riche ET
  * sans exécutable connu est REFUSÉE (toast d'erreur) — pas de générique sans exe.
  *
- * **Validation PRÉDICTIVE par parc (D-Henri n°4/n°7, AC5)** : chaque ligne porte une
+ * **Validation PRÉDICTIVE par parc** : chaque ligne porte une
  * `source` ; `native` → toujours applicable ; `wpkg` & paquet déployé → applicable ;
  * `wpkg` & paquet NON déployé → `unavailable` (badge + tooltip nommant le paquet +
  * toast). Le calcul des paquets déployés du parc est une requête **group-level
- * Eloquent, PG-pure, SANS le cache APCu** de `WorkstationPackagesResolver` (NFR7) —
+ * Eloquent, PG-pure, SANS le cache APCu** de `WorkstationPackagesResolver` —
  * jamais dans le `AssociationsStateProvider` (qui émet toujours).
  *
  * Gate `app.customize`. Granularité PAR PARC (page WorkstationGroup) inchangée.
@@ -97,7 +97,7 @@ new class extends Component {
     /**
      * Associations ASSIGNÉES au parc courant (lignes éditables/désactivables) +
      * statut PRÉDICTIF d'applicabilité (`applicable` | `unavailable`). Les défauts
-     * legacy seedés (27.3bis) y figurent dès qu'ils sont attachés au parc.
+     * legacy seedés y figurent dès qu'ils sont attachés au parc.
      *
      * @return array<int,array<string,mixed>>
      */
@@ -133,7 +133,7 @@ new class extends Component {
     }
 
     /**
-     * Statut PRÉDICTIF d'une association sur le parc courant (AC5) :
+     * Statut PRÉDICTIF d'une association sur le parc courant :
      *   - GÉNÉRIQUE (`Applications\<exe>`, quelle que soit la `source`) →
      *     `best-effort` : l'association sera tentée mais dépend de l'app réellement
      *     installée/résoluble sur le poste (le serveur ne peut pas le garantir) ;
@@ -157,7 +157,7 @@ new class extends Component {
     /**
      * Compose une nouvelle association : valide la saisie, résout via
      * {@see AssociationResolver}, upsert la ligne `file_associations` et l'attache
-     * au parc. Garde-fou exe manquant (piège n°4) → toast d'erreur, rien créé.
+     * au parc. Sans exécutable connu ni ProgId riche : toast d'erreur, rien créé.
      */
     public function compose(AssociationResolver $resolver): void
     {
@@ -198,9 +198,9 @@ new class extends Component {
             return;
         }
 
-        // Statut prédictif EXACT à la création (iso 27.3bis) : si le ProgId vient
+        // Statut prédictif EXACT à la création : si le ProgId vient
         // d'un paquet WPKG NON déployé sur ce parc, l'association échouera ici. Un
-        // ProgId GÉNÉRIQUE est « best-effort » (dépend de l'app installée — AC5).
+        // progId GÉNÉRIQUE est « best-effort » (dépend de l'app installée —).
         $deployedPackages = $this->deployedPackagesForParc($parc->id);
         $availability = $this->availabilityFor($association, $deployedPackages);
 
@@ -221,12 +221,12 @@ new class extends Component {
             $this->toastSuccess('Association « ' . $association->identifier . ' → ' . $association->progid . ' » ajoutée au parc.');
         }
 
-        // Sémantique EXCLUSIVE de l'agent (piège n°7) : le compilateur
+        // Sémantique EXCLUSIVE de l'agent : le compilateur
         // (`StateCompiler::selectExclusive`, clé = `strtolower(identifier)`) n'applique
-        // qu'UNE association par identifier. Décision Henri (2026-06-18, Q2) :
+        // qu'UNE association par identifier. D'où le
         // REMPLACEMENT AUTOMATIQUE — on détache du parc les associations concurrentes
         // (même identifier, ProgId DIFFÉRENT) pour que la nouvelle prenne effet
-        // immédiatement (le choix déjà appliqué côté poste reste, iso piège n°5).
+        // immédiatement (le choix déjà appliqué côté poste reste en place).
         $replacedIds = array_values(array_filter(
             $this->attachedAssociationIdsForIdentifier($identifier),
             fn (int $id): bool => $id !== (int) $association->id,
@@ -249,12 +249,12 @@ new class extends Component {
 
     /**
      * Désactive une association pour le parc = la détacher = cesser de la gérer
-     * (iso 27.3bis : le choix déjà appliqué reste, PAS de reset OFF — piège n°5).
+     * (le choix déjà appliqué côté poste reste : PAS de reset OFF).
      */
     public function disable(int $associationId): void
     {
         // L'asso DOIT être réellement attachée au parc courant avant de détacher
-        // (piège n°4 : sinon `detach` est un no-op et le toast « retirée » ment).
+        // (sinon `detach` est un no-op et le toast « retirée » ment).
         if (! in_array($associationId, $this->assignedAssociationIds(), true)) {
             $this->toastError('Association introuvable sur ce parc.');
 
@@ -287,7 +287,7 @@ new class extends Component {
      * Ids des associations DÉJÀ attachées au parc courant pour un `identifier` donné
      * (comparaison insensible à la casse, comme Windows). Sert le remplacement
      * automatique des associations concurrentes (sémantique exclusive de l'agent,
-     * piège n°7 ; décision Henri Q2).
+     * cf. `compose()`).
      *
      * @return list<int>
      */
@@ -323,8 +323,8 @@ new class extends Component {
 
     /**
      * Ensemble des `app_id` (= `<package id>` WPKG, clé de jointure) déployés sur UN
-     * parc — requête **group-level Eloquent, PG-pure, SANS cache APCu** (NFR7).
-     * Réutilise la logique de validation prédictive de 27.3bis. Sources : AppProfiles
+     * parc — requête **group-level Eloquent, PG-pure, SANS cache APCu**.
+     * Sources : AppProfiles
      * du parc → leurs Applications ; Applications directes du parc ; dépendances
      * applicatives transitives (BFS sur `application_dependencies`).
      *

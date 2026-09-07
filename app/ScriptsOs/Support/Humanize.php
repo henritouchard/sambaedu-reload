@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace App\ScriptsOs\Support;
 
 /**
- * Story 16.12 — D13.
- *
  * Helpers d'affichage humanisé pour l'UI Livewire `/admin/settings/scripts-logs/`
  * et la commande artisan `script-logs:archive:rotate`.
  *

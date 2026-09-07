@@ -19,7 +19,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 36.5 (AC8) — seed de PREUVE `roaming_app_profile` (catalogue Firefox +
+ * Seed de PREUVE `roaming_app_profile` (catalogue Firefox +
  * Thunderbird) + intégration provider sur données RÉELLES + invariant
  * `AppProfileAuthoringGuard` sur le catalogue seedé.
  *
@@ -87,7 +87,7 @@ class CapabilityAppProfileSeedTest extends TestCase
 
         $apps = array_column($spec['apps'], 'app');
         self::assertSame(['firefox', 'thunderbird'], $apps);
-        // Aucun profil bâti sur le radical sambaedu (AC4).
+        // Aucun profil bâti sur le radical sambaedu.
         foreach ($spec['apps'] as $app) {
             self::assertStringNotContainsStringIgnoringCase('sambaedu', (string) $app['profile_name']);
             self::assertSame('managed.default', $app['profile_name']);
@@ -112,7 +112,7 @@ class CapabilityAppProfileSeedTest extends TestCase
     #[Test]
     public function seeded_capability_ignores_file_policy_home(): void
     {
-        // Story 36.7 (AC3) — le gate K: est SUPPRIMÉ : home coupé ⇒ items émis.
+        // Le gate K: est SUPPRIMÉ : home coupé ⇒ items émis.
         FilePolicyService::setGlobal(false, true, false); // home coupé
         self::assertCount(2, $this->items(), 'AC3 : home coupé ⇒ items TOUJOURS émis');
     }
@@ -120,9 +120,9 @@ class CapabilityAppProfileSeedTest extends TestCase
     #[Test]
     public function upgrade_migration_adds_enabled_options_and_decorrelates_warning(): void
     {
-        // Story 36.7 — la migration d'upgrade (jouée par RefreshDatabase) : chaque
-        // entrée porte `enabled:true` (AC2), la capacité gagne ses options on/off
-        // (AC4) et son warning ne mentionne PLUS la dépendance au home K: (AC3).
+        // La migration d'upgrade (jouée par RefreshDatabase) : chaque
+        // entrée porte `enabled:true`, la capacité gagne ses options on/off
+        // et son warning ne mentionne PLUS la dépendance au home K:.
         $cap = $this->capabilityRow();
 
         $options = json_decode((string) $cap->options, true);

@@ -28,7 +28,7 @@ new class extends Component {
     public array $role = [];
     public array $status = [];
     public array $group = [];
-    // Story 14.4 — filtres audit (D12 : props bool directes, pas array)
+    // Filtres audit (D12 : props bool directes, pas array)
     public bool $quotaOverflow = false;
     public bool $passwordDefault = false;
     public array $selectedUsers = [];
@@ -134,10 +134,10 @@ new class extends Component {
         $this->role = [];
         $this->status = [];
         $this->group = [];
-        // Story 14.4 — Tâche 5.3
+        // Tâche
         $this->quotaOverflow = false;
         $this->passwordDefault = false;
-        // Post-review #3 : reset selectedUsers (parité avec les updated* qui le font déjà)
+        // Reset selectedUsers (parité avec les updated* qui le font déjà).
         $this->selectedUsers = [];
         $this->resetPage();
     }
@@ -171,8 +171,8 @@ new class extends Component {
         $this->resetPage();
     }
 
-    // Story 14.4 — méthodes updated* + remove pour les filtres audit
-    // Post-review #3 : reset selectedUsers pour parité avec updatedRole/Status/Group
+    // Méthodes updated* + remove pour les filtres audit
+    // Reset selectedUsers pour parité avec updatedRole/Status/Group
     // (évite l'état incohérent si une bulk action est en cours pendant un changement de filtre).
     public function updatedQuotaOverflow(): void
     {
@@ -312,10 +312,11 @@ new class extends Component {
             });
         }
 
-        // Story 14.4 — Tâche 5.4 : filtres audit (D1/D2 quota, D3 mdp)
+        // Filtres audit : quota et mot de passe.
         if ($this->quotaOverflow) {
-            // D1 : OR sur is_over_soft|is_over_hard sur les 2 partitions (home + sambaedu)
-            // D2 : les users avec quota_snapshot IS NULL sont exclus implicitement (comparaison JSON = true ne matche pas NULL)
+            // OR sur is_over_soft|is_over_hard sur les 2 partitions (home + sambaedu).
+            // Les users avec quota_snapshot IS NULL sont exclus implicitement : une
+            // comparaison JSON = true ne matche pas NULL.
             $query->where(function (Builder $b) {
                 $b->where('quota_snapshot->home->is_over_soft', true)
                     ->orWhere('quota_snapshot->home->is_over_hard', true)
@@ -325,16 +326,16 @@ new class extends Component {
         }
 
         if ($this->passwordDefault) {
-            // D3 : NULL inclus (= « jamais changé » présumé)
+            // NULL inclus (= « jamais changé » présumé).
             $query->whereNull('password_changed_at');
         }
 
-        // Correction review 7.2 #3 — RGPD : un Prof (ou EleveAdmin) scopé classe
+        // RGPD : un Prof (ou EleveAdmin) scopé classe
         // ne doit voir que les élèves de ses propres classes. Sans ce filtre
         // Eloquent, le listing contourne la Policy `UserPolicy::view()` qui
         // n'est appliquée que sur les targets individuels.
         //
-        // Story 4.13 — Recâblage post-fold. L'import AD→SQL replie désormais
+        // Recâblage post-fold. L'import AD→SQL replie désormais
         // les classes en UNE ligne au NOM NU (`type='classe'`) ; prof ET élève
         // sont co-membres de cette même ligne. On résout les noms nus de
         // classes de l'acteur via le helper PARTAGÉ `User::classGroupNames()`
@@ -458,7 +459,7 @@ new class extends Component {
                             </button>
                         @endforeach
 
-                        {{-- Story 14.4 — Tâche 5.6 : chips actifs filtres audit --}}
+                        {{-- chips actifs filtres audit --}}
                         @if ($quotaOverflow)
                             <button type="button" class="badge badge-outline gap-1"
                                 wire:click="removeQuotaOverflowFilter">
@@ -519,7 +520,7 @@ new class extends Component {
                     placeholder="Rechercher et sélectionner des groupes" />
             </x-molecules.modal.section>
 
-            {{-- Story 14.4 — Tâche 5.5 : section Audit avec 2 toggles --}}
+            {{-- section Audit avec 2 toggles --}}
             <x-molecules.modal.section title="Audit" icon="fa-shield-halved text-primary">
                 <div class="form-control">
                     <label class="label cursor-pointer justify-start gap-3">
@@ -583,7 +584,7 @@ new class extends Component {
                                 <td class="font-mono text-sm">{{ $user->login }}</td>
                                 <td>
                                     @php
-                                        // Story 5.1b — colonne Utilisation (D6 : /home uniquement).
+                                        // Colonne Utilisation : /home uniquement.
                                         // Lecture du snapshot JSON directement (zéro shellout).
                                         $homeSnap = $user->quota_snapshot['home'] ?? null;
                                         $percent = is_array($homeSnap) ? ($homeSnap['percent'] ?? null) : null;
@@ -598,7 +599,7 @@ new class extends Component {
                                         }
                                     @endphp
                                     @php
-                                        // Story 26.3 — pastille « profil itinérant volumineux ».
+                                        // Pastille « profil itinérant volumineux ».
                                         // Lecture du cache JSON profile_snapshot (zéro shellout,
                                         // alimenté par le job nocturne profiles:snapshot). Badge
                                         // affiché uniquement au-delà du seuil ; rien sinon.

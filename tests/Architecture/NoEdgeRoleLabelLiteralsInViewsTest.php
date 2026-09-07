@@ -9,17 +9,16 @@ use PHPUnit\Framework\TestCase;
 use Symfony\Component\Finder\Finder;
 
 /**
- * Story 62.3 — **aucune vue ne dit plus comment un rôle d'arête se LIT.**
+ * **aucune vue ne dit plus comment un rôle d'arête se LIT.**
  *
  * C'est la garde structurelle de la bascule code→donnée. Le vocabulaire des rôles
- * est administrable depuis 62.1, ses traductions par type depuis 62.3 : une vue
+ * est administrable depuis, ses traductions par type depuis : une vue
  * qui écrit « Enseignant » en dur, ou qui fige `member|manager|owner` dans trois
  * `<option>`, annule silencieusement tout le mécanisme — l'administrateur renomme,
  * et l'écran ne bouge pas.
  *
- * Ce n'est pas une crainte théorique. Au moment d'écrire cette story, DEUX sites
- * survivaient à l'inventaire de 62.1, tous deux introuvables par la recherche
- * d'une classe supprimée :
+ * Ce n'est pas une crainte théorique : DEUX sites ont survécu à l'inventaire,
+ * tous deux introuvables par la recherche d'une classe supprimée :
  *  - `admin/shares/index.blade.php` — un `match` d'aperçu d'audience
  *    (`manager => 'encadrants'`, `owner => 'responsables'`, `default => 'membres'`)
  *    qui rendait « membres » n'importe quel rôle personnalisé ;
@@ -34,11 +33,11 @@ use Symfony\Component\Finder\Finder;
  *     légitimes qui ne sont pas des libellés (une classe CSS, un jeton
  *     technique) ;
  *  2. **`<option value="member|manager|owner">`** — quel que soit son contenu.
- *     Celle-ci est délibérément plus stricte : après 62.3, l'inventaire d'un
- *     select de rôle vient de `RoleCatalog::assignableKeys()`, jamais d'une liste
+ *  Celle-ci est délibérément plus stricte : après, l'inventaire d'un
+ *  select de rôle vient de `RoleCatalog::assignableKeys()`, jamais d'une liste
  *     écrite à la main. Une `<option>` à valeur figée, même avec un libellé
  *     dynamique, rend un rôle du catalogue INATTRIBUABLE à l'écran — c'était
- *     exactement l'état de `members-table` avant cette story.
+ *     exactement l'état où `members-table` s'est trouvé.
  *
  * Style : `PHPUnit\Framework\TestCase` PUR, scan TEXTUEL de fichiers — patron de
  * {@see PlanNamespaceIsolationTest}. Et comme lui, chaque règle est adossée à un
@@ -52,7 +51,7 @@ use Symfony\Component\Finder\Finder;
  *    vocabulaire, autre catalogue ;
  *  - les `match` sur le rôle GLOBAL `users.role` (`prof|eleve|admin|autre` —
  *    `user-header`, `profile-form`, filtres de `users-table`) : ce vocabulaire-là
- *    n'est PAS celui de l'arête et sort du périmètre de l'epic ;
+ *    n'est PAS celui de l'arête et sort du périmètre ;
  *  - les textes statiques légitimes (`<th>Professeur principal</th>` de la section
  *    professeur principal, titres, commentaires Blade) : ils ne traduisent aucune
  *    clé, ils nomment une colonne.
@@ -65,7 +64,7 @@ class NoEdgeRoleLabelLiteralsInViewsTest extends TestCase
      * Les clés d'arête dont la traduction est désormais de la DONNÉE.
      *
      * Le plancher historique suffit : ce sont les seules qu'une vue écrite avant
-     * 62.1 pouvait connaître, et un rôle créé au catalogue n'a par construction
+     * l'ancien code pouvait connaître, et un rôle créé au catalogue n'a par construction
      * jamais été écrit en dur nulle part.
      *
      * @var list<string>
@@ -76,16 +75,15 @@ class NoEdgeRoleLabelLiteralsInViewsTest extends TestCase
      * Les libellés qui ont RÉELLEMENT été écrits en dur dans ce dépôt, plus ceux
      * du catalogue livré.
      *
-     * **Review 62.3 #3 — la portée exacte de cette liste, pour ne rien promettre
-     * de plus.** Elle est FERMÉE : la règle 1 ne signale un bras
-     * `'manager' => '<texte>'` que si `<texte>` y figure. Un futur libellé jamais
-     * vu dans ce dépôt — « Chef », « Animateur » — passerait donc au travers ;
-     * le reviewer l'a vérifié en rejouant le motif. Cette règle protège contre la
+     * **La portée exacte de cette liste, pour ne rien promettre de plus.** Elle
+     * est FERMÉE : la règle 1 ne signale un bras `'manager' => '<texte>'` que si
+     * `<texte>` y figure. Un futur libellé jamais vu dans ce dépôt — « Chef »,
+     * « Animateur » — passe donc au travers. Cette règle protège contre la
      * RÉGRESSION des sites connus, elle n'est pas un garde-fou général.
      *
      * Ce qui l'est : la **règle 2**, qui interdit d'associer une clé de rôle à un
      * texte dans un `<option>` sans condition sur le contenu — et c'est là que
-     * vivait le risque principal, les deux sites trouvés hors inventaire de 62.1
+     * vivait le risque principal, les deux sites trouvés hors inventaire
      * étant des selects.
      *
      * Élargir la règle 1 demanderait de renoncer à la liste fermée pour une
@@ -150,12 +148,8 @@ class NoEdgeRoleLabelLiteralsInViewsTest extends TestCase
         );
     }
 
-    // =========================================================================
-    // MÉTA-TESTS — la garde détecte-t-elle ce qu'elle prétend détecter ?
-    // =========================================================================
-
     /**
-     * Les DEUX sites réellement supprimés par la story, réinjectés tels quels.
+     * Les DEUX sites réellement supprimés, réinjectés tels quels.
      *
      * Si l'un d'eux cesse d'être détecté, la garde est devenue décorative.
      */
@@ -234,10 +228,6 @@ class NoEdgeRoleLabelLiteralsInViewsTest extends TestCase
             'la vue la plus concernée doit être dans le périmètre du scan',
         );
     }
-
-    // =========================================================================
-    // Détection
-    // =========================================================================
 
     /**
      * Règle 1 — `'member'|'manager'|'owner' => '<libellé interdit>'`.

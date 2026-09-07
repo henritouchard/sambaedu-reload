@@ -13,7 +13,6 @@ use Illuminate\Http\Request;
 use RuntimeException;
 
 /**
- * Story 16.10 — AC5.2.
  *
  * Endpoint `POST /api/v1/agent/refresh`.
  *

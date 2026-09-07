@@ -18,7 +18,7 @@ use Tests\Support\IpxeSchemaBootstrapper;
 use Tests\TestCase;
 
 /**
- * Story 3.3 — AC2.1-AC2.8 / T1.7.
+ * T1.7.
  *
  * Tests unitaires du service de domaine d'enrollment iPXE :
  *
@@ -28,7 +28,7 @@ use Tests\TestCase;
  *  - `assignRoom()` (succès + invalid_room_id).
  *  - `attachGroup()` / `detachGroup()` (succès + invalid_group_id).
  *
- * `AdMachineManager` est **mocké** (parité 16.7 — pas de samba-tool réel).
+ * `AdMachineManager` est **mocké** (parité — pas de samba-tool réel).
  */
 class WorkstationEnrollmentServiceTest extends TestCase
 {
@@ -41,7 +41,7 @@ class WorkstationEnrollmentServiceTest extends TestCase
         IpxeSchemaBootstrapper::bootstrap();
         config()->set('sambaedu.legacy_ldap.suffix', '');
 
-        // Story 4.11 — assignRoom délègue au service qui dispatche le job AD ;
+        // AssignRoom délègue au service qui dispatche le job AD ;
         // pas de LDAP en test.
         \Illuminate\Support\Facades\Queue::fake();
         \App\Observers\WorkstationGroupObserver::disableSync();
@@ -162,7 +162,7 @@ class WorkstationEnrollmentServiceTest extends TestCase
             'status' => 'active',
         ]);
 
-        // Story 4.9 : le rename AD est désormais piloté par l'observer
+        // Le rename AD est désormais piloté par l'observer
         // + WorkstationAdSyncJob (async). Plus d'appel direct à
         // renameComputer/registerHardware depuis ce service.
         $this->adManager->shouldReceive('renameComputer')->never();
@@ -278,7 +278,7 @@ class WorkstationEnrollmentServiceTest extends TestCase
         $ok = $this->service->assignRoom($ws, (int) $room->id);
 
         self::assertTrue($ok);
-        // Story 4.11 — l'appartenance « salle » vit dans le pivot global.
+        // L'appartenance « salle » vit dans le pivot global.
         self::assertDatabaseHas('workstation_group_workstation', [
             'workstation_id' => $ws->id,
             'workstation_group_id' => $room->id,
@@ -289,7 +289,7 @@ class WorkstationEnrollmentServiceTest extends TestCase
     #[Test]
     public function it_dispatches_exactly_one_move_job_on_first_room_assignment(): void
     {
-        // Pitfall AC7 (story 4.11) : un enrôlement iPXE neuf (poste sans
+        // Pitfall : un enrôlement iPXE neuf (poste sans
         // salle précédente) doit dispatcher le move OU AD exactement 1 fois
         // — pas 0 (garde oldRoomId trop large), pas 2 (double canal).
         $ws = Workstation::create([
@@ -326,7 +326,7 @@ class WorkstationEnrollmentServiceTest extends TestCase
         $ok = $this->service->assignRoom($ws, 99999);
 
         self::assertFalse($ok);
-        // Story 4.11 — aucune ligne pivot salle créée pour un id invalide.
+        // Aucune ligne pivot salle créée pour un id invalide.
         self::assertNull($ws->fresh()->physicalRoom);
     }
 

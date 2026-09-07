@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * Story 28.1 — Groupe imposé d'un contrat amont (controlHub).
+ * Groupe imposé d'un contrat amont (controlHub).
  *
  * Un groupe imposé représente un `WorkstationGroup` dont l'existence est garantie
  * par l'autorité amont. Le champ `label_name` désigne optionnellement le label
@@ -17,14 +17,13 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  *
  * ⚠️ PAS de FK dure vers `controlhub_contract_labels` : le rattachement se fait par
  * nom (`label_name`) côté logique amont — un éventuel mapping groupe↔label local est
- * différé en Epic 30 (Stories 30.x). Ce choix évite un couplage structurel prématuré
- * entre les entités du contrat et le modèle local.
+ * différé. Ce choix évite un couplage structurel prématuré entre les entités du
+ * contrat et le modèle local.
  *
- * Ce modèle est un modèle de **réception** — il ne génère aucune logique de création de groupe.
- * - Garantie d'existence des groupes imposés → Epic 30.
+ * Ce modèle est un modèle de **réception** : il ne crée aucun groupe.
  *
- * ⚠️ GARDE-FOU R3 : aucun mot « central » dans ce modèle.
- * Préfixe imposé : `ControlHubContract*`. [Source: prd-contrat-manage-se5.md#R3]
+ * ⚠️ Convention de nommage : aucun mot « central » dans ce modèle.
+ * Préfixe imposé : `ControlHubContract*`.
  *
  * @property int $id
  * @property int $controlhub_contract_id

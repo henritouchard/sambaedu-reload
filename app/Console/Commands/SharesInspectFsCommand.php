@@ -8,7 +8,7 @@ use App\Services\Filesystem\Acl\AclInspectionService;
 use Illuminate\Console\Command;
 
 /**
- * Epic 34 (reprise legacy `acls/`) — INSPECTION read-only des ACL POSIX d'un
+ * INSPECTION read-only des ACL POSIX d'un
  * répertoire legacy, avec classification vers le modèle de lecteurs réseau
  * managés.
  *

@@ -10,7 +10,7 @@ use App\Services\Agent\Enrollment\EnrollmentService;
 use Illuminate\Http\JsonResponse;
 
 /**
- * Story 23.3 — `POST /api/v1/agent/enrollment` (route `agent.v1.enrollment`).
+ * `POST /api/v1/agent/enrollment` (route `agent.v1.enrollment`).
  *
  * Échange du ticket d'enrôlement one-time (émis à la génération de
  * l'unattend.xml — porte 1 iPXE) contre le token agent. Controller mince :
@@ -27,7 +27,7 @@ use Illuminate\Http\JsonResponse;
  *  - 409 `{error, message, code: AGENT_ENROLL_CONFLICT}` — poste déjà
  *    enrôlé, rien n'est écrasé silencieusement ;
  *  - 403 `{error, message, code: AGENT_ENROLL_NOT_ALLOWED}` — tout le reste,
- *    sans oracle (porte 2 → Story 25.3).
+ * sans oracle (porte 2 →).
  */
 class EnrollController extends Controller
 {

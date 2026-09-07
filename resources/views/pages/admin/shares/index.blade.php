@@ -19,10 +19,10 @@ use Livewire\Attributes\Url;
 use Livewire\Component;
 
 /**
- * Story 34.2 — Page liste des lecteurs réseau gérés + modale de création.
+ * Page liste des lecteurs réseau gérés + modale de création.
  *
  * SFC Volt (iso `pages/shortcuts/index.blade.php`). Pivot SQL pur (zéro CN AD).
- * Gardée par la policy dédiée `networkshare.*` (Q5) : la route impose
+ * Gardée par la policy dédiée `networkshare.*` : la route impose
  * `can:networkshare.view`, les actions de gestion vérifient `manage-networkshare`.
  */
 new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Component {
@@ -42,11 +42,10 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
     public int $totalShares = 0;
     public ?array $pagination = null;
 
-    // --- Modale de création -------------------------------------------------
     public bool $isCreateOpen = false;
     public string $name = '';
     /**
-     * Story 61.3 — L'AUTORITÉ D'ÉCRITURE du répertoire créé.
+     * L'AUTORITÉ D'ÉCRITURE du répertoire créé.
      *
      * Elle n'est proposée que parmi les backends POSABLES ({@see FileBackendSelection}) :
      * une case dont la capacité est éteinte est ABSENTE, avec son motif dit sous le
@@ -59,7 +58,6 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
     public string $label = '';
     public string $letter = '';
 
-    // --- Modale « Créer depuis un template » (Story 34.3) -------------------
     public bool $isTemplateOpen = false;
     public string $selectedTemplateKey = '';
     public string $templateName = '';
@@ -76,7 +74,7 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
     public array $roleSelections = [];
 
     /**
-     * Story 60.5 — le GROUPE DE MATÉRIALISATION d'une recette auto-résolvable :
+     * Le GROUPE DE MATÉRIALISATION d'une recette auto-résolvable :
      * l'unique chose qu'elle demande, puisqu'elle déduit tout le reste.
      */
     public ?int $materializationGroupId = null;
@@ -84,7 +82,6 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
     /** Clé du sélecteur de groupe de matérialisation dans les messages d'aide. */
     public const MATERIALIZATION_PICKER = '@groupe';
 
-    // --- Sélection multiple + suppression groupée ---------------------------
     /** @var array<int, string> ids (string, cf. x-molecules.select-all-checkbox) sélectionnés */
     public array $selectedShares = [];
     public bool $isBulkDeleteOpen = false;
@@ -93,7 +90,7 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
     public function mount(): void
     {
         // Defense-in-depth + cohérence avec la page détail (mount `view`) : ferme
-        // l'éventuel vecteur d'hydratation directe du composant (finding review #5).
+        // l'éventuel vecteur d'hydratation directe du composant.
         abort_unless(Gate::allows('view-networkshare'), 403);
         $this->loadShares();
     }
@@ -145,7 +142,7 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
                 'directory_name' => $s->directory_name,
                 'description' => $s->description,
                 'letter' => $s->letter,
-                // Story 60.3 — l'autorité d'écriture des droits, en libellé (jamais
+                // L'autorité d'écriture des droits, en libellé (jamais
                 // la valeur technique brute à l'écran). Lecture SANCTIONNÉE de la
                 // colonne : une valeur hors vocabulaire échoue explicitement plutôt
                 // que de s'afficher au hasard.
@@ -186,7 +183,6 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
         $this->loadShares();
     }
 
-    // --- Suppression groupée ------------------------------------------------
 
     /** @return list<int> ids sélectionnés dédupliqués (castés int). */
     private function selectedShareIds(): array
@@ -282,14 +278,13 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
         }
     }
 
-    // --- Création -----------------------------------------------------------
 
     public function openCreate(): void
     {
         abort_unless(Gate::allows('manage-networkshare'), 403);
 
         $this->resetCreateForm();
-        // Q2 — pré-remplir la prochaine lettre sûre libre (encourager l'explicite,
+        // Pré-remplir la prochaine lettre sûre libre (encourager l'explicite,
         // modifiable / effaçable → retombe sur l'auto-assignation du provider).
         $this->letter = app(NetworkShareValidator::class)->suggestNextFreeLetter() ?? '';
         $this->isCreateOpen = true;
@@ -369,7 +364,7 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
 
         $validated = $this->validate($this->createRules(), $this->createMessages());
 
-        // Story 61.3 — l'autorité d'écriture est refusée AVANT écriture si elle
+        // L'autorité d'écriture est refusée AVANT écriture si elle
         // n'est pas posable. La garde est rejouée ici même si l'écran a déjà filtré
         // la liste : une garde qui ne vit que dans la liste affichée protège
         // l'étourderie, pas la requête forgée.
@@ -406,7 +401,7 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
 
         $share->save();
 
-        // Story 60.4 — la mise en place des droits est ENFILÉE (elle est quadratique
+        // La mise en place des droits est ENFILÉE (elle est quadratique
         // en nombre d'entrées nominatives et n'a rien à faire dans le cycle d'une
         // requête). L'écran dit « engagée », jamais « accomplie ».
         if (app(NetworkShareService::class)->queueReconciliation($share)) {
@@ -422,15 +417,14 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
     }
 
     /**
-     * Story 61.3 — LES AUTORITÉS D'ÉCRITURE POSABLES, et le motif de celles qui ne
+     * LES AUTORITÉS D'ÉCRITURE POSABLES, et le motif de celles qui ne
      * le sont pas.
      *
      * **Une case non posable est ABSENTE de la liste**, jamais grisée sans mot :
      * proposer puis refuser à l'application est le défaut du signal accepté sans
-     * destinataire, que tout cet epic combat. Le motif, lui, est DIT sous le champ —
+     * destinataire, qu'on combat partout. Le motif, lui, est DIT sous le champ —
      * l'administrateur doit savoir quoi activer, pas seulement que c'est indisponible.
      *
-     * ---------------------------------------------------------------------------
      * **CE BLOC ÉNUMÉRAIT UNE CASE ; IL ITÈRE DÉSORMAIS, et c'est un CONSTAT.**
      *
      * La liste des motifs de refus nommait `Nextcloud` en dur — la seule autorité
@@ -444,7 +438,6 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
      * Le backend d'aperçu est écarté : son refus (« il n'écrit aucun droit ») n'est
      * pas un réglage à activer, c'est sa nature — l'afficher enverrait
      * l'administrateur chercher un interrupteur qui n'existe pas.
-     * ---------------------------------------------------------------------------
      *
      * @return array{options: list<array{value:string,label:string,description:string}>, refusals: list<string>}
      */
@@ -475,17 +468,16 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
         return ['options' => $options, 'refusals' => $refusals];
     }
 
-    // --- Matérialisation depuis un template (Story 34.3) --------------------
 
     /**
-     * Catalogue des recettes (lu depuis la table `directory_templates`, Q3 option B).
+     * Catalogue des recettes, lu depuis la table `directory_templates`.
      *
      * @return array<int, array<string, mixed>>
      */
     public function templates(): array
     {
         return DirectoryTemplate::orderBy('id')->get()
-            // Story 60.5 — LES RECETTES QUI SE MATÉRIALISENT SEULES NE SONT PAS
+            // LES RECETTES QUI SE MATÉRIALISENT SEULES NE SONT PAS
             // PROPOSÉES ICI. Cet écran fait naître un partage à partir d'un nom
             // choisi à la main ; une recette d'arbre, elle, tient son nom et son
             // emplacement de son groupe. Les mélanger produisait deux issues,
@@ -534,7 +526,7 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
             return [];
         }
 
-        // Story 60.5 — une recette AUTO-RÉSOLVABLE ne demande aucune cible par
+        // Une recette AUTO-RÉSOLVABLE ne demande aucune cible par
         // rôle : elle les déduit toutes d'un seul groupe. Lui présenter des
         // sélecteurs de rôle serait demander une saisie qui ne sert à rien — et,
         // pour un rôle porté par une arête, une saisie IMPOSSIBLE.
@@ -572,7 +564,7 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
     }
 
     /**
-     * Story 62.4 — LE LIBELLÉ D'UN RÔLE DE RECETTE, désormais dérivé de ses VERBES.
+     * LE LIBELLÉ D'UN RÔLE DE RECETTE, désormais dérivé de ses VERBES.
      *
      * La recette dit quatre verbes ; l'assignation qui en naîtra n'en connaît que
      * deux niveaux. L'aperçu montre donc ce que l'administrateur obtiendra
@@ -632,10 +624,6 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
 
         return $preview;
     }
-
-    // =========================================================================
-    // Story 60.5 — le flux à UN SEUL sélecteur, et le picker qui PARLE
-    // =========================================================================
 
     /**
      * `true` si la recette choisie sait trouver toutes ses cibles à partir d'un
@@ -786,12 +774,12 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
                 RoleResolutionStrategy::EdgeRole => sprintf(
                     '%s — %s',
                     $groupLabel,
-                    // Story 62.3 — l'aperçu d'audience lit le VOCABULAIRE DÉCLARÉ
+                    // L'aperçu d'audience lit le VOCABULAIRE DÉCLARÉ
                     // du type de groupe, plus un `match` local.
                     //
                     // Ce `match` était le dernier survivant du dépôt, et il
                     // mentait deux fois : « membres » était son `default`, donc un
-                    // rôle personnalisé (`tuteur`, créé au catalogue de 62.1) y
+                    // rôle personnalisé (`tuteur`, créé au catalogue) y
                     // était rendu « membres » comme n'importe quoi d'autre ; et il
                     // ignorait le type du groupe alors que `$group` est juste
                     // au-dessus. Une recette accrochée à une classe annonçait
@@ -845,8 +833,8 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
         abort_unless(Gate::allows('manage-networkshare'), 403);
 
         $this->resetTemplateForm();
-        // Pré-remplir la prochaine lettre sûre libre (encourager l'explicite — Q5
-        // : le NOM, lui, reste manuel, pas d'auto-dérivation slug).
+        // Pré-remplir la prochaine lettre sûre libre (encourager l'explicite).
+        // Le NOM, lui, reste manuel : pas d'auto-dérivation de slug.
         $this->templateLetter = app(NetworkShareValidator::class)->suggestNextFreeLetter() ?? '';
         $this->isTemplateOpen = true;
     }
@@ -931,7 +919,7 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
             return;
         }
 
-        // Story 60.5 — un sélecteur SANS candidat ne doit jamais laisser lancer un
+        // Un sélecteur SANS candidat ne doit jamais laisser lancer un
         // geste qui échouera : le bouton est déjà désactivé à l'écran, la garde est
         // rejouée ici parce qu'un composant peut être appelé sans passer par lui.
         if ($this->materializationBlocked()) {
@@ -984,15 +972,15 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
             return;
         }
 
-        // Story 60.4 — la pose des droits est ENFILÉE : le message dit « engagée »,
+        // La pose des droits est ENFILÉE : le message dit « engagée »,
         // pas « accomplie ». Affirmer l'accompli serait le mensonge que la ligne de
         // contrat combat un cran plus bas.
         $message = $result->isFailure()
             ? "Le répertoire « {$result->share->name} » a été créé, mais la réconciliation des droits n'a pas pu être engagée. Consultez les journaux serveur."
             : "Le répertoire « {$result->share->name} » a été créé depuis le template. La mise en place des droits est engagée : l'état sera à jour au prochain rafraîchissement.";
 
-        // Surfaçage des avertissements prédictifs non bloquants (WG-montage-seul,
-        // AC2). Inerte pour les 4 recettes seedées (aucune n'assigne de parc),
+        // Surfaçage des avertissements prédictifs non bloquants (WG-montage-seul).
+        // Inerte pour les 4 recettes seedées (aucune n'assigne de parc),
         // mais on honore le contrat et on défend les recettes futures : un warning
         // bascule le toast en statut « warning » et l'annexe au message.
         $warnings = $result->warnings;
@@ -1011,7 +999,7 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
         $this->isTemplateOpen = false;
         $this->resetTemplateForm();
 
-        // Retour vers la page détail du share créé (édition fine ensuite, 34.2).
+        // Retour vers la page détail du share créé (édition fine ensuite).
         $this->redirect(route('admin.shares.show', $result->share->id), navigate: true);
     }
 
@@ -1139,7 +1127,7 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
                                             <span class="badge badge-ghost" title="Lettre attribuée automatiquement">auto</span>
                                         @endif
                                     </td>
-                                    {{-- Story 60.3 — backend VISIBLE, jamais éditable ici. --}}
+                                    {{-- Backend VISIBLE, jamais éditable ici. --}}
                                     <td>
                                         <span class="badge badge-outline badge-sm">{{ $share['backend_label'] }}</span>
                                     </td>
@@ -1237,7 +1225,7 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
                     </span>
                 </div>
 
-                {{-- Story 61.3 — L'AUTORITÉ D'ÉCRITURE : choisie ICI, jamais après (D9). --}}
+                {{-- L'AUTORITÉ D'ÉCRITURE : choisie ICI, jamais après. --}}
                 <div class="flex flex-col w-full md:col-span-2">
                     <label class="label w-full justify-start" for="create-backend">
                         <span class="label-text font-medium">
@@ -1276,7 +1264,7 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
         </x-slot:footer>
     </x-molecules.modal>
 
-    {{-- Modale « Créer depuis un template » (Story 34.3) --}}
+    {{-- Modale « Créer depuis un template » --}}
     @php($selectedTpl = $this->selectedTemplate())
     @php($roleCandidates = $selectedTpl ? $this->roleCandidates() : [])
     @php($preview = $selectedTpl ? $this->templatePreview() : [])
@@ -1334,7 +1322,7 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
                         @error('templateLetter') <span class="text-error text-xs mt-1">{{ $message }}</span> @enderror
                     </div>
 
-                    {{-- Story 61.3 — même choix, même garde, même finalité (D9). --}}
+                    {{-- Même choix, même garde, même finalité. --}}
                     <div class="flex flex-col w-full md:col-span-2">
                         <label class="label w-full justify-start" for="template-backend">
                             <span class="label-text font-medium">
@@ -1361,7 +1349,7 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
                 </div>
             </x-molecules.modal.section>
 
-            {{-- Story 60.5 — le flux à UN SEUL sélecteur : une recette auto-résolvable
+            {{-- Le flux à UN SEUL sélecteur : une recette auto-résolvable
                  déduit toutes ses cibles du groupe choisi. C'est ce qui répare
                  « profs → élèves », dont le rôle enseignant désigne une audience
                  qu'aucun sélecteur de groupe ne pourrait jamais nommer. --}}
@@ -1466,7 +1454,7 @@ new #[Title('Lecteurs réseau gérés - Instance SE4FS')] class extends Componen
         </x-slot:footerNote>
         <x-slot:footer>
             <button type="button" class="btn btn-ghost" wire:click="closeTemplate">Annuler</button>
-            {{-- Story 60.5 — un sélecteur sans candidat DÉSACTIVE la matérialisation :
+            {{-- Un sélecteur sans candidat DÉSACTIVE la matérialisation :
                  offrir un geste dont on sait qu'il échouera est une autre forme du
                  silence qu'on répare ici. --}}
             <button type="button" class="btn btn-primary" wire:click="createFromTemplate" wire:loading.attr="disabled" wire:target="createFromTemplate"

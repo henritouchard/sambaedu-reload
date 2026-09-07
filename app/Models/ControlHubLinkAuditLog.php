@@ -10,17 +10,17 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use LogicException;
 
 /**
- * Story 32.1 (NFR5) — Entrée d'audit append-only de la transition de lien amont
- * `active → severed` (rupture du lien de management controlHub, FR7).
+ * Entrée d'audit append-only de la transition de lien amont
+ * `active → severed` (rupture du lien de management controlHub).
  *
  * Consigne CHAQUE rupture explicite du lien : le contrat concerné, l'origine du
  * signal (commande artisan / endpoint controlHub authentifié), l'acteur
  * dénormalisé, et un récapitulatif (items levés, apps conservées, valeurs
  * matérialisées). La trace est écrite DANS LA MÊME transaction que la transition
- * `link_state = severed` (atomicité acte ↔ trace — AC6).
+ * `link_state = severed` (atomicité acte ↔ trace —).
  *
  * Table append-only : toute tentative d'UPDATE lève une LogicException (calque
- * {@see CapabilityOverrideAuditLog} 29.5 / {@see DelegationHistory}). La FK
+ * {@see CapabilityOverrideAuditLog} / {@see DelegationHistory}). La FK
  * `controlhub_contract_id` est `nullOnDelete` pour garder la ligne lisible après
  * suppression du contrat ; les colonnes dénormalisées (`actor_label`, `origin`,
  * `summary`) préservent la lisibilité.
@@ -28,8 +28,8 @@ use LogicException;
  * Patron MAISON (`QuotaAuditLog::log()` / `CapabilityOverrideAuditLog::log()`) —
  * Spatie activitylog n'est PAS une dépendance du projet.
  *
- * ⚠️ GARDE-FOU R3 : aucun mot « central ». Vocabulaire « amont » / `Upstream` /
- * `ControlHub*`. [Source: prd-contrat-manage-se5.md#R3]
+ * ⚠️ Convention de nommage : aucun mot « central ». Vocabulaire « amont » / `Upstream` /
+ * `ControlHub*`.
  *
  * @property int $id
  * @property int|null $controlhub_contract_id
@@ -70,10 +70,6 @@ class ControlHubLinkAuditLog extends Model
         'created_at' => 'datetime',
     ];
 
-    // ========================================================================
-    // APPEND-ONLY GUARD (calque CapabilityOverrideAuditLog / DelegationHistory)
-    // ========================================================================
-
     /**
      * Bloque tout UPDATE : la table est append-only.
      *
@@ -92,13 +88,9 @@ class ControlHubLinkAuditLog extends Model
         return parent::save($options);
     }
 
-    // ========================================================================
-    // FABRIQUE (calque CapabilityOverrideAuditLog::log)
-    // ========================================================================
-
     /**
      * Consigne une transition de lien. Appelée DANS la transaction de la rupture
-     * (atomicité acte ↔ trace — AC6).
+     * (atomicité acte ↔ trace —).
      *
      * @param  array<string,mixed>  $summary  récap (items_lifted, apps_preserved, values_materialized)
      */
@@ -123,19 +115,11 @@ class ControlHubLinkAuditLog extends Model
         ]);
     }
 
-    // ========================================================================
-    // RELATIONS
-    // ========================================================================
-
     /** Le contrat amont rompu (peut être null si supprimé). */
     public function contract(): BelongsTo
     {
         return $this->belongsTo(ControlHubContract::class, 'controlhub_contract_id');
     }
-
-    // ========================================================================
-    // SCOPES
-    // ========================================================================
 
     public function scopeForOrigin(Builder $query, string $origin): Builder
     {

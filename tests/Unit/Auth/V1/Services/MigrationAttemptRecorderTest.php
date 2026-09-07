@@ -15,8 +15,6 @@ use Tests\Concerns\IssuesWorkstationJwt;
 use Tests\TestCase;
 
 /**
- * Story 16.11 — Q2 (Opus-B + Opus-D).
- *
  * Tests `MigrationAttemptRecorder` — helper d'insertion `failed` row pour
  * `migration:health-check`.
  */

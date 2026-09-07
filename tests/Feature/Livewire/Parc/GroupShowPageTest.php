@@ -27,7 +27,7 @@ use Tests\Traits\MocksAdminUser;
 /**
  * Tests Feature du composant Livewire `pages::parc.groups.[id].index`.
  *
- * Couvre les corrections review #4/#10 de la story 4-2 :
+ * Couvre :
  *  - l'action shutdown-force est bien exposée dans le dropdown unitaire ET batch
  *    de la vue groupe (avec wire:confirm renforcé pour éviter les drames).
  *  - le dispatch du shutdown-force transite bien par
@@ -35,7 +35,7 @@ use Tests\Traits\MocksAdminUser;
  *    les autres actions batch).
  *
  * Le setup réutilise le pattern createTablesIfNeeded() de MachineShowPageTest —
- * dette infra connue (cf. review #8, ticket `tech-debt-test-infra-cleanup`).
+ * dette infra connue.
  */
 class GroupShowPageTest extends TestCase
 {
@@ -53,7 +53,7 @@ class GroupShowPageTest extends TestCase
         $this->withoutVite();
         $this->createTablesIfNeeded();
 
-        // Story 4-3 : Queue::fake() par défaut pour TOUS les tests de cette
+        // -3 : Queue::fake par défaut pour TOUS les tests de cette
         // suite — sinon l'observer WorkstationGroupObserver dispatche un
         // WorkstationGroupAdSyncJob qui tente d'écrire réellement dans l'AD
         // (LDAP absent en CI/local). Neutraliser aussi les jobs avant les
@@ -102,7 +102,7 @@ class GroupShowPageTest extends TestCase
                 $table->timestamp('date_rapport_poste')->nullable();
                 $table->string('ad_dn')->nullable();
                 $table->string('ad_guid')->nullable();
-                // Story 23.2 / 24.7 — colonnes du canal agent.
+                // Colonnes du canal agent.
                 $table->string('agent_token_hash', 64)->nullable();
                 $table->timestamp('agent_token_rotated_at')->nullable();
                 $table->timestamp('agent_last_checkin_at')->nullable();
@@ -113,7 +113,7 @@ class GroupShowPageTest extends TestCase
             $this->createdTables = true;
         }
 
-        // Story 24.7 — tables D3 (24.1) lues par ConformityService.
+        // Tables lues par ConformityService.
         if (!Schema::hasTable('agent_resource_states')) {
             Schema::create('agent_resource_states', function (Blueprint $table) {
                 $table->id();
@@ -188,7 +188,7 @@ class GroupShowPageTest extends TestCase
             $this->createdTables = true;
         }
 
-        // Story 3.11 — table dédiée lue par le panneau réinstall (SFC enfant) de
+        // Table dédiée lue par le panneau réinstall (SFC enfant) de
         // la page groupe. Sans elle, le render du panneau lève « no such table ».
         if (!Schema::hasTable('workstation_reinstall_requests')) {
             Schema::create('workstation_reinstall_requests', function (Blueprint $table) {
@@ -234,7 +234,7 @@ class GroupShowPageTest extends TestCase
             $this->createdTables = true;
         }
 
-        // Story 4-4 : schedules & runs (le partial schedules-panel est inclus
+        // -4 : schedules & runs (le partial schedules-panel est inclus
         // dans la vue parent et exécute une query au rendu — sans ces 2 tables
         // on obtient "no such table" à chaque assertSee() / call()).
         if (!Schema::hasTable('workstation_group_schedules')) {
@@ -269,7 +269,7 @@ class GroupShowPageTest extends TestCase
             $this->createdTables = true;
         }
 
-        // Story 6.1 — l'onglet Imprimantes du partial machines-list invoque
+        // L'onglet Imprimantes du partial machines-list invoque
         // $group->printers->count() au rendu, donc il faut a minima les 2
         // tables même vides pour que le rendu de la vue groupe ne casse pas.
         if (!Schema::hasTable('printers')) {
@@ -380,11 +380,11 @@ class GroupShowPageTest extends TestCase
         return $mock;
     }
 
-    // ─── Tests ──────────────────────────────────────────────────────────────
+    // Tests
 
     public function test_group_dropdown_exposes_shutdown_force_action(): void
     {
-        // Review #4/#10 — la page groupe doit afficher l'entrée "Forcer
+        // La page groupe doit afficher l'entrée "Forcer
         // l'extinction" dans le dropdown d'actions machines.
         [$group, ] = $this->makeGroupWithMachine();
         $this->mockGroupService($group);
@@ -396,7 +396,7 @@ class GroupShowPageTest extends TestCase
 
     public function test_group_shutdown_force_dispatches_to_group_service_with_force_true(): void
     {
-        // Review #10 — cliquer "Forcer l'extinction" sur une machine depuis la
+        // Cliquer "Forcer l'extinction" sur une machine depuis la
         // vue groupe doit appeler executeGroupMachinesAction(groupId, [machineId], 'shutdown-force').
         [$group, $machine] = $this->makeGroupWithMachine();
         $mock = $this->mockGroupService($group);
@@ -408,7 +408,7 @@ class GroupShowPageTest extends TestCase
                 'requested_count' => 1,
                 'success_count' => 1,
                 'failed_count' => 0,
-                // Contrat 4-3 : code=202 (dispatched async) + task_id renseigné.
+                // Contrat de retour : code=202 (dispatch asynchrone) + task_id renseigné.
                 'results' => [['machine' => 'pc-chimie-01', 'success' => true, 'code' => 202, 'task_id' => 99]],
             ]);
 
@@ -419,7 +419,7 @@ class GroupShowPageTest extends TestCase
 
     public function test_group_shutdown_force_batch_requires_confirmation(): void
     {
-        // Review #4 — le dropdown BATCH (actions sur la sélection) doit
+        // Le dropdown BATCH (actions sur la sélection) doit
         // inclure shutdown-force avec le wire:confirm au pluriel.
         [$group, $machine] = $this->makeGroupWithMachine();
         $this->mockGroupService($group);
@@ -435,7 +435,7 @@ class GroupShowPageTest extends TestCase
 
     public function test_group_shutdown_force_batch_dispatches_with_correct_action(): void
     {
-        // Complément test #3 — valider le dispatch côté batch (sélection multi).
+        // Le dispatch côté batch (sélection multi).
         [$group, $machine] = $this->makeGroupWithMachine();
         $mock = $this->mockGroupService($group);
         $mock->shouldReceive('executeGroupMachinesAction')
@@ -446,7 +446,7 @@ class GroupShowPageTest extends TestCase
                 'requested_count' => 1,
                 'success_count' => 1,
                 'failed_count' => 0,
-                // Contrat 4-3 : code=202 (dispatched async) + task_id renseigné
+                // Contrat de retour : code=202 (dispatch asynchrone) + task_id renseigné
                 // → permet à executeSelectedGroupMachinesAction de basculer batchRunning=true.
                 'results' => [['machine' => 'pc-chimie-01', 'success' => true, 'code' => 202, 'task_id' => 99]],
             ]);
@@ -458,7 +458,7 @@ class GroupShowPageTest extends TestCase
             ->assertDispatched('toastMagic', status: 'success');
     }
 
-    // ─── Tests story 4-3 (pipeline async, polling, résumé, idempotence) ────
+    // Tests-3 (pipeline async, polling, résumé, idempotence)
     // Ces tests utilisent le vrai WorkstationGroupService (pas de mock) pour
     // valider le pipeline end-to-end : création de MachinePowerActionTask,
     // dispatch de DispatchMachinePowerActionJob, machine à états batch.
@@ -484,7 +484,7 @@ class GroupShowPageTest extends TestCase
 
         Queue::assertPushed(DispatchMachinePowerActionJob::class, 3);
 
-        // Review #6 — la propriété pivot du polling doit contenir exactement
+        // La propriété pivot du polling doit contenir exactement
         // les IDs des tasks créées pour les machines sélectionnées.
         $taskIds = MachinePowerActionTask::query()
             ->whereIn('workstation_id', $machineIds)
@@ -636,7 +636,7 @@ class GroupShowPageTest extends TestCase
 
     public function test_batch_skips_machines_with_active_tasks_and_warns(): void
     {
-        // AC7 idempotence : relancer un batch sur des machines dont une task
+        // Idempotence : relancer un batch sur des machines dont une task
         // est déjà active doit skip ces machines et toaster warning.
         Queue::fake();
         $this->bindPowerServiceMock();
@@ -690,10 +690,10 @@ class GroupShowPageTest extends TestCase
 
     public function test_remote_action_not_in_batch_dropdown(): void
     {
-        // AC6 : le dropdown BATCH ne doit PAS exposer l'action `remote`
+        // Le dropdown BATCH ne doit PAS exposer l'action `remote`
         // (inverse du dropdown unitaire qui la conserve). Assertions
-        // structurelles sur les wire:click exacts (review #4 — remplace
-        // un substr_count fragile qui cassait dès qu'on passait à 2 machines).
+        // structurelles sur les wire:click exacts : un substr_count casserait
+        // dès qu'on passerait à 2 machines.
         [$group, $machines] = $this->makeGroupWithMachines(1);
         $machineId = $machines[0]->id;
 
@@ -712,7 +712,7 @@ class GroupShowPageTest extends TestCase
         }
     }
 
-    // ─── Story 24.7 — Panneau conformité du groupe (AC3, AC5) ───────────────
+    // — Panneau conformité du groupe
 
     private function enroll(Workstation $ws): Workstation
     {
@@ -738,7 +738,7 @@ class GroupShowPageTest extends TestCase
 
     public function test_group_conformity_panel_lists_only_exceptions(): void
     {
-        // AC3 — panneau par type : « n/N conformes » + SEULES les exceptions.
+        // Panneau par type : « n/N conformes » + SEULES les exceptions.
         [$group, $machines] = $this->makeGroupWithMachines(2);
         $this->mockGroupService($group);
 
@@ -769,7 +769,7 @@ class GroupShowPageTest extends TestCase
 
     public function test_force_sync_group_requests_eligible_members(): void
     {
-        // AC5 — bouton groupe : pose la demande sur les membres enrôlés non
+        // Bouton groupe : pose la demande sur les membres enrôlés non
         // quarantaine, ignore les autres (toast récapitulatif).
         [$group, $machines] = $this->makeGroupWithMachines(2);
         $this->mockGroupService($group);
@@ -785,14 +785,12 @@ class GroupShowPageTest extends TestCase
         $this->assertNull($machines[1]->refresh()->agent_sync_requested_at);
     }
 
-    // ─── Story 37.1 — Câblage de l'onglet « État cible » (review #1) ─────────
-
     public function test_state_tab_wires_desired_state_component(): void
     {
-        // Review #1 — `setTab('state')` autorisé (inconditionnel sur la page parc)
+        // `setTab('state')` est autorisé (inconditionnel sur la page parc)
         // + la directive @elseif ($tab === 'state') monte le SFC `desired-state-tab`
         // du groupe. #[Lazy] ⇒ le rendu ne contient que le placeholder (titre NEUTRE
-        // « État cible » + squelette : le groupe n'y est pas chargé, review #5) —
+        // « État cible » + squelette : le groupe n'y est pas chargé) —
         // le câblage réel est exercé sans dépendre des tables raccourcis/apps.
         [$group, ] = $this->makeGroupWithMachine();
         $this->mockGroupService($group);

@@ -16,11 +16,10 @@ use App\Services\OpenCloud\OpenCloudResult;
  * l'octroi se fait par groupe, et un changement de rôle coûte une écriture
  * d'appartenance au lieu de N écritures d'octroi.
  *
- * ---------------------------------------------------------------------------
  * **CE QUE CE CLIENT N'A PAS, ET NE DOIT PAS AVOIR.**
  *
  * Aucune méthode de création de COMPTE, et aucune méthode de quota de compte. La
- * frontière D8 est nette : la recette plafonne des ZONES, les règles de quota
+ * frontière est nette : la recette plafonne des ZONES, les règles de quota
  * budgètent des PERSONNES. Un backend de plan de fichiers qui saurait créer un
  * compte finirait par en créer un « à la volée » le jour où le cache d'identité
  * serait vide — et la règle de l'homonyme, payée cher sur l'autre produit, serait
@@ -31,7 +30,6 @@ use App\Services\OpenCloud\OpenCloudResult;
  * elle est indispensable parce que — mesuré — l'API **refuse de filtrer** sur
  * l'identifiant de connexion (`unsupported filter`). Retrouver un compte par son
  * login n'a donc pas d'autre chemin que l'énumération.
- * ---------------------------------------------------------------------------
  *
  * **Aucun retrait de groupe.** Un groupe que le plan n'exprime plus perd ses
  * octrois (c'est la révocation) ; le détruire supprimerait un objet d'annuaire

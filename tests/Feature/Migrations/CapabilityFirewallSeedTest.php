@@ -17,11 +17,11 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
 /**
- * Story 36.2 (AC5) — seed de PREUVE `internet_access` + intégration provider sur
+ * Seed de PREUVE `internet_access` + intégration provider sur
  * données RÉELLES + invariant `FirewallAuthoringGuard`.
  *
- * FICHIER DÉDIÉ (piège #13) : ne touche NI `CapabilitiesSchemaAndSeedTest.php`
- * (36.3) NI `CapabilityFsAclSeedTest.php` (36.1). La migration de seed est jouée
+ * FICHIER DÉDIÉ : ne touche NI `CapabilitiesSchemaAndSeedTest.php`
+ *  NI `CapabilityFsAclSeedTest.php`. La migration de seed est jouée
  * par `RefreshDatabase`.
  */
 class CapabilityFirewallSeedTest extends TestCase
@@ -83,7 +83,7 @@ class CapabilityFirewallSeedTest extends TestCase
         return (new FirewallCapabilityProvider())->itemsFor(TargetContext::for($this->ws, null));
     }
 
-    // ── Seed : options / défaut / warning / description ≤ 255 ─────────────
+    // Seed : options / défaut / warning / description ≤ 255
 
     #[Test]
     public function seed_creates_the_capability_with_enum_options_default_and_warning(): void
@@ -94,7 +94,7 @@ class CapabilityFirewallSeedTest extends TestCase
         self::assertSame('unmanaged', $cap->default_value);
         self::assertNotEmpty($cap->warning, 'capacité porteuse de block ⇒ warning non vide');
 
-        // Description/label ≤ 255 (piège #12 — varchar PG).
+        // Description/label ≤ 255 (varchar PG).
         self::assertLessThanOrEqual(255, mb_strlen((string) $cap->description));
         self::assertLessThanOrEqual(255, mb_strlen((string) $cap->label));
 
@@ -121,7 +121,7 @@ class CapabilityFirewallSeedTest extends TestCase
         self::assertSame(['off' => 'present', 'on' => 'absent'], $rule['ensure']);
     }
 
-    // ── Idempotence / réversibilité ───────────────────────────────────────
+    // Idempotence / réversibilité
 
     #[Test]
     public function migration_is_idempotent_and_reversible(): void
@@ -142,7 +142,7 @@ class CapabilityFirewallSeedTest extends TestCase
         self::assertNotNull($this->capabilityRow());
     }
 
-    // ── Intégration provider sur données RÉELLES ──────────────────────────
+    // Intégration provider sur données RÉELLES
 
     #[Test]
     public function value_off_emits_one_present_block_item(): void
@@ -178,7 +178,7 @@ class CapabilityFirewallSeedTest extends TestCase
         self::assertCount(0, $this->items(), 'sentinelle unmanaged ⇒ rien émis');
     }
 
-    // ── Invariant guard sur le catalogue seedé + combos Q3 + unicité ──────
+    // Invariant guard sur le catalogue seedé + combos interdits + unicité
 
     #[Test]
     public function authoring_guard_passes_on_the_seeded_catalog(): void
@@ -214,7 +214,7 @@ class CapabilityFirewallSeedTest extends TestCase
     #[Test]
     public function rule_ids_are_unique_across_capabilities(): void
     {
-        // Piège #10 : deux projections firewall de capacités DIFFÉRENTES ne
+        // Deux projections firewall de capacités DIFFÉRENTES ne
         // partagent aucun rule_id (invariant de données sur le catalogue).
         $projections = DB::table('capability_projections')
             ->where('os', 'windows')

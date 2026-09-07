@@ -17,7 +17,7 @@ if (PHP_SAPI === 'cli'
 
 require_once __DIR__ . '/../vendor/autoload.php';
 
-// Story 38.4 — la constante `LEGACY_SKIP_LEGACY_INCLUDES` est devenue SANS
+// La constante `LEGACY_SKIP_LEGACY_INCLUDES` est devenue SANS
 // OBJET : `legacy/bootstrap.php` ne charge PLUS AUCUN include GPO legacy
 // (`samba-tool.inc.php`, `gpo.inc.php`, …) — ils sont portés en natif ou
-// dégradés (Story 38.4 T1/T2/T6). Plus rien à « skipper » : référence retirée.
+// dégradés ( T1/T2/T6). Plus rien à « skipper » : référence retirée.

@@ -8,11 +8,11 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Story 3.11 — Garde-fous architecturaux de la réinstallation OS pilotée.
+ * Garde-fous architecturaux de la réinstallation OS pilotée.
  *
  *  1. Le bloc `:action` de `known.blade.php` chaine vers la route NATIVE
  *     `/ipxe/action/{action}` (path-param) et JAMAIS vers le tombstone
- *     legacy `/ipxe/action.php` (D7).
+ *     legacy `/ipxe/action.php`.
  *  2. Le garde `Str::isUuid` de `WorkstationLocator` et le contrat UUID-only
  *     restent intacts (non-régression — fix crash terrain 2026-06-26).
  *  3. La route `/ipxe/action/{action}` est déclarée AVANT le catchall legacy.

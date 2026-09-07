@@ -10,8 +10,6 @@ namespace App\Dto\Wallpaper;
  * Hydraté depuis le dict APCu `apps.$id` posé par le legacy
  * `applications.inc.php::get_apps()` (TTL 1800s) — seule source de vérité
  * pour l'état courant (user connecté, machine, salle, groupes AD, etc.).
- *
- * Story 4.7 — AC 3.
  */
 final readonly class WallpaperContext
 {

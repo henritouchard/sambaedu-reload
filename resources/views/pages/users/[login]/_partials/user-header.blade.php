@@ -1,12 +1,12 @@
 @php
-    // Story 49.2 (D5) — le rôle affiché est résolu UNE seule fois ici, puis
+    // Le rôle affiché est résolu UNE seule fois ici, puis
     // consommé par les badges ET par la tuile « Rôle ».
     //
     // Les badges Élève/Professeur s'appuyaient sur `Types\User::isEleve()/isProf()`,
     // qui dérivaient la catégorie de `memberOf`/`dn` LDAP. Or ce DTO est hydraté
     // DEPUIS SQL sur cette page (`UserService::getByLoginFromSql`) : la question
     // « est-il prof ? » recevait donc une réponse dépendant de la source des
-    // données. C'est un comportement type-OU d'AFFICHAGE, pas un droit (Epic 42
+    // données. C'est un comportement type-OU d'AFFICHAGE, pas un droit (
     // NFR-S3) : il se lit sur `users.role`, normalisé (la colonne a plusieurs
     // écrivains, singulier ET pluriel).
     $roleKey = match (strtolower(trim((string) $user->role))) {

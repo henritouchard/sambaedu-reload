@@ -22,14 +22,14 @@ use Tests\TestCase;
 use Throwable;
 
 /**
- * Story 29.5 (NFR5) — Audit append-only des overrides de capacité par parc.
+ * Audit append-only des overrides de capacité par parc.
  *
  * Couvre : `create`/`update`/`delete` (acteur/item/périmètre/old-new/statut/
- * horodatage) ; tag `permissive` vs `local` (AC#5) ; standalone → audit `local` +
- * 0 requête `controlhub_contract_items` (court-circuit NFR3, AC#7) ; atomicité
- * acte ↔ trace (échec d'audit → override NON persisté, rollback, AC#6).
+ * horodatage) ; tag `permissive` vs `local` ; standalone → audit `local` +
+ * 0 requête `controlhub_contract_items` (court-circuit) ; atomicité
+ * acte ↔ trace (échec d'audit → override NON persisté, rollback).
  *
- * ⚠️ Contrairement aux tests sœurs 29.2/29.4 (mock Authenticatable pour éviter le
+ * ⚠️ Contrairement aux tests sœurs (mock Authenticatable pour éviter le
  * before-hook Spatie), ce test a besoin d'un VRAI {@see User} authentifié pour
  * prouver la capture acteur (id + login) et satisfaire la FK `actor_user_id`. On
  * seed donc la permission `app.customize` et on l'accorde à l'utilisateur.
@@ -99,8 +99,6 @@ class CapabilitiesOverrideAuditTest extends TestCase
         ]);
     }
 
-    // ── AC#3 — create ─────────────────────────────────────────────────────
-
     #[Test]
     public function saving_a_new_override_logs_a_single_create_event(): void
     {
@@ -129,8 +127,6 @@ class CapabilitiesOverrideAuditTest extends TestCase
         ]);
     }
 
-    // ── AC#3 — update (action dérivée de l'existence, old_value avant mutation) ─
-
     #[Test]
     public function re_saving_an_override_logs_update_with_previous_value_as_old(): void
     {
@@ -155,7 +151,7 @@ class CapabilitiesOverrideAuditTest extends TestCase
         self::assertSame('off', $update->new_value);
         self::assertSame(1, CapabilityOverrideAuditLog::query()->where('action', 'create')->count());
 
-        // Review #2 — l'acteur, l'item et le périmètre sont capturés aussi sur update.
+        // L'acteur, l'item et le périmètre sont capturés aussi sur update.
         $this->assertDatabaseHas('capability_override_audit_logs', [
             'action' => 'update',
             'actor_user_id' => $user->id,
@@ -168,8 +164,6 @@ class CapabilitiesOverrideAuditTest extends TestCase
             'upstream_status' => 'local',
         ]);
     }
-
-    // ── AC#4 — delete ─────────────────────────────────────────────────────
 
     #[Test]
     public function removing_an_override_logs_a_delete_event_with_null_new_value(): void
@@ -204,8 +198,6 @@ class CapabilitiesOverrideAuditTest extends TestCase
         ]);
     }
 
-    // ── AC#4 (review #4) — pas de trace fantôme : remove sans override ─────
-
     #[Test]
     public function removing_a_non_existent_override_logs_nothing(): void
     {
@@ -222,8 +214,6 @@ class CapabilitiesOverrideAuditTest extends TestCase
             'aucun acte → aucune trace fantôme (review #4)',
         );
     }
-
-    // ── AC#5 — tag permissive vs local ────────────────────────────────────
 
     #[Test]
     public function override_on_a_permissive_capability_is_tagged_permissive(): void
@@ -264,8 +254,6 @@ class CapabilitiesOverrideAuditTest extends TestCase
         ]);
     }
 
-    // ── AC#7 — standalone : audit local + court-circuit NFR3 (0 requête items) ─
-
     #[Test]
     public function standalone_override_is_audited_local_without_extra_item_query(): void
     {
@@ -277,7 +265,7 @@ class CapabilitiesOverrideAuditTest extends TestCase
             ->call('openAdd', $cap->id)
             ->set('formValue', 'off');
 
-        // Review #1 — le resolver (singleton) a été réchauffé au render du composant.
+        // Le resolver (singleton) a été réchauffé au render du composant.
         // On le « refroidit » pour que `saveOverride` déclenche une résolution FRAÎCHE :
         // sans ce reset, la fenêtre mesurée serait vide et la preuve du court-circuit
         // vacuitement vraie. On prouve alors qu'on requête bien `controlhub_contracts`
@@ -307,8 +295,6 @@ class CapabilitiesOverrideAuditTest extends TestCase
         ]);
     }
 
-    // ── Story 29.7 — préservation de `created_at` du pivot (AC#4 story 29.7) ─
-
     #[Test]
     public function inserting_a_new_override_sets_created_at(): void
     {
@@ -335,7 +321,6 @@ class CapabilitiesOverrideAuditTest extends TestCase
     #[Test]
     public function re_editing_an_override_preserves_original_created_at(): void
     {
-        // AC#4 (cœur) — manqué par sonnet en review 29.5, détecté par opus.
         // Technique : figer created_at dans le PASSÉ avant la ré-édition ;
         // si updateOrInsert réécrit created_at à now(), l'assertion échoue.
         $this->actAsRefnum();
@@ -350,7 +335,7 @@ class CapabilitiesOverrideAuditTest extends TestCase
         // 2 — Figer `created_at` ET `updated_at` dans le passé (dates DISTINCTES) :
         //   - created_at -3j prouve la non-réécriture sur UPDATE ;
         //   - updated_at -2j (≠ now) prouve que l'UPDATE le fait réellement AVANCER
-        //     (sinon l'assertion serait trivialement vraie, AC#1 non gardé — opus P1).
+        //     (sinon l'assertion serait trivialement vraie).
         $frozenDate = now()->subDays(3)->toDateTimeString();
         $frozenUpdatedAt = now()->subDays(2)->toDateTimeString();
         DB::table('capability_assignments')
@@ -391,8 +376,6 @@ class CapabilitiesOverrideAuditTest extends TestCase
         );
     }
 
-    // ── AC#6 — atomicité : échec d'audit → override NON persisté (rollback) ─
-
     #[Test]
     public function audit_failure_rolls_back_the_override(): void
     {
@@ -411,7 +394,7 @@ class CapabilitiesOverrideAuditTest extends TestCase
             // L'exception d'audit propage (transaction rollback) — attendu.
         }
 
-        // L'override n'est PAS confirmé : atomicité acte ↔ trace (AC#6).
+        // L'override n'est PAS confirmé : atomicité acte ↔ trace.
         $this->assertDatabaseMissing('capability_assignments', [
             'capability_id' => $cap->id,
             'assignable_id' => $this->parc->id,
