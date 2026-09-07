@@ -12,6 +12,7 @@ use App\Models\WorkstationGroup;
 use App\Wpkg\Deployment\Models\WpkgDeployment;
 use App\Wpkg\Deployment\Models\WpkgDeploymentWorkstationStatus;
 use App\Wpkg\Deployment\Queries\ActiveDeploymentForWorkstationQuery;
+use App\Wpkg\Deployment\Services\WorkstationPackagesResolver;
 use App\Wpkg\Deployment\Services\WpkgReportArchiver;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -43,6 +44,7 @@ class WpkgReportIngestionService
     public function __construct(
         private readonly WpkgReportArchiver $archiver,
         private readonly ActiveDeploymentForWorkstationQuery $activeDeploymentQuery,
+        private readonly WorkstationPackagesResolver $packagesResolver,
     ) {
     }
 
@@ -418,12 +420,20 @@ class WpkgReportIngestionService
                 ->pluck('id', 'app_id')
                 ->toArray();
 
+            $targeted = $this->packagesResolver->resolve($workstation->name)->flip();
+
             $now = now();
             $rows = [];
             $unknownApps = [];
             foreach ($packages as $pkg) {
                 if (! isset($appMap[$pkg['id']])) {
                     $unknownApps[] = $pkg['id'];
+                    continue;
+                }
+
+                // Une app du catalogue que le poste ne demande pas et n'a pas
+                // installée est un non-événement : rien à enregistrer.
+                if ($pkg['status'] === 'not-installed' && ! $targeted->has($pkg['id'])) {
                     continue;
                 }
 

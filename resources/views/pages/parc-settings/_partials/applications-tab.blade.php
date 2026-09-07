@@ -8,6 +8,7 @@ use App\Models\DepotApplication;
 use App\Models\WorkstationGroup;
 use App\Services\AppProfile\AppProfileService;
 use App\Services\AppStore\AppStoreService;
+use App\Wpkg\Deployment\Services\ApplicationDeploymentCoverage;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\Log;
 use Livewire\Attributes\Computed;
@@ -104,6 +105,30 @@ new class extends Component
             Log::error('[ApplicationsTab] Erreur chargement applications: '.$e->getMessage());
 
             return collect();
+        }
+    }
+
+    /**
+     * Écart cible/constaté par application, pour la page courante seulement.
+     *
+     * @return array<int, array{target: int, installed: int}>
+     */
+    #[Computed]
+    public function deploymentCoverage(): array
+    {
+        $applications = $this->applications;
+
+        if (! $applications instanceof \Illuminate\Contracts\Pagination\Paginator
+            && ! $applications instanceof \Illuminate\Support\Collection) {
+            return [];
+        }
+
+        try {
+            return app(ApplicationDeploymentCoverage::class)->forApplications($applications);
+        } catch (\Exception $e) {
+            Log::error('[ApplicationsTab] Erreur calcul couverture: '.$e->getMessage());
+
+            return [];
         }
     }
 
@@ -617,17 +642,23 @@ new class extends Component
                                 </td>
                                 <td class="text-center">
                                     @php
-                                        $deployTotal = ($app->deployed_total_count ?? 0);
-                                        $deployInstalled = ($app->deployed_installed_count ?? 0);
+                                        $coverage = $this->deploymentCoverage[$app->id] ?? null;
+                                        $deployTarget = $coverage['target'] ?? 0;
+                                        $deployInstalled = $coverage['installed'] ?? 0;
                                     @endphp
-                                    @if ($deployTotal > 0)
-                                        @php $deployRate = round(($deployInstalled / $deployTotal) * 100); @endphp
-                                        <span class="text-sm font-medium {{ $deployRate === 100 ? 'text-success' : ($deployRate === 0 ? 'text-error' : 'text-warning') }}">
-                                            {{ $deployInstalled }}/{{ $deployTotal }}
+                                    @if ($deployTarget === 0)
+                                        <span class="text-base-content/30 text-sm"
+                                            title="Aucun poste ne demande cette application.">N/A</span>
+                                    @elseif ($deployInstalled === $deployTarget)
+                                        <span class="text-sm font-medium text-success"
+                                            title="Installée sur les {{ $deployTarget }} poste(s) qui la demandent.">
+                                            {{ $deployTarget }}
                                         </span>
-                                        <span class="text-xs text-base-content/50 ml-1">({{ $deployRate }}%)</span>
                                     @else
-                                        <span class="text-base-content/30 text-sm">N/A</span>
+                                        <span class="text-sm font-medium {{ $deployInstalled === 0 ? 'text-error' : 'text-warning' }}"
+                                            title="Attendue sur {{ $deployTarget }} poste(s), installée sur {{ $deployInstalled }}.">
+                                            {{ $deployInstalled }}/{{ $deployTarget }}
+                                        </span>
                                     @endif
                                 </td>
                             </tr>

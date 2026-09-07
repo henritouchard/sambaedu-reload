@@ -128,6 +128,34 @@ final class WpkgReportDeploymentCorrelationTest extends TestCase
             $t->timestamps();
         });
 
+        Schema::create('app_profile_application', function (Blueprint $t) {
+            $t->id();
+            $t->unsignedBigInteger('app_profile_id');
+            $t->unsignedBigInteger('application_id');
+            $t->timestamps();
+        });
+
+        Schema::create('application_workstation', function (Blueprint $t) {
+            $t->id();
+            $t->unsignedBigInteger('application_id');
+            $t->unsignedBigInteger('workstation_id');
+            $t->timestamps();
+        });
+
+        Schema::create('application_workstation_group', function (Blueprint $t) {
+            $t->id();
+            $t->unsignedBigInteger('application_id');
+            $t->unsignedBigInteger('workstation_group_id');
+            $t->timestamps();
+        });
+
+        Schema::create('application_dependencies', function (Blueprint $t) {
+            $t->id();
+            $t->unsignedBigInteger('application_id');
+            $t->unsignedBigInteger('required_application_id');
+            $t->timestamps();
+        });
+
         Schema::create('workstation_application_status', function (Blueprint $t) {
             $t->id();
             $t->unsignedBigInteger('workstation_id');

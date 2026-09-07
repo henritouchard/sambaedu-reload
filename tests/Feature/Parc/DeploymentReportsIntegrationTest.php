@@ -6,6 +6,7 @@ namespace Tests\Feature\Parc;
 
 use App\Models\AgentApplicationInventory;
 use App\Models\Application;
+use App\Wpkg\Deployment\Services\ApplicationDeploymentCoverage;
 use App\Models\Workstation;
 use App\Models\WorkstationApplicationStatus;
 use App\Repositories\WorkstationGroupRepository;
@@ -76,6 +77,7 @@ class DeploymentReportsIntegrationTest extends TestCase
             $table->string('ad_dn', 512)->nullable();
             $table->string('ad_guid', 36)->nullable();
             $table->boolean('managed_by_control_hub')->default(false);
+            $table->timestamp('archived_at')->nullable();
             $table->timestamps();
         });
 
@@ -88,6 +90,72 @@ class DeploymentReportsIntegrationTest extends TestCase
             $table->unsignedBigInteger('depot_id')->nullable();
             $table->string('category', 100)->nullable();
             $table->string('branch', 50)->nullable();
+            $table->timestamps();
+        });
+
+        // Tables de l'etat cible, lues par WorkstationPackagesResolver.
+        Schema::create('workstation_groups', function (Blueprint $table) {
+            $table->id();
+            $table->string('name', 100);
+            $table->boolean('is_active')->default(true);
+            $table->timestamp('archived_at')->nullable();
+            $table->timestamps();
+        });
+
+        Schema::create('workstation_group_workstation', function (Blueprint $table) {
+            $table->id();
+            $table->unsignedBigInteger('workstation_id');
+            $table->unsignedBigInteger('workstation_group_id');
+            $table->timestamps();
+        });
+
+        Schema::create('app_profiles', function (Blueprint $table) {
+            $table->id();
+            $table->string('name', 100);
+            $table->boolean('is_active')->default(true);
+            $table->timestamp('archived_at')->nullable();
+            $table->timestamps();
+        });
+
+        Schema::create('app_profile_workstation', function (Blueprint $table) {
+            $table->id();
+            $table->unsignedBigInteger('app_profile_id');
+            $table->unsignedBigInteger('workstation_id');
+            $table->timestamps();
+        });
+
+        Schema::create('app_profile_workstation_group', function (Blueprint $table) {
+            $table->id();
+            $table->unsignedBigInteger('app_profile_id');
+            $table->unsignedBigInteger('workstation_group_id');
+            $table->timestamps();
+        });
+
+        Schema::create('app_profile_application', function (Blueprint $table) {
+            $table->id();
+            $table->unsignedBigInteger('app_profile_id');
+            $table->unsignedBigInteger('application_id');
+            $table->timestamps();
+        });
+
+        Schema::create('application_workstation', function (Blueprint $table) {
+            $table->id();
+            $table->unsignedBigInteger('application_id');
+            $table->unsignedBigInteger('workstation_id');
+            $table->timestamps();
+        });
+
+        Schema::create('application_workstation_group', function (Blueprint $table) {
+            $table->id();
+            $table->unsignedBigInteger('application_id');
+            $table->unsignedBigInteger('workstation_group_id');
+            $table->timestamps();
+        });
+
+        Schema::create('application_dependencies', function (Blueprint $table) {
+            $table->id();
+            $table->unsignedBigInteger('application_id');
+            $table->unsignedBigInteger('required_application_id');
             $table->timestamps();
         });
 
@@ -272,62 +340,74 @@ class DeploymentReportsIntegrationTest extends TestCase
         $this->assertEquals(0, $machine->error_apps_count);
     }
 
-    // ─── T4 : listApplications() withCount ───────────────────────────────────
+    // ─── T4 : couverture de déploiement (cible vs constaté) ──────────────────
+
+    private function assign(Application $app, Workstation ...$workstations): void
+    {
+        foreach ($workstations as $workstation) {
+            $workstation->applications()->attach($app->id);
+        }
+    }
 
     #[Test]
-    public function list_applications_returns_deployment_counts(): void
+    public function coverage_counts_targeted_workstations_and_actual_installs(): void
     {
         $app = $this->makeApplication('firefox-deploy');
         $ws1 = $this->makeWorkstation('PC-DEPLOY-01');
         $ws2 = $this->makeWorkstation('PC-DEPLOY-02');
         $ws3 = $this->makeWorkstation('PC-DEPLOY-03');
+        $this->assign($app, $ws1, $ws2, $ws3);
 
         $this->makeStatus($ws1->id, $app->id, 'installed');
         $this->makeStatus($ws2->id, $app->id, 'error');
         $this->makeStatus($ws3->id, $app->id, 'not-installed');
 
-        $service = app(AppProfileService::class);
-        $result  = $service->listApplications(perPage: 50);
+        $coverage = app(ApplicationDeploymentCoverage::class)->forApplications([$app]);
 
-        $found = $result->firstWhere('id', $app->id);
-
-        $this->assertNotNull($found, 'Application introuvable dans les résultats');
-        $this->assertEquals(3, $found->deployed_total_count, 'deployed_total_count incorrect');
-        $this->assertEquals(1, $found->deployed_installed_count, 'deployed_installed_count incorrect');
-        $this->assertEquals(2, $found->deployed_error_count, 'deployed_error_count incorrect');
+        $this->assertSame(3, $coverage[$app->id]['target']);
+        $this->assertSame(1, $coverage[$app->id]['installed']);
     }
 
     #[Test]
-    public function list_applications_returns_zero_counts_when_no_deployments(): void
+    public function a_targeted_workstation_that_never_reported_still_counts_as_expected(): void
+    {
+        $app = $this->makeApplication('silent-app');
+        $reported = $this->makeWorkstation('PC-SILENT-01');
+        $silent = $this->makeWorkstation('PC-SILENT-02');
+        $this->assign($app, $reported, $silent);
+
+        $this->makeStatus($reported->id, $app->id, 'installed');
+
+        $coverage = app(ApplicationDeploymentCoverage::class)->forApplications([$app]);
+
+        $this->assertSame(2, $coverage[$app->id]['target'],
+            'un poste qui doit l\'avoir compte, meme sans rapport');
+        $this->assertSame(1, $coverage[$app->id]['installed']);
+    }
+
+    #[Test]
+    public function an_install_outside_the_target_is_not_a_success(): void
+    {
+        $app = $this->makeApplication('stray-app');
+        $stray = $this->makeWorkstation('PC-STRAY-01');
+
+        $this->makeStatus($stray->id, $app->id, 'installed');
+
+        $coverage = app(ApplicationDeploymentCoverage::class)->forApplications([$app]);
+
+        $this->assertSame(0, $coverage[$app->id]['target'],
+            'aucun poste ne la demande : rien a deployer');
+        $this->assertSame(0, $coverage[$app->id]['installed']);
+    }
+
+    #[Test]
+    public function an_application_nobody_requests_has_no_coverage(): void
     {
         $app = $this->makeApplication('orphan-app');
 
-        $service = app(AppProfileService::class);
-        $result  = $service->listApplications(perPage: 50);
+        $coverage = app(ApplicationDeploymentCoverage::class)->forApplications([$app]);
 
-        $found = $result->firstWhere('id', $app->id);
-
-        $this->assertNotNull($found);
-        $this->assertEquals(0, $found->deployed_total_count);
-        $this->assertEquals(0, $found->deployed_installed_count);
-        $this->assertEquals(0, $found->deployed_error_count);
-    }
-
-    #[Test]
-    public function list_applications_excludes_in_progress_from_total(): void
-    {
-        $app = $this->makeApplication('upgrading-app-svc');
-        $ws  = $this->makeWorkstation('PC-UPGRDING');
-
-        $this->makeStatus($ws->id, $app->id, 'upgrading');
-
-        $service = app(AppProfileService::class);
-        $result  = $service->listApplications(perPage: 50);
-
-        $found = $result->firstWhere('id', $app->id);
-
-        $this->assertNotNull($found);
-        $this->assertEquals(0, $found->deployed_total_count, 'upgrading ne doit pas compter dans le total');
+        $this->assertSame(['target' => 0, 'installed' => 0], $coverage[$app->id]);
     }
 
     // ─── AC6 : Routes windows-deploy supprimées ───────────────────────────────

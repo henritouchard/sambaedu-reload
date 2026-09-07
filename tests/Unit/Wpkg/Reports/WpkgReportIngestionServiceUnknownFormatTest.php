@@ -6,6 +6,7 @@ namespace Tests\Unit\Wpkg\Reports;
 
 use App\Models\Application;
 use App\Models\Workstation;
+use App\Models\WorkstationGroup;
 use App\Services\Windows\WpkgReportIngestionService;
 use App\Wpkg\Deployment\Models\WpkgDeploymentWorkstationStatus;
 use Illuminate\Database\Schema\Blueprint;
@@ -89,6 +90,34 @@ final class WpkgReportIngestionServiceUnknownFormatTest extends TestCase
             $t->id();
             $t->unsignedBigInteger('app_profile_id');
             $t->unsignedBigInteger('workstation_group_id');
+            $t->timestamps();
+        });
+
+        Schema::create('app_profile_application', function (Blueprint $t) {
+            $t->id();
+            $t->unsignedBigInteger('app_profile_id');
+            $t->unsignedBigInteger('application_id');
+            $t->timestamps();
+        });
+
+        Schema::create('application_workstation', function (Blueprint $t) {
+            $t->id();
+            $t->unsignedBigInteger('application_id');
+            $t->unsignedBigInteger('workstation_id');
+            $t->timestamps();
+        });
+
+        Schema::create('application_workstation_group', function (Blueprint $t) {
+            $t->id();
+            $t->unsignedBigInteger('application_id');
+            $t->unsignedBigInteger('workstation_group_id');
+            $t->timestamps();
+        });
+
+        Schema::create('application_dependencies', function (Blueprint $t) {
+            $t->id();
+            $t->unsignedBigInteger('application_id');
+            $t->unsignedBigInteger('required_application_id');
             $t->timestamps();
         });
 
@@ -191,9 +220,37 @@ final class WpkgReportIngestionServiceUnknownFormatTest extends TestCase
 
         $this->assertSame('installed', $rows[$sevenZip->id]);
         $this->assertSame('installed', $rows[$firefox->id]);
-        $this->assertSame('not-installed', $rows[$ccleaner->id]);
+        $this->assertArrayNotHasKey($ccleaner->id, $rows->toArray(),
+            'app du catalogue ni demandée ni installée : rien à enregistrer');
 
         $this->assertSame('10.0.0.60', $w->fresh()->ip);
+    }
+
+    #[Test]
+    public function a_requested_package_reported_absent_is_persisted_as_not_installed(): void
+    {
+        $w = Workstation::create(['name' => 'PC-QUERYALL-01', 'status' => 'active']);
+        Application::create(['app_id' => '7za', 'name' => '7-Zip autonome']);
+        Application::create(['app_id' => 'firefox', 'name' => 'Firefox ESR']);
+        $ccleaner = Application::create(['app_id' => 'ccleaner', 'name' => 'CCleaner 5']);
+
+        $parc = WorkstationGroup::create(['name' => 'salle-info']);
+        $w->groups()->attach($parc->id);
+        $parc->applications()->attach($ccleaner->id);
+
+        $reportContent = file_get_contents(base_path('tests/Fixtures/wpkg/reports/query-all-packages.txt'));
+        $this->assertNotFalse($reportContent);
+
+        /** @var WpkgReportIngestionService $svc */
+        $svc = app(WpkgReportIngestionService::class);
+        $this->assertTrue($svc->ingest('PC-QUERYALL-01', $reportContent)->isProcessed());
+
+        $rows = DB::table('workstation_application_status')
+            ->where('workstation_id', $w->id)
+            ->pluck('status', 'application_id');
+
+        $this->assertSame('not-installed', $rows[$ccleaner->id],
+            'app assignée au parc du poste et absente : vrai échec de déploiement');
     }
 
     #[Test]
