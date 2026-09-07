@@ -45,11 +45,13 @@ Un commentaire ne dit que ce que le code ne peut pas dire. Trois questions avant
 ## Budget par portée
 
 Le défaut à chaque niveau est **zéro**. Le budget est un plafond, pas un quota.
+Dépasser le plafond est permis quand le commentaire porte vraiment quelque chose
+que le code ne dit pas ; le laxisme est sur la longueur, jamais sur la pertinence.
 
 | Portée | Budget | Ce qu'il dit |
 |---|---|---|
 | Fichier / classe | 3 à 30 lignes | Le but que la classe sert, sa place dans le système, ce qui la distingue de sa voisine, les invariants qu'elle tient. **Jamais** la liste de ses méthodes. |
-| Méthode publique | 0 à 2 lignes | Rien si le nom et la signature suffisent. Sinon le contrat invisible : effet de bord, ordre imposé, ce qui est renvoyé quand il n'y a rien. |
+| Méthode publique | 0 à 5 lignes | Rien si le nom et la signature suffisent. Sinon le contrat invisible : effet de bord, ordre imposé, ce qui est renvoyé quand il n'y a rien. |
 | Bloc | 1 ligne | Seulement si le bloc existe pour une raison qu'on ne voit pas (garde, contrainte externe). |
 | Ligne | exceptionnel | Voir l'entorse. |
 
