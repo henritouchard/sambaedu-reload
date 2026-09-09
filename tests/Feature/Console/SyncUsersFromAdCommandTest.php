@@ -61,6 +61,53 @@ class SyncUsersFromAdCommandTest extends TestCase
     }
 
     #[Test]
+    public function dry_run_executes_inline_and_asks_the_service_for_a_dry_run(): void
+    {
+        $this->mock(UserSyncService::class, function (MockInterface $mock): void {
+            $mock->shouldReceive('importFromAdDelta')
+                ->once()
+                ->withArgs(static fn(?callable $logger, string $scope, bool $dryRun): bool => $dryRun === true)
+                ->andReturn([
+                    'created' => 1,
+                    'updated' => 0,
+                    'skipped' => 0,
+                    'errors' => 0,
+                    'admin_granted' => true,
+                    'total_ad' => 1,
+                    'etab_tree' => 1,
+                    'etab_member_of' => 0,
+                    'etab_excluded' => 0,
+                    'delta_mode' => true,
+                    'delta_cursor_start' => null,
+                    'delta_cursor_end' => null,
+                    'dry_run' => true,
+                    'dry_run_created' => ['eleve.test'],
+                    'dry_run_updated' => [],
+                    'dry_run_reactivated' => [],
+                ]);
+        });
+
+        $this->artisan('users:sync-from-ad --dry-run')
+            ->expectsOutputToContain('eleve.test')
+            ->expectsOutputToContain('aucune écriture conservée')
+            ->assertExitCode(0);
+    }
+
+    #[Test]
+    public function dry_run_refuses_to_reset_the_delta_cursor(): void
+    {
+        $this->mock(UserSyncService::class, function (MockInterface $mock): void {
+            $mock->shouldNotReceive('resetDeltaCursor');
+            $mock->shouldNotReceive('importFromAd');
+            $mock->shouldNotReceive('importFromAdDelta');
+        });
+
+        $this->artisan('users:sync-from-ad --dry-run --reset-delta-cursor')
+            ->expectsOutputToContain('incompatible avec --dry-run')
+            ->assertExitCode(1);
+    }
+
+    #[Test]
     public function it_fails_with_invalid_scope(): void
     {
         $this->mock(UserSyncService::class, function (MockInterface $mock): void {

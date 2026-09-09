@@ -48,11 +48,12 @@ class UserSyncService
      * 
      * @param callable|null $logger Callback pour les logs (fn(string $level, string $message))
      * @param string $establishmentScope Scope de rattachement établissement (all|tree|memberOf)
+     * @param bool $dryRun Balaye l'AD et compte, puis annule toutes les écritures SQL
      * @return array Statistiques d'import
      */
-    public function importFromAd(?callable $logger = null, string $establishmentScope = self::ESTABLISHMENT_SCOPE_ALL): array
+    public function importFromAd(?callable $logger = null, string $establishmentScope = self::ESTABLISHMENT_SCOPE_ALL, bool $dryRun = false): array
     {
-        return $this->importUsersFromAd($logger, $establishmentScope, false);
+        return $this->importUsersFromAd($logger, $establishmentScope, false, $dryRun);
     }
 
     /**
@@ -60,11 +61,12 @@ class UserSyncService
      *
      * @param callable|null $logger Callback pour les logs (fn(string $level, string $message))
      * @param string $establishmentScope Scope de rattachement établissement (all|tree|memberOf)
+     * @param bool $dryRun Balaye l'AD et compte, puis annule toutes les écritures SQL
      * @return array Statistiques d'import
      */
-    public function importFromAdDelta(?callable $logger = null, string $establishmentScope = self::ESTABLISHMENT_SCOPE_ALL): array
+    public function importFromAdDelta(?callable $logger = null, string $establishmentScope = self::ESTABLISHMENT_SCOPE_ALL, bool $dryRun = false): array
     {
-        return $this->importUsersFromAd($logger, $establishmentScope, true);
+        return $this->importUsersFromAd($logger, $establishmentScope, true, $dryRun);
     }
 
     public function resetDeltaCursor(): void
@@ -79,7 +81,7 @@ class UserSyncService
     /**
      * @param callable|null $logger
      */
-    private function importUsersFromAd(?callable $logger, string $establishmentScope, bool $deltaMode): array
+    private function importUsersFromAd(?callable $logger, string $establishmentScope, bool $deltaMode, bool $dryRun = false): array
     {
         $stats = [
             'created' => 0,
@@ -106,12 +108,27 @@ class UserSyncService
             'delta_mode' => $deltaMode,
             'delta_cursor_start' => null,
             'delta_cursor_end' => null,
+            'dry_run' => $dryRun,
+            // Renseignés seulement en dry-run : les compteurs ne disent pas
+            // QUELS comptes bougent, et c'est ce qu'on vient vérifier.
+            'dry_run_created' => [],
+            'dry_run_updated' => [],
+            'dry_run_reactivated' => [],
         ];
 
         $log = $logger ?? fn(string $level, string $message) => Log::log($level, "[UserSyncService] {$message}");
         $deltaCursorStart = null;
 
         try {
+            if ($dryRun) {
+                // Le dry-run est une transaction englobante annulée à la sortie :
+                // toute écriture SQL du chemin d'import y est prise, y compris
+                // celles qui précèdent la transaction d'import (permissions,
+                // rôles, profils custom) et le curseur delta.
+                DB::beginTransaction();
+                $log('info', 'Mode dry-run : aucune écriture ne sera conservée.');
+            }
+
             // S'assurer que les permissions et rôles Spatie existent
             $this->ensurePermissionsExist($log);
 
@@ -166,6 +183,12 @@ class UserSyncService
                         if ($reactivated) {
                             $stats['reactivated']++;
                         }
+                        if ($dryRun) {
+                            $stats['dry_run_' . $result][] = $adUser->login;
+                            if ($reactivated) {
+                                $stats['dry_run_reactivated'][] = $adUser->login;
+                            }
+                        }
                     } catch (\Exception $e) {
                         $stats['errors']++;
                         $log('warning', "Erreur pour {$adUser->login}: " . $e->getMessage());
@@ -201,6 +224,15 @@ class UserSyncService
                 'trace' => $e->getTraceAsString(),
             ]);
             throw $e;
+        } finally {
+            if ($dryRun && DB::transactionLevel() > 0) {
+                DB::rollBack();
+                // Spatie garde les permissions dans le cache applicatif, que le
+                // rollback ne rejoint pas : sans cette purge, un dry-run laisse
+                // derrière lui des permissions en cache qui n'existent pas en base.
+                app()[PermissionRegistrar::class]->forgetCachedPermissions();
+                $log('info', 'Dry-run terminé : toutes les écritures ont été annulées.');
+            }
         }
 
         return $stats;

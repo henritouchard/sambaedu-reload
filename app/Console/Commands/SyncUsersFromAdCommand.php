@@ -14,6 +14,7 @@ class SyncUsersFromAdCommand extends Command
         {--scope=all : Scope établissement (all|tree|memberOf)}
         {--mode=delta : Mode de synchronisation (delta|full)}
         {--now : Exécute immédiatement sans passer par la queue sync}
+        {--dry-run : Balaye l\'AD et affiche ce qui serait écrit, sans rien conserver}
         {--reset-delta-cursor : Réinitialise le curseur before un run delta}';
 
     protected $description = 'Synchronise automatiquement les utilisateurs depuis l\'AD vers SQL';
@@ -38,6 +39,13 @@ class SyncUsersFromAdCommand extends Command
     <comment>--reset-delta-cursor</comment> repart de zéro pour l'incrémental, quand on soupçonne le
     curseur d'avoir sauté des modifications.
 
+    <comment>--dry-run</comment> balaie l'annuaire pour de vrai, applique l'import dans une
+    transaction, puis l'annule : rien n'est conservé, pas même le curseur delta.
+    Le rapport liste les logins qui seraient créés, mis à jour ou réactivés.
+    L'option implique <comment>--now</comment>, et refuse <comment>--reset-delta-cursor</comment> qui,
+    lui, écrit. Pour voir ce que donnerait un incrémental reparti de zéro,
+    utiliser <info>--mode=full --dry-run</info>.
+
     <comment>Cette commande n'A JAMAIS d'effet de désactivation</comment>, même en mode complet :
     les départs relèvent de <info>users:reconcile-departures</info>.
     HELP;
@@ -46,6 +54,7 @@ class SyncUsersFromAdCommand extends Command
     {
         $scope = (string) $this->option('scope');
         $mode = (string) $this->option('mode');
+        $dryRun = (bool) $this->option('dry-run');
 
         if (!in_array($scope, ['all', 'tree', 'memberOf'], true)) {
             $this->error('Option --scope invalide. Valeurs acceptées: all, tree, memberOf');
@@ -57,19 +66,26 @@ class SyncUsersFromAdCommand extends Command
             return self::FAILURE;
         }
 
+        if ($dryRun && (bool) $this->option('reset-delta-cursor')) {
+            $this->error('--reset-delta-cursor écrit en base : incompatible avec --dry-run. Utiliser --mode=full --dry-run.');
+            return self::FAILURE;
+        }
+
         if ((bool) $this->option('reset-delta-cursor')) {
             $userSyncService->resetDeltaCursor();
             $this->line('Curseur delta réinitialisé.');
         }
 
-        if (! (bool) $this->option('now')) {
+        if (!$dryRun && ! (bool) $this->option('now')) {
             SyncUsersFromAdJob::dispatch($scope, $mode);
             $this->info("Job de synchronisation users dispatché sur la queue sync (scope={$scope}, mode={$mode}).");
 
             return self::SUCCESS;
         }
 
-        $this->info("Démarrage de la synchronisation users AD -> SQL (scope={$scope}, mode={$mode})...");
+        $this->info($dryRun
+            ? "Dry-run de la synchronisation users AD -> SQL (scope={$scope}, mode={$mode})..."
+            : "Démarrage de la synchronisation users AD -> SQL (scope={$scope}, mode={$mode})...");
 
         try {
             $logger = function (string $level, string $message): void {
@@ -80,10 +96,12 @@ class SyncUsersFromAdCommand extends Command
                 ? $userSyncService->importFromAdDelta(
                     logger: $logger,
                     establishmentScope: $scope,
+                    dryRun: $dryRun,
                 )
                 : $userSyncService->importFromAd(
                     logger: $logger,
                     establishmentScope: $scope,
+                    dryRun: $dryRun,
                 );
 
             $this->table(
@@ -101,13 +119,43 @@ class SyncUsersFromAdCommand extends Command
                     ['etab_excluded', (string) $stats['etab_excluded']],
                     ['delta_cursor_start', (string) ($stats['delta_cursor_start'] ?? '')],
                     ['delta_cursor_end', (string) ($stats['delta_cursor_end'] ?? '')],
+                    ['dry_run', $dryRun ? 'oui' : 'non'],
                 ]
             );
+
+            if ($dryRun) {
+                $this->renderDryRunDetail('Seraient créés', $stats['dry_run_created'] ?? []);
+                $this->renderDryRunDetail('Seraient mis à jour', $stats['dry_run_updated'] ?? []);
+                $this->renderDryRunDetail('Seraient réactivés', $stats['dry_run_reactivated'] ?? []);
+                $this->warn('Dry-run : aucune écriture conservée.');
+            }
 
             return self::SUCCESS;
         } catch (\Throwable $exception) {
             $this->error('Échec de la synchronisation users: ' . $exception->getMessage());
             return self::FAILURE;
+        }
+    }
+
+    /**
+     * @param list<string> $logins
+     */
+    private function renderDryRunDetail(string $title, array $logins): void
+    {
+        if ($logins === []) {
+            return;
+        }
+
+        $this->newLine();
+        $this->line("<options=bold>{$title}</> (" . count($logins) . ') :');
+
+        // Un annuaire d'établissement se compte en milliers de comptes ; sur un
+        // premier balayage la liste complète noierait le rapport.
+        $shown = array_slice($logins, 0, 50);
+        $this->line('  ' . implode(', ', $shown));
+
+        if (count($logins) > count($shown)) {
+            $this->line('  … et ' . (count($logins) - count($shown)) . ' autres.');
         }
     }
 }
