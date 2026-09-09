@@ -42,6 +42,44 @@ Un commentaire ne dit que ce que le code ne peut pas dire. Trois questions avant
 2. Est-ce vérifiable avec le dépôt seul (doc, code, produit) ? → sinon, ne pas écrire.
 3. Restera-t-il vrai si on réécrit le code au-dessus ? → sinon, ne pas écrire.
 
+## Pour qui on écrit
+
+Le lecteur est un développeur qu'on ne connaît pas. Il ouvre le dépôt sans nous,
+sans notre historique, sans personne à qui demander. Un commentaire n'a de valeur
+que s'il tient debout tout seul devant ce lecteur-là.
+
+Il décrit donc le code : ce qu'il fait, ce qu'il garantit, la contrainte à laquelle
+il obéit. Il ne décrit jamais les circonstances dans lesquelles il a été écrit.
+« Corrigé en review », « suite à la réunion de mardi », « untel préfère cette forme »
+sont des faits sur nous, pas sur le programme ; ils ne disent rien à qui n'était pas là.
+
+Le test tient en une phrase : **si le commentaire renvoie à quelque chose que le
+lecteur ne peut pas atteindre, il est inutile.** Un nom de personne, une date, une
+réunion, un ticket, un numéro d'itération y échouent. Un renvoi numéroté vers une
+source absente aussi : « piège n°8 », « cas 3 du tableau », « voir la story 12.4 ».
+La liste n'est pas close — c'est le test qui tranche, pas elle.
+
+Un renvoi qui échoue ne se supprime pas : il se remplace par ce qu'il désignait.
+Le numéro tenait la place d'un fait ; on écrit le fait, en une phrase qui énonce
+le problème et ce qu'on en fait.
+
+```php
+// ❌ Attention au piège n°8 quand on publie un payload WPKG.
+// ✅ Un payload en 0660 fait échouer l'installation sans le moindre message :
+//    le client WPKG lit le partage en anonyme. On publie donc en 0664.
+```
+
+## Forme
+
+On écrit de vraies phrases : sujet, verbe, complément, une majuscule au début et un
+point à la fin. Le style télégraphique (« garde anti-doublon, cf. plus bas ») économise
+deux mots et coûte une relecture.
+
+Concis ne veut pas dire tronqué. La phrase reste courte parce qu'elle ne dit qu'une
+seule chose, jamais parce qu'on lui a retiré ce qui la rend compréhensible. Un
+commentaire qui a besoin de son auteur pour être compris n'a pas été écrit, il a été
+abrégé.
+
 ## Budget par portée
 
 Le défaut à chaque niveau est **zéro**. Le budget est un plafond, pas un quota.
@@ -71,13 +109,22 @@ Condition : citer le **fait** vérifiable, jamais l'histoire.
 
 // ❌ Après discussion on a finalement choisi le groupe dérivé
 //    parce que la première approche ne passait pas à l'échelle.
+
+// ❌ Revu avec untel le 12/03 : on garde le groupe dérivé.
 ```
+
+Les deux contre-exemples renvoient à une conversation. Le lecteur ne peut ni la
+retrouver, ni la vérifier, ni en déduire ce qui se passerait s'il changeait le code.
 
 ## Interdits
 
 - Syntaxe du langage ou du framework, et « pourquoi j'ai écrit ça comme ça ».
 - Paraphrase du code (`// on récupère l'utilisateur` au-dessus de `$user = ...`).
 - Référence à du code qui n'existe plus.
+- Circonstances de rédaction : nom d'une personne, review, réunion, date, ticket,
+  numéro d'itération. Le lecteur n'y a pas accès.
+- Renvoi numéroté vers une source absente du dépôt (« piège n°8 », « cas 3 »).
+  On écrit ce que le numéro désignait, pas le numéro.
 - Bannières décoratives de section.
 - Code mort commenté — git le garde.
 - Historique de dev : story, epic, AC, « avant on faisait X ». Rien de `_bmad*` ne transparaît.
